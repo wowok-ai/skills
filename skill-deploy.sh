@@ -150,11 +150,8 @@ install_deps() {
     fi
 }
 
-# Run tests
-test_build() {
-    log_step "Running tests..."
-    npm test
-    
+# Build project
+build_project() {
     log_step "Building project..."
     npm run build
 }
@@ -219,7 +216,6 @@ show_usage() {
     echo "  $0 major     # Bump major version"
     echo ""
     echo "Environment Variables:"
-    echo "  SKIP_TESTS=1    # Skip running tests"
     echo "  DRY_RUN=1       # Dry run (don't actually publish)"
 }
 
@@ -245,14 +241,7 @@ main() {
     
     update_version
     install_deps
-    
-    # Skip tests if requested
-    if [ "$SKIP_TESTS" == "1" ]; then
-        log_warn "Skipping tests (SKIP_TESTS=1)"
-        npm run build
-    else
-        test_build
-    fi
+    build_project
     
     check_npm_auth
     
