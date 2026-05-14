@@ -1,0 +1,54 @@
+{
+  "name": "wowok-skills",
+  "version": "1.0.0",
+  "description": "WoWok AI Skills for Claude and other AI assistants - Helping AI use WoWok MCP tools correctly",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "wowok-skills": "dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "wowok-build/",
+    "wowok-guard/",
+    "wowok-tools/",
+    "wowok-safety/",
+    "wowok-machine/",
+    "wowok-order/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "test": "node dist/test.js"
+  },
+  "keywords": [
+    "wowok",
+    "ai",
+    "skills",
+    "claude",
+    "mcp",
+    "blockchain",
+    "web3",
+    "ai-agent"
+  ],
+  "author": "wowok <build@wowok.net>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wowok-ai/agent.git",
+    "directory": "skills"
+  },
+  "bugs": {
+    "url": "https://github.com/wowok-ai/agent/issues"
+  },
+  "homepage": "https://github.com/wowok-ai/agent/tree/skills#readme",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "wowok": "^2.2.8"
+  }
+}
