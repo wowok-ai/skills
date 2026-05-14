@@ -143,7 +143,11 @@ update_version() {
 # Install dependencies
 install_deps() {
     log_step "Installing dependencies..."
-    npm ci
+    if [ -f "package-lock.json" ]; then
+        npm ci
+    else
+        npm install
+    fi
 }
 
 # Run tests
