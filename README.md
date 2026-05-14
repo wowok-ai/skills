@@ -10,6 +10,14 @@ WoWok Skills provide structured guidance for AI assistants to effectively use Wo
 - **Tool usage failures** — Correct parameter formats, tool selection, error recovery
 - **Safety & authorization** — User confirmation for important operations
 
+## Prerequisites
+
+Before using WoWok Skills, you need to install the WoWok Agent (MCP Server):
+
+```bash
+npm install -g wowok_agent
+```
+
 ## Installation
 
 ```bash
@@ -56,10 +64,6 @@ const buildSkill = getSkillByName('wowok-build');
 - **WoWok Agent (MCP Server)**: [https://github.com/wowok-ai/agent](https://github.com/wowok-ai/agent)
   - MCP Server for AI agents to interact with WoWok blockchain
   - npm: `wowok_agent`
-  
-- **WoWok SDK**: [https://github.com/wowok-ai/wchain](https://github.com/wowok-ai/wchain)
-  - TypeScript SDK for WoWok blockchain interaction
-  - npm: `wowok`
 
 - **WoWok Documentation**: [https://github.com/wowok-ai/docs](https://github.com/wowok-ai/docs)
 
