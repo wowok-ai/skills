@@ -12,11 +12,20 @@ WoWok Skills provide structured guidance for AI assistants to effectively use Wo
 
 ## Prerequisites
 
-Before using WoWok Skills, you need to install the WoWok Agent (MCP Server):
+Before using WoWok Skills, you need to setup the WoWok Agent (MCP Server) in your MCP configuration:
 
-```bash
-npm install -g wowok_agent
+```json
+{
+  "mcpServers": {
+    "wowok": {
+      "command": "npx",
+      "args": ["-y", "wowok_agent"]
+    }
+  }
+}
 ```
+
+See [WoWok Agent](https://github.com/wowok-ai/agent) for more details.
 
 ## Installation
 
