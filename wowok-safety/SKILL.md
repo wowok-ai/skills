@@ -167,3 +167,215 @@ This action cannot be easily undone. Proceed?
 4. ❌ Never publish without explicit user request
 5. ❌ Never use a different account than what the user specified
 6. ❌ Never proceed if the dry run shows errors
+
+## Real-World Safety Patterns (from tested examples)
+
+### Pattern 1: Dry-Run Before Every Structural Change
+
+**From [Insurance](../examples/Insurance/Insurance.md), [Travel](../examples/Travel/Travel.md), [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md)**
+
+Every structural operation in the tested examples follows this exact two-phase pattern:
+
+```
+// Phase 1: Validate (no submission → no state change)
+onchain_operations({
+  operation_type: "<type>",
+  data: { ... },
+  env: { account: "<name>", network: "testnet" }
+})
+→ Review the returned preview. Check: object IDs, guard logic, amounts.
+
+// Phase 2: Execute (only after user confirms)
+onchain_operations({
+  operation_type: "<type>",
+  data: { ... },
+  env: { account: "<name>", network: "testnet" },
+  submission: { sender: "<name>", gas_budget: "10000000" }
+})
+```
+
+### Pattern 2: Guard Logic Verification Before Deployment
+
+**From [Insurance](../examples/Insurance/Insurance.md) — Time-Lock Guard**
+
+Before deploying a Guard that controls fund release (Payment, Allocation, Reward), ALWAYS:
+
+1. Export the Guard for human review:
+   ```
+   guard2file({ guard: "insurance_complete_guard_v1", file_path: "./guard_review.json", format: "json" })
+   ```
+2. Test the Guard logic with `gen_passport`:
+   ```
+   onchain_operations({
+     operation_type: "gen_passport",
+     data: { guard: "insurance_complete_guard_v1" },
+     info: { name: "guard_test", b_submission: true }
+   })
+   ```
+   This submits runtime values to the Guard and returns pass/fail — without any state change.
+
+**From [Travel](../examples/Travel/Travel.md) — Weather Check Guard**
+
+The Travel example demonstrates guard testing with specific runtime values:
+- The Guard queries `weather_repo_v2` for a given date
+- Test with `gen_passport`, submitting a timestamp that maps to "sunny" → should pass
+- Test with a timestamp that maps to "rainy" → should fail
+- This validates the Guard BEFORE it protects real funds in an Allocation
+
+**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Service Guard Testing**
+
+Service-level Guards (`service_merchant_win_v2`, `service_customer_win_v2`) control fund allocation. Before binding these to `order_allocators`:
+1. Export each Guard with `guard2file`
+2. Test with `gen_passport`, submitting mock order progress data
+3. Verify: correct node → pass, wrong node → fail
+4. Only then bind to Service's `order_allocators`
+
+### Pattern 3: Publish-Immutability Checklist
+
+**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Build Order Rationale**
+
+Before any publish operation, verify this checklist:
+
+```
+PUBLISH CHECKLIST
+├─ Machine publish:
+│  ├─ ✅ All nodes defined and reviewed (machineNode2file)
+│  ├─ ✅ All forward guards created and tested (gen_passport)
+│  ├─ ✅ Permission indexes assigned to correct accounts
+│  └─ ⚠️  After publish: nodes become IMMUTABLE
+│
+├─ Service publish:
+│  ├─ ✅ Machine bound to Service (machine field set)
+│  ├─ ✅ Allocation rules finalized (order_allocators)
+│  ├─ ✅ Sales/products defined (sales)
+│  ├─ ✅ Guards tested (buy_guard, sell_guard)
+│  └─ ⚠️  After publish: machine + allocation LOCKED
+│
+└─ Reward (post-publish):
+   └─ ✅ Can be added after Service publish (not locked)
+```
+
+### Pattern 4: Multi-Provider Coordination Safety
+
+**From [Travel](../examples/Travel/Travel.md) — Two-Provider System**
+
+When building a system that spans multiple accounts/providers:
+
+1. **Each provider uses their own account** for operations on their own objects
+   - `weather_provider_v1` creates and manages `weather_repo_v2`
+   - `travel_provider_v1` creates and manages `travel_service_v1`
+
+2. **Cross-provider references use names, not raw addresses**
+   - The weather check Guard references `"weather_repo_v2"` by name
+   - The MCP server resolves names to addresses automatically
+
+3. **Data providers build their objects BEFORE consumers**
+   - Weather Repository + data exists before the Guard that queries it
+   - Insurance Service exists before Travel creates sub-orders on it
+
+### Pattern 5: Amount Verification for Financial Operations
+
+**From all examples — Payment, Order, Allocation operations**
+
+All financial operations in the tested examples follow these conventions:
+
+| Operation | Amount Format | Verification |
+|-----------|--------------|-------------|
+| `service.sales[].price` | Raw integer (smallest unit) | Verify with: `wowok_buildin_info({ info_type: "token_list" })` |
+| `order.buy.total_pay.balance` | Raw integer | Confirm matches sales price × quantity |
+| `reward.coin_add` | Raw integer | Confirm pool size against expected payouts |
+| `allocation.sharing[].sharing` | Integer (Rate mode: basis points) | 10000 = 100%, 500 = 5% |
+
+**From [Insurance](../examples/Insurance/Insurance.md):**
+```
+sales: [{ name: "Outdoor Accident Insurance", price: 100000000, stock: 1000 }]
+// 100000000 = 1 WOW (if 1 WOW = 10^8 smallest units)
+```
+
+**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md):**
+```
+order_allocators.allocators[].sharing: { sharing: 10000, mode: "Rate" }
+// 10000 in Rate mode = 100% allocation
+```
+
+### Pattern 6: no_cache After Creation
+
+**From [MyShop Advanced Test Results](../examples/MyShop_Advanced/MyShop_Advanced_MerchantSystem_TestResults.md)**
+
+When querying an object immediately after creating it, always use `no_cache: true`:
+
+```
+// After creating a Permission:
+onchain_operations({ operation_type: "permission", data: { object: { name: "myshop_permission_v2", ... } }, env: { ... } })
+
+// Query it — must bypass cache:
+query_toolkit({ query_type: "onchain_objects", objects: ["myshop_permission_v2"], no_cache: true })
+```
+
+Without `no_cache: true`, the query may return stale data (object not found), causing the AI to incorrectly conclude the creation failed.
+
+### Pattern 7: replaceExistName for Development Iterations
+
+**From all examples — object naming convention**
+
+During development, when iterating on object designs, use `replaceExistName: true` to overwrite previous versions:
+
+```
+data: {
+  object: { name: "myshop_permission_v2", replaceExistName: true, ... }
+}
+```
+
+⚠️ **Safety note**: `replaceExistName: true` destroys the previous object with that name. Only use during development. In production, use versioned names (`_v1`, `_v2`, `_v3`).
+
+### Pattern 8: Machine Creation Order — Nodes First, Then Publish
+
+**From [Insurance](../examples/Insurance/Insurance.md) — Key Discovery**
+
+The Insurance example documents a critical finding: Machine nodes must be added during creation (same transaction) before publishing. Adding nodes in separate transactions after creation may not persist correctly.
+
+✅ **Correct** (single transaction):
+```
+onchain_operations({
+  operation_type: "machine",
+  data: {
+    object: { name: "insurance_machine_v1", permission: "..." },
+    node: { op: "add", nodes: [...] },  // nodes in same call
+    publish: true                        // publish in same call
+  }
+})
+```
+
+❌ **Incorrect** (separate transactions):
+```
+// Step 1: Create machine (no nodes)
+onchain_operations({ operation_type: "machine", data: { object: {...} } })
+// Step 2: Add nodes (may not persist)
+onchain_operations({ operation_type: "machine", data: { object: "...", node: { op: "add", nodes: [...] } } })
+// Step 3: Publish
+onchain_operations({ operation_type: "machine", data: { object: "...", publish: true } })
+```
+
+## Safety Decision Tree for On-Chain Operations
+
+```
+About to execute onchain_operations?
+├─ Is this a READ operation? (query_toolkit, onchain_table_data, etc.)
+│  └─ ✅ SAFE — proceed without confirmation
+│
+├─ Is this a WRITE operation? (onchain_operations with submission)
+│  ├─ Does it involve money? (payment, reward, treasury, allocation)
+│  │  └─ 🔴 HIGH RISK — must show amounts + token type + recipient + get double confirmation
+│  │
+│  ├─ Does it publish something? (service.publish, machine.publish)
+│  │  └─ 🟡 MEDIUM RISK — must show what will be locked + get confirmation
+│  │
+│  ├─ Does it modify guards/permissions? (guard, permission)
+│  │  └─ 🟡 MEDIUM RISK — must explain what access changes + get confirmation
+│  │
+│  └─ Is it a structural change? (service.update, machine.node)
+│     └─ 🟢 LOW-MEDIUM — show what changes + get confirmation
+│
+└─ Is this a DRY RUN? (no submission field)
+   └─ ✅ SAFE — no state change, but still review the preview for errors
+```

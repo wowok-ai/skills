@@ -1,6 +1,6 @@
 {
   "name": "wowok-skills",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "WoWok AI Skills for Claude and other AI assistants - Helping AI use WoWok MCP tools correctly",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,12 +15,18 @@
     "wowok-safety/",
     "wowok-machine/",
     "wowok-order/",
+    "examples/",
+    "schemas/",
+    "scripts/install.js",
     "README.md"
   ],
   "scripts": {
+    "prebuild": "node scripts/copy-assets.js",
     "build": "tsc",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/install.js",
+    "preuninstall": "node scripts/install.js"
   },
   "keywords": [
     "wowok",

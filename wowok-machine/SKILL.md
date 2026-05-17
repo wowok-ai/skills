@@ -216,3 +216,297 @@ onchain_operations({
 | "circular dependency" | Infinite loop in forwards | Ensure at least one terminal node |
 | "threshold not met" | Not enough signers | Check threshold value and signer count |
 | "invalid pairs" | Node data doesn't match pairs schema | Check pairs definition matches submitted data |
+
+## Real-World Machine Workflows (from tested examples)
+
+### MyShop: 4-Node Order Processing
+
+**Source**: [MyShop Example](../examples/MyShop/MyShop.md)
+
+A linear order fulfillment workflow for an e-commerce store:
+
+```
+Order Confirmation → Shipping → In Transit → Completed
+                                         ↘ Order End (Cancel Order)
+```
+
+**Key Design**: The first node (`Order Confirmation`) has two `pairs` entries — one for the initial transition (threshold=0, from empty `prev_node`) and one for cancel. Normal flow goes through Shipping → In Transit → Completed. The customer (order owner) can cancel from Order Confirmation using `namedOperator: ""`.
+
+```
+nodes: [
+  {
+    name: "Order Confirmation",
+    pairs: [
+      { prev_node: "", threshold: 0, forwards: [{ name: "Confirm Order", permissionIndex: 1000, weight: 1 }] },
+      { prev_node: "Order Confirmation", threshold: 0, forwards: [{ name: "Cancel Order", permissionIndex: 1001, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Shipping",
+    pairs: [
+      { prev_node: "Order Confirmation", threshold: 1, forwards: [{ name: "Start Shipping", permissionIndex: 1000, weight: 1 }] }
+    ]
+  },
+  {
+    name: "In Transit",
+    pairs: [
+      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Mark In Transit", permissionIndex: 1000, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Completed",
+    pairs: [
+      { prev_node: "In Transit", threshold: 1, forwards: [{ name: "Complete Order", permissionIndex: 1002, weight: 1 }] }
+    ]
+  }
+]
+```
+
+### MyShop Advanced: 11-Node Multi-Path Workflow
+
+**Source**: [MyShop Advanced Example](../examples/MyShop_Advanced/MyShop_Advanced.md)
+
+An enterprise-grade workflow with dual-signature returns, reward incentives, and time-based auto-completion:
+
+```
+Order Confirmed ──→ Shipping ──→ Delivery Complete ──→ Order Complete
+    │                  │   │            │    │
+    │                  │   │            │    └──→ Non-receipt Return ──→ Return Complete
+    │                  │   │            │
+    │                  │   ├──→ Wonderful
+    │                  │   ├──→ Order Complete (time >= 10d)
+    │                  │   └──→ Lost (dual-sig, threshold=2)
+    │                  │
+    └── Order Cancel ──┘            Receipt Return ──→ Return Fail (time >= 10d)
+                                                        └──→ Return Complete (dual-sig)
+```
+
+**Key Design Decisions**:
+- **Dual-signature returns**: Lost, Non-receipt Return, Receipt Return, and Return Complete all use `threshold: 2` — requiring both customer and merchant to confirm
+- **Time-based auto-completion**: Order Complete and Return Fail use time guards (10 days) for automatic transitions
+- **Wonderful rating**: Customer can rate delivery as "Wonderful" from the Shipping node, triggering reward
+- **"Who completes, who submits"**: The party responsible for an action submits the on-chain proof (e.g., merchant submits Merkle Root for shipping, customer for returns)
+
+```
+nodes: [
+  {
+    name: "Order Confirmed",
+    pairs: [
+      { prev_node: "", threshold: 0, forwards: [{ name: "Confirm Order", permissionIndex: 1010, weight: 1 }] },
+      { prev_node: "Order Confirmed", threshold: 0, forwards: [{ name: "Cancel Order", permissionIndex: 1010, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Order Cancel",
+    pairs: [
+      { prev_node: "Order Confirmed", threshold: 1, forwards: [{ name: "Cancel Order", permissionIndex: 1010, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Shipping",
+    pairs: [
+      { prev_node: "Order Confirmed", threshold: 1, forwards: [{ name: "Ship Order", permissionIndex: 1011, weight: 1, guard: { guard: "machine_merkle_root_v2" } }] }
+    ]
+  },
+  {
+    name: "Delivery Complete",
+    pairs: [
+      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Confirm Delivery", permissionIndex: 1012, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Wonderful",
+    pairs: [
+      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Rate Wonderful", permissionIndex: 1013, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Order Complete",
+    pairs: [
+      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Auto Complete (10d)", permissionIndex: 1011, weight: 1, guard: { guard: "machine_time_10d_v2" } }] },
+      { prev_node: "Delivery Complete", threshold: 1, forwards: [{ name: "Complete Order", permissionIndex: 1011, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Lost",
+    pairs: [
+      { prev_node: "Shipping", threshold: 2, forwards: [{ name: "Report Lost", permissionIndex: 1014, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Non-receipt Return",
+    pairs: [
+      { prev_node: "Delivery Complete", threshold: 2, forwards: [{ name: "Return (No Receipt)", permissionIndex: 1015, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Receipt Return",
+    pairs: [
+      { prev_node: "Delivery Complete", threshold: 2, forwards: [{ name: "Return (With Receipt)", permissionIndex: 1016, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Return Fail",
+    pairs: [
+      { prev_node: "Receipt Return", threshold: 1, forwards: [{ name: "Return Failed (10d)", permissionIndex: 1011, weight: 1, guard: { guard: "machine_time_10d_v2" } }] }
+    ]
+  },
+  {
+    name: "Return Complete",
+    pairs: [
+      { prev_node: "Non-receipt Return", threshold: 2, forwards: [{ name: "Complete Return", permissionIndex: 1017, weight: 1 }] },
+      { prev_node: "Receipt Return", threshold: 2, forwards: [{ name: "Complete Return", permissionIndex: 1017, weight: 1 }] }
+    ]
+  }
+]
+```
+
+### Insurance: 2-Node Time-Lock Workflow
+
+**Source**: [Insurance Example](../examples/Insurance/Insurance.md)
+
+A minimal claim processing workflow with time-lock protection:
+
+```
+Start → Complete (time-lock guard: clock > progress.current_time + 1000ms)
+```
+
+**Key Design**: The Complete forward uses a Guard with `convert_witness: 100` (TypeOrderProgress) to access the Order's Progress object and query `progress.current_time`. This creates a time-lock — the claim cannot be completed until the lock duration passes.
+
+```
+nodes: [
+  {
+    name: "Start",
+    pairs: [
+      { prev_node: "", threshold: 0, forwards: [{ name: "start_claim", permissionIndex: 1000, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Complete",
+    pairs: [
+      { prev_node: "Start", threshold: 1, forwards: [{ name: "complete_claim", permissionIndex: 1001, weight: 1, guard: { guard: "insurance_complete_guard_v1" } }] }
+    ]
+  }
+]
+```
+
+### Travel: 5-Node Weather-Dependent Workflow
+
+**Source**: [Travel Example](../examples/Travel/Travel.md)
+
+A complex travel service workflow with insurance sub-order and weather-dependent activity:
+
+```
+Start → Buy Insurance (creates sub-order) → SPA → Ice Scooting (weather check guard)
+                                                      ├──→ Complete (time-lock)
+                                                      └──→ Cancel
+```
+
+**Key Design**:
+- **Insurance sub-order**: The "Buy Insurance" forward creates a sub-order on the Insurance Service via `forward_to_order_create`
+- **Weather-dependent activity**: The Ice Scooting forward uses a weather check Guard that queries the weather Repository
+- **Time-lock completion**: The Complete forward uses `convert_witness: 100` for time-lock (same as Insurance)
+- **Named forwards**: Each forward uses a descriptive `forward_name` for event tracking
+
+```
+nodes: [
+  {
+    name: "Start",
+    pairs: [
+      { prev_node: "", threshold: 0, forwards: [{ forward_name: "start_travel", permissionIndex: 1000, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Buy Insurance",
+    pairs: [
+      { prev_node: "Start", threshold: 1, forwards: [{ forward_name: "buy_insurance", permissionIndex: 1001, weight: 1, guard: { guard: "travel_buy_insurance_guard_v1" } }] }
+    ]
+  },
+  {
+    name: "SPA",
+    pairs: [
+      { prev_node: "Buy Insurance", threshold: 1, forwards: [{ forward_name: "enjoy_spa", permissionIndex: 1002, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Ice Scooting",
+    pairs: [
+      { prev_node: "SPA", threshold: 1, forwards: [
+        { forward_name: "ice_scooting", permissionIndex: 1003, weight: 1, guard: { guard: "weather_check_guard_v1" } }
+      ]}
+    ]
+  },
+  {
+    name: "Complete",
+    pairs: [
+      { prev_node: "Ice Scooting", threshold: 1, forwards: [{ forward_name: "complete_travel", permissionIndex: 1004, weight: 1, guard: { guard: "travel_complete_guard_v1" } }] }
+    ]
+  }
+]
+```
+
+### ThreeBody Signature: 2-Node Simple Workflow
+
+**Source**: [ThreeBody Signature Example](../examples/ThreeBody_Signature/ThreeBody_Signature.md)
+
+The simplest possible workflow — just delivery and completion:
+
+```
+Book Delivered → Signature Completed
+```
+
+```
+nodes: [
+  {
+    name: "Book Delivered",
+    pairs: [
+      { prev_node: "", threshold: 0, forwards: [{ name: "Confirm Delivery", permissionIndex: 1000, weight: 1 }] }
+    ]
+  },
+  {
+    name: "Signature Completed",
+    pairs: [
+      { prev_node: "Book Delivered", threshold: 1, forwards: [{ name: "Complete Signature", permissionIndex: 1001, weight: 1 }] }
+    ]
+  }
+]
+```
+
+## Machine Workflow Design Checklist
+
+Based on patterns from all tested examples:
+
+```
+Designing a Machine workflow?
+├─ How many nodes?
+│  ├─ 2 nodes → Pattern: Start → Complete (Insurance, ThreeBody)
+│  ├─ 4 nodes → Pattern: Linear pipeline (MyShop)
+│  ├─ 5+ nodes → Pattern: Multi-path with branches (Travel, MyShop Advanced)
+│  └─ 11+ nodes → Pattern: Enterprise with dual-sig + time + rewards
+│
+├─ Need dual-signature (multi-party approval)?
+│  └─ Set threshold: 2 on the node → Both parties must confirm
+│
+├─ Need time-based auto-advancement?
+│  └─ Add a time guard on the forward (e.g., machine_time_10d_v2)
+│
+├─ Need sub-order creation (supply chain)?
+│  └─ Use forward_to_order_create on the forward (Travel → Insurance)
+│
+├─ Need initial entry (prev_node: "")?
+│  └─ threshold: 0 on the first pair means "anyone can enter from start"
+│
+└─ Need guard on forward?
+   └─ guard: { guard: "<guard_name>" } validates the transition
+```
+
+## Machine Node Patterns Quick Reference
+
+| Pattern | Nodes | Threshold | Guard | Use Case |
+|---------|-------|-----------|-------|----------|
+| Auto-start | `prev_node: ""` | 0 | none | Entry point — anyone can start |
+| Single-party | `prev_node: "X"` | 1 | optional | One party advances (merchant or customer) |
+| Dual-signature | `prev_node: "X"` | 2 | optional | Both parties must confirm (returns, lost) |
+| Time-lock | `prev_node: "X"` | 1 | time guard | Auto-complete after duration |
+| Guarded | `prev_node: "X"` | 1 | condition guard | Weather check, Merkle root, etc. |
+| Sub-order | `prev_node: "X"` | 1 | guard + forward_to | Create order on another Service |

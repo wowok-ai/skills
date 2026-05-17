@@ -9,6 +9,8 @@
 **/dist
 **/package-local.json
 /skill-deploy.sh
+/examples
+/schemas
 
 # testing
 /coverage

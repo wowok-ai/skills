@@ -4,32 +4,32 @@ export const wowokSkills: SkillConfig = {
   skills: [
     {
       name: 'wowok-build',
-      description: 'WoWok build skill',
+      description: 'Complex system building — Service, Machine, Guard, Allocation, Reward orchestration',
       version: '1.0.0'
     },
     {
       name: 'wowok-guard',
-      description: 'WoWok guard skill',
+      description: 'Guard design mastery — programmable trust rules and multi-signature authorization',
       version: '1.0.0'
     },
     {
       name: 'wowok-machine',
-      description: 'WoWok machine skill',
+      description: 'Machine workflow design — state machines, progress tracking, multi-step processes',
       version: '1.0.0'
     },
     {
       name: 'wowok-order',
-      description: 'WoWok order skill',
+      description: 'Order lifecycle management — payment, allocation, arbitration, and settlement',
       version: '1.0.0'
     },
     {
       name: 'wowok-safety',
-      description: 'WoWok safety skill',
+      description: 'Safety protocol — dry-run, confirm, execute with user authorization checkpoints',
       version: '1.0.0'
     },
     {
       name: 'wowok-tools',
-      description: 'WoWok tools skill',
+      description: 'MCP tool usage mastery — 13 tools, nested parameters, schema references',
       version: '1.0.0'
     }
   ]

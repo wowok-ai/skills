@@ -299,3 +299,201 @@ query_toolkit({
 | "allocation failed" | Invalid split rules | Check total shares = 100% |
 | "progress blocked" | Guard condition not met | Check forward Guard logic |
 | "arbitration not found" | No Arbiter configured | Create Arbitration object |
+
+## Real-World Order Flows (from tested examples)
+
+### Allocation Patterns
+
+**From [Insurance](../examples/Insurance/Insurance.md) — Single-Recipient Allocation**
+
+The Insurance service uses a single allocator with 100% going to the signer who completes the claim:
+
+```
+order_allocators: {
+  description: "Insurance order revenue allocation",
+  threshold: 0,
+  allocators: [{
+    guard: "insurance_withdraw_guard_v1",
+    sharing: [{ who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }]
+  }]
+}
+```
+
+`sharing: 10000` in `mode: "Rate"` = 100% (basis points: 10000 = 100%).
+
+**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Multi-Recipient Allocation**
+
+Dual-allocation pattern: one allocator for merchant-winning scenarios, one for customer-winning scenarios:
+
+```
+order_allocators: {
+  description: "Order fund allocation",
+  threshold: 0,
+  allocators: [
+    {
+      guard: "service_merchant_win_v2",
+      sharing: [{ who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }]
+    },
+    {
+      guard: "service_customer_win_v2",
+      sharing: [{ who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }]
+    }
+  ]
+}
+```
+
+Each allocator's Guard validates the order's current node — if the node is "Order Complete", "Wonderful", or "Return Fail", the merchant's allocator fires. If "Lost" or "Return Complete", the customer's allocator fires.
+
+### Order Creation Patterns
+
+**From [Insurance](../examples/Insurance/Insurance.md) — Order via Service**
+
+Orders can be created directly through the Service's `order_new` field:
+
+```
+onchain_operations({
+  operation_type: "service",
+  data: {
+    object: "insurance_service_v1",
+    order_new: {
+      buy: {
+        items: [{ name: "Outdoor Accident Insurance", stock: 1, wip_hash: "" }],
+        total_pay: { balance: 100000000 }
+      },
+      namedNewOrder: { name: "test_insurance_order_v1", replaceExistName: true }
+    }
+  }
+})
+```
+
+**From [Travel](../examples/Travel/Travel.md) — Order via Service with Discount**
+
+Orders can include discounts for time-limited promotions:
+
+```
+order_new: {
+  buy: {
+    items: [{ name: "Iceland Adventure", stock: 1 }],
+    total_pay: { balance: 200000000 }
+  },
+  namedNewOrder: { name: "alice_travel_order_v1" }
+}
+```
+
+### Reward Patterns
+
+**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Multi-Condition Rewards**
+
+Rewards can be added AFTER Service publish. Each reward uses a Guard to verify claim conditions:
+
+```
+onchain_operations({
+  operation_type: "reward",
+  data: {
+    object: { name: "myshop_reward_v2", permission: "myshop_permission_v2", replaceExistName: true },
+    description: "Reward pool for MyShop Advanced",
+    coin_add: { balance: 100000000 },
+    guard_add: [
+      {
+        guard: "reward_wonderful_v2",
+        recipient: { Signer: "signer" },
+        amount: { type: "Fixed", value: 10000 },
+        expiration_time: null
+      },
+      {
+        guard: "reward_lost_v2",
+        recipient: { Signer: "signer" },
+        amount: { type: "Fixed", value: 20000 },
+        expiration_time: null
+      },
+      {
+        guard: "reward_shipping_timeout_v2",
+        recipient: { Signer: "signer" },
+        amount: { type: "Fixed", value: 30000 },
+        expiration_time: null
+      }
+    ]
+  }
+})
+```
+
+Each guard checks the order's current node:
+- `reward_wonderful_v2`: order at "Wonderful" node → 10000 reward
+- `reward_lost_v2`: order at "Lost" node → 20000 compensation
+- `reward_shipping_timeout_v2`: order at "Shipping" node > 2 days → 30000 compensation
+
+### Progress Advancement Patterns
+
+**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Progress with Submitted Data**
+
+When advancing through a node that requires Guard validation with submitted data:
+
+```
+onchain_operations({
+  operation_type: "progress",
+  data: {
+    object: "<progress_id>",
+    order: "<order_name>",
+    node: { name: "Shipping", forward: 0 },
+    pairs: [{ name: "prev_node", value: "Order Confirmed" }]
+  }
+})
+```
+
+For the Shipping node (which requires a Merkle root Guard), the Guard's `table` expects a submitted Merkle root string. The `pairs` field carries the runtime data the Guard validates.
+
+### Arbitration Patterns
+
+**From [Travel](../examples/Travel/Travel.md) — Pre-Service Arbitration**
+
+Arbitration can be created before the Service and bound during Service creation/update:
+
+```
+// Create Arbitration independently:
+onchain_operations({
+  operation_type: "arbitration",
+  data: {
+    object: { name: "travel_arbitration_v1", permission: "travel_permission_v1" },
+    description: "Arbitration for Iceland travel service disputes"
+  }
+})
+
+// Bind during Service update:
+onchain_operations({
+  operation_type: "service",
+  data: {
+    object: "travel_service_v1",
+    arbitrations: { op: "add", objects: ["travel_arbitration_v1"] }
+  }
+})
+```
+
+### Sub-Order (Supply Chain) Patterns
+
+**From [Travel](../examples/Travel/Travel.md) — Insurance Sub-Order**
+
+The Travel workflow creates a sub-order on the Insurance Service as part of its Machine progression. The "Buy Insurance" node's forward includes `forward_to_order_create` which automatically creates an order on the insurance service when the travel order reaches that node.
+
+The Insurance Service must already be deployed and published before the Travel Service creates sub-orders on it. See [wowok-build](../wowok-build/SKILL.md) Pattern C: Repository-Linked for the build order.
+
+### Order Lifecycle Summary (from tested examples)
+
+```
+1. SERVICE SETUP (one-time)
+   Permission → Guard(s) → Machine → Service (with allocation) → Publish
+
+2. ORDER CREATION (per transaction)
+   onchain_operations(operation_type: "service", data: { object, order_new: { buy: { items, total_pay } } })
+
+3. PROGRESS ADVANCEMENT (multi-step)
+   onchain_operations(operation_type: "progress", data: { object, order, node: { name, forward } })
+
+4. FUND DISTRIBUTION (automatic on completion)
+   Allocation fires → Payment split per allocator Guards
+
+5. REWARD CLAIMS (on trigger nodes)
+   Reward Guard validates → tokens distributed to claimant
+
+6. DISPUTE RESOLUTION (if needed)
+   Arbitration → arb_confirm/arb_objection → resolution
+```
