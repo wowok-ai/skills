@@ -1,4 +1,4 @@
-﻿---
+---
 name: wowok-guard
 description: |
   WoWok Guard design mastery — comprehensive reference for the recursive,
@@ -285,7 +285,7 @@ guard2file({ guard: "my_guard", file_path: "./my_guard.json", format: "json" })
 ```
 
 ### Step 7: Use Guard in Operations
-The Guard is now ready to be referenced by other operations (service, machine, progress, etc.) via their `submission` field. See [Guard Submission Mechanism](../schemas/onchain_operations/_common.md) for how Guards participate in the two-step submission flow.
+The Guard is now ready to be referenced by other operations (service, machine, progress, etc.) via their `submission` field. See [Guard Submission Mechanism](../schemas/onchain_operations/_index.md) for how Guards participate in the two-step submission flow.
 
 ---
 

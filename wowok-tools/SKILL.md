@@ -1,4 +1,4 @@
-﻿---
+---
 name: wowok-tools
 description: |
   Definitive WoWok MCP tool usage reference — the authoritative fallback when
@@ -619,7 +619,7 @@ When MCP tool schemas are unavailable or ambiguous, consult the complete schema 
 
 | Tool | Schema File | Contents |
 |------|-----------|----------|
-| `onchain_operations` | [schemas/onchain_operations/](../schemas/onchain_operations/) | 16 types split by operation_type. [_index.md](../schemas/onchain_operations/_index.md) for lookup, [_common.md](../schemas/onchain_operations/_common.md) for shared CallEnv/SubmissionCall/ValueTypes |
+| `onchain_operations` | [schemas/onchain_operations/](../schemas/onchain_operations/) | 16 types split by operation_type. [_index.md](../schemas/onchain_operations/_index.md) for lookup, Value Types, and principles; [_common.md](../schemas/onchain_operations/_common.md) for shared schemas (CallEnv, SubmissionCall, Recipient, etc.) |
 | `query_toolkit` | [schemas/schema-query_toolkit.md](../schemas/schema-query_toolkit.md) | 8 query_types, pagination params, filter structures |
 | `onchain_table_data` | [schemas/schema-onchain_table_data.md](../schemas/schema-onchain_table_data.md) | 12 query_types, parent/key structures, result schemas |
 | `onchain_events` | [schemas/schema-onchain_events.md](../schemas/schema-onchain_events.md) | Event query types, pagination |

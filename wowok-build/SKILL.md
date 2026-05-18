@@ -1,4 +1,4 @@
-﻿---
+---
 name: wowok-build
 description: |
   WoWok commercial service building — the canonical skill for constructing
@@ -18,7 +18,7 @@ when_to_use:
 
 Build production-ready service marketplaces on WoWok with proper dependency management.
 
-> **Prerequisites**: Understand CREATE vs MODIFY pattern in [_common.md](../docs/skills/onchain_operations/_common.md)  
+> **Prerequisites**: Understand CREATE vs MODIFY pattern in [_index.md](../docs/skills/onchain_operations/_index.md)  
 > **Auxiliary Objects**: Demand, Treasury, Repository, Contact — see [wowok-tools](../wowok-tools/SKILL.md)  
 > **Guard Design**: See [wowok-guard](../wowok-guard/SKILL.md) | **Order Lifecycle**: See [wowok-order](../wowok-order/SKILL.md)
 
@@ -81,7 +81,7 @@ wowok_buildin_info({ info_type: "guard_instructions" })
 
 ### CREATE vs MODIFY
 
-See [_common.md](../docs/skills/onchain_operations/_common.md) for the unified pattern:
+See [_index.md](../docs/skills/onchain_operations/_index.md) for the unified pattern:
 - **Object shape** (`{ name?, ... }`) = CREATE
 - **String value** (`"<name>"`) = MODIFY
 
