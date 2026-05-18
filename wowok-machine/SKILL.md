@@ -510,3 +510,17 @@ Designing a Machine workflow?
 | Time-lock | `prev_node: "X"` | 1 | time guard | Auto-complete after duration |
 | Guarded | `prev_node: "X"` | 1 | condition guard | Weather check, Merkle root, etc. |
 | Sub-order | `prev_node: "X"` | 1 | guard + forward_to | Create order on another Service |
+
+---
+
+## Privacy & Consensus via Messenger
+
+Sensitive logistics and customer data flow through Messenger's end-to-end encryption (never on-chain). Guard consensus follows: **who performs the key action, submits the proof; the other party confirms**.
+
+| Scenario | Action | Proof Submission |
+|----------|--------|------------------|
+| Merchant ships | Receives address via Messenger, replies tracking number | Merchant submits Merkle Root to Guard |
+| Customer returns | Sends return tracking via Messenger | Customer submits Merkle Root to Guard |
+| Mutual confirmation | Both parties sign | Both submit confirmation proofs |
+
+This pattern is used in Machine workflows where off-chain actions (shipping, delivery) need on-chain verification via Guard proofs.

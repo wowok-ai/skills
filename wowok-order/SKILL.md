@@ -18,6 +18,30 @@ when_to_use:
 
 # WoWok Order Lifecycle Management
 
+## Runtime Objects Overview
+
+After a Service is published (see [wowok-build](../wowok-build/SKILL.md)), users interact with it creating runtime objects:
+
+| Object | Created By | Purpose |
+|--------|-----------|---------|
+| **Order** | User purchase | Order management and escrow |
+| **Progress** | Order creation | Workflow state tracking |
+| **Allocation** | Order completion | Fund distribution per consensus |
+| **Arb(s)** | Dispute request | Arbitration for compensation |
+
+```
+User Purchase
+     ↓
+Service ──→ Order ──→ Progress ──→ Allocation
+              ↓           ↓
+         Payment    Node Transitions
+         (escrow)   (Guard validated)
+                        ↓
+                   Completion
+                        ↓
+              Fund Distribution
+```
+
 ## Order Lifecycle Overview
 
 ```
