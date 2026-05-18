@@ -15,7 +15,7 @@ WoWok Skills provide structured guidance for AI assistants to effectively use Wo
 Each skill is a `SKILL.md` file with YAML frontmatter. Claude Code discovers them from `~/.claude/skills/` at session start:
 
 ```
-npm install -g wowok-skills
+npm install -g @wowok/skills
        │
        └── postinstall ──→ Copies 6 SKILL.md to ~/.claude/skills/wowok-*/
                             AI discovers them on next session ✅
@@ -39,7 +39,7 @@ Setup WoWok Agent (MCP Server) in your Claude Code MCP configuration:
   "mcpServers": {
     "wowok": {
       "command": "npx",
-      "args": ["-y", "wowok_agent"]
+      "args": ["-y", "@wowok/agent-mcp"]
     }
   }
 }
@@ -50,7 +50,7 @@ See [WoWok Agent](https://github.com/wowok-ai/agent) for more details.
 ### 2. Install (Personal)
 
 ```bash
-npm install -g wowok-skills
+npm install -g @wowok/skills
 ```
 
 This automatically installs all 6 skills to `~/.claude/skills/`. They will be available in your next Claude Code session.
@@ -58,7 +58,7 @@ This automatically installs all 6 skills to `~/.claude/skills/`. They will be av
 ### 3. Install (Project — Team Sharing)
 
 ```bash
-npm install -g wowok-skills
+npm install -g @wowok/skills
 cd your-project
 wowok-skills init
 ```
@@ -74,7 +74,7 @@ This copies skills to `.claude/skills/` in your project. Commit to git for team 
 rm -rf ~/.claude/skills/wowok-guard
 
 # Re-enable it:
-npm install -g wowok-skills
+npm install -g @wowok/skills
 ```
 
 ### Check What's Installed
@@ -87,14 +87,14 @@ wowok-skills get wowok-build
 ### Update
 
 ```bash
-npm update -g wowok-skills
+npm update -g @wowok/skills
 ```
 
 ### Uninstall
 
 ```bash
 # Remove from personal scope:
-npm uninstall -g wowok-skills
+npm uninstall -g @wowok/skills
 
 # Remove from project scope:
 cd your-project
@@ -110,12 +110,12 @@ wowok-skills uninit
 | `wowok-skills init` | Project | Install skills to `.claude/skills/` |
 | `wowok-skills uninit` | Project | Remove skills from `.claude/skills/` |
 
-> **Note**: `init` / `uninit` require `wowok-skills` to be globally installed first.
+> **Note**: `init` / `uninit` require `@wowok/skills` to be globally installed first.
 
 ## Programmatic API
 
 ```typescript
-import { getSkills, getSkillByName } from 'wowok-skills';
+import { getSkills, getSkillByName } from '@wowok/skills';
 
 const skills = getSkills();
 const buildSkill = getSkillByName('wowok-build');
@@ -134,7 +134,7 @@ const buildSkill = getSkillByName('wowok-build');
 
 ## Related Projects
 
-- **WoWok Agent (MCP Server)**: [https://github.com/wowok-ai/agent](https://github.com/wowok-ai/agent) — npm: `wowok_agent`
+- **WoWok Agent (MCP Server)**: [https://github.com/wowok-ai/agent](https://github.com/wowok-ai/agent) — npm: `@wowok/agent-mcp`
 - **WoWok Documentation**: [https://github.com/wowok-ai/docs](https://github.com/wowok-ai/docs)
 
 ## Development
@@ -152,5 +152,5 @@ Apache-2.0
 ## Links
 
 - GitHub: [https://github.com/wowok-ai/skills](https://github.com/wowok-ai/skills)
-- npm: [https://www.npmjs.com/package/wowok-skills](https://www.npmjs.com/package/wowok-skills)
+- npm: [https://www.npmjs.com/package/@wowok/skills](https://www.npmjs.com/package/@wowok/skills)
 - X: [https://x.com/Wowok_Ai](https://x.com/Wowok_Ai)
