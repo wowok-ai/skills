@@ -385,10 +385,15 @@ data: {
 ```typescript
 // operation_type: "gen_passport"
 data: {
-  guard: string;  // Guard object ID to verify
+  guard: string | string[];  // Guard object ID(s) to verify. Can be a single guard or an array of guards.
   info?: SubmissionCall;
 }
 ```
+
+**Features:**
+- **Single Guard**: Pass a single guard ID or name as a string
+- **Multiple Guards**: Pass an array of guard IDs or names to verify multiple guards at once
+- **Name Resolution**: Supports both guard addresses and LocalMark names
 
 ### Common Sub-Types
 
