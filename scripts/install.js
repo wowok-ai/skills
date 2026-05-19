@@ -11,12 +11,13 @@ const path = require('path');
 const os = require('os');
 
 const SKILL_DIRS = [
-  'wowok-build',
+  'wowok-provider',
+  'wowok-arbitrator',
+  'wowok-order',
   'wowok-guard',
+  'wowok-machine',
   'wowok-tools',
   'wowok-safety',
-  'wowok-machine',
-  'wowok-order',
 ];
 
 const CLAUDE_SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills');

@@ -157,7 +157,7 @@ onchain_table_data({
 Sketch the workflow graph before coding. Identify all nodes, transitions, and conditions.
 
 ### Step 2: Create Guards for Transitions
-Each conditional forward needs a Guard. Create these Guards first (see `wowok-guard` skill).
+Each conditional forward needs a Guard. Create these Guards first (see [wowok-guard](../wowok-guard/SKILL.md) skill).
 
 ### Step 3: Create the Machine (Dry Run)
 ```
@@ -547,8 +547,82 @@ The optional `guard` field in a Forward validates critical operation results bef
 - **Repository submission validation**: Verify that required data was successfully submitted to a specified Repository object
 - **Supply chain commitment validation**: Confirm that sub-order commitments in the supply chain were fulfilled
 - **External condition checks**: Validate any external state or conditions that must be met before proceeding
+- **Service penalty validation**: Verify compensation payments for service failures (e.g., late delivery penalties)
 
 When a forward has a Guard, the Guard's logic is evaluated when a user attempts to execute that forward. If the Guard returns `false`, the forward cannot be completed.
+
+---
+
+## Service Penalty & Compensation Pattern
+
+Design Machines to handle **service failures gracefully** through automated compensation workflows. This pattern validates penalty payments before allowing workflow continuation.
+
+### Use Case: Late Delivery Compensation
+
+**Scenario**: Courier service fails to deliver within promised timeframe. Machine requires courier to pay penalty to customer before order can proceed.
+
+```
+Delivery Node ──→ Late Delivery Detected (Guard: time > deadline)
+                      │
+                      ├──→ Penalty Payment Required ──→ Payment Verified (Guard)
+                      │                                    │
+                      └──→ Continue to Next Node ←─────────┘
+```
+
+**Machine Design**:
+```javascript
+{
+  name: "Delivery",
+  pairs: [{
+    prev_node: "Shipping",
+    threshold: 1,
+    forwards: [
+      // Normal delivery path
+      { name: "On Time Delivery", permissionIndex: 1001, weight: 1 },
+      // Late delivery with penalty
+      { 
+        name: "Late Delivery", 
+        permissionIndex: 1001, 
+        weight: 1,
+        guard: { guard: "delivery_time_check" }  // Checks if past deadline
+      }
+    ]
+  }]
+}
+```
+
+**Guard Logic** (`delivery_penalty_guard`):
+- Query Progress: Get `progress.current_time` vs `expected_delivery_time`
+- If late: Verify Payment object showing penalty amount transferred to Order
+- Validate: Payment amount ≥ configured penalty rate
+- Validate: Payment completed within grace period
+
+**Benefits**:
+- **Automatic enforcement**: Late delivery cannot proceed without compensation
+- **Verified compensation**: Guard cryptographically verifies payment occurred
+- **Customer protection**: Guaranteed penalty for service failures
+- **Service accountability**: Forces service providers to meet commitments
+
+### Cross-Service Collaboration Penalties
+
+**Pattern**: When multiple services collaborate (e.g., Travel + Insurance + Courier), any party's failure can trigger penalties paid to the affected customer's Order.
+
+```
+Travel Order ──→ Courier Sub-order ──→ Late Delivery
+                                              │
+                                              ├──→ Courier pays penalty to Travel Order
+                                              │
+                                              └──→ Travel Order receives compensation
+                                                   (Order.receive to claim funds)
+```
+
+**Implementation**:
+1. Courier Service Machine has `late_delivery` node with penalty Guard
+2. Guard verifies Payment from Courier Service to Travel Order
+3. Travel Order's `receive` operation extracts penalty to customer
+4. Workflow continues only after penalty verified
+
+**Schema**: `schema_query({ action: "get", name: "onchain_operations_payment" })` — for penalty payment validation
 
 ---
 

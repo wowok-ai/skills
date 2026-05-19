@@ -2,16 +2,40 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getSkills, getSkillByName } from './skills';
+import { getSkills, getSkillByName, getRoleSkills, recommendSkills, getSkillsByRole } from './skills';
+import { SkillRole } from './types';
 
+/**
+ * Skill directory names (must match folder names in package)
+ * Ordered by role for clarity:
+ * - Customer: wowok-order
+ * - Provider: wowok-provider, wowok-machine
+ * - Arbitrator: wowok-arbitrator
+ * - Shared: wowok-guard, wowok-tools, wowok-safety
+ */
 const SKILL_DIRS = [
-  'wowok-build',
+  // Customer
+  'wowok-order',
+  // Provider
+  'wowok-provider',
+  'wowok-machine',
+  // Arbitrator
+  'wowok-arbitrator',
+  // Shared
   'wowok-guard',
   'wowok-tools',
   'wowok-safety',
-  'wowok-machine',
-  'wowok-order',
 ];
+
+/**
+ * Role display names for CLI output
+ */
+const ROLE_DISPLAY: Record<SkillRole, string> = {
+  customer: '👤 Customer',
+  provider: '🏪 Provider',
+  arbitrator: '⚖️  Arbitrator',
+  shared: '🛠️  Shared'
+};
 
 function getPackageRoot(): string {
   return path.resolve(__dirname, '..');
@@ -96,15 +120,92 @@ function cmdUninit(): void {
   }
 }
 
+function cmdList(): void {
+  console.log('Available WoWok Skills (organized by role):\n');
+  
+  const roleSkills = getRoleSkills();
+  for (const roleGroup of roleSkills) {
+    console.log(`${ROLE_DISPLAY[roleGroup.role]}`);
+    console.log(`  ${roleGroup.description}`);
+    for (const skill of roleGroup.skills) {
+      const loading = skill.loading === 'always' ? '[always]' : '[on-demand]';
+      console.log(`    • ${skill.name} ${loading}`);
+      console.log(`      ${skill.description}`);
+    }
+    console.log('');
+  }
+}
+
+function cmdGet(name: string): void {
+  const skill = getSkillByName(name);
+  if (skill) {
+    console.log(`Name: ${skill.name}`);
+    console.log(`Role: ${ROLE_DISPLAY[skill.role]}`);
+    console.log(`Loading: ${skill.loading}`);
+    console.log(`Version: ${skill.version}`);
+    console.log(`Description: ${skill.description}`);
+    if (skill.related && skill.related.length > 0) {
+      console.log(`Related: ${skill.related.join(', ')}`);
+    }
+  } else {
+    console.error(`Skill not found: ${name}`);
+    process.exit(1);
+  }
+}
+
+function cmdRecommend(intent: string): void {
+  const recommended = recommendSkills(intent);
+  console.log(`Recommended skills for: "${intent}"\n`);
+  
+  // Group by role
+  const byRole: Record<string, typeof recommended> = {};
+  for (const skill of recommended) {
+    if (!byRole[skill.role]) byRole[skill.role] = [];
+    byRole[skill.role].push(skill);
+  }
+  
+  for (const [role, skills] of Object.entries(byRole)) {
+    console.log(`${ROLE_DISPLAY[role as SkillRole]}:`);
+    for (const skill of skills) {
+      console.log(`  • ${skill.name}`);
+    }
+    console.log('');
+  }
+}
+
+function cmdRole(role: string): void {
+  if (!['customer', 'provider', 'arbitrator', 'shared'].includes(role)) {
+    console.error(`Invalid role: ${role}`);
+    console.error('Valid roles: customer, provider, arbitrator, shared');
+    process.exit(1);
+  }
+  
+  const skills = getSkillsByRole(role as SkillRole);
+  console.log(`${ROLE_DISPLAY[role as SkillRole]} Skills:\n`);
+  for (const skill of skills) {
+    const loading = skill.loading === 'always' ? '[always]' : '[on-demand]';
+    console.log(`  • ${skill.name} ${loading}`);
+    console.log(`    ${skill.description}`);
+  }
+}
+
 function printUsage(): void {
   console.log('WoWok Skills CLI');
-  console.log('Usage: wowok-skills <command>');
+  console.log('Usage: wowok-skills <command> [args]');
   console.log('');
   console.log('Commands:');
-  console.log('  list              List all available skills');
-  console.log('  get <name>        Show skill details');
-  console.log('  init              Install skills to current project (.claude/skills/)');
-  console.log('  uninit            Remove skills from current project');
+  console.log('  list                    List all available skills (by role)');
+  console.log('  get <name>              Show skill details');
+  console.log('  role <role>             List skills for a role (customer|provider|arbitrator|shared)');
+  console.log('  recommend <intent>      Recommend skills based on user intent');
+  console.log('  init                    Install skills to current project (.claude/skills/)');
+  console.log('  uninit                  Remove skills from current project');
+  console.log('');
+  console.log('Examples:');
+  console.log('  wowok-skills list');
+  console.log('  wowok-skills get wowok-provider');
+  console.log('  wowok-skills role provider');
+  console.log('  wowok-skills recommend "create a service"');
 }
 
 function main() {
@@ -119,10 +220,7 @@ function main() {
 
   switch (command) {
     case 'list':
-      console.log('Available WoWok Skills:');
-      getSkills().forEach(skill => {
-        console.log(`  - ${skill.name}: ${skill.description}`);
-      });
+      cmdList();
       break;
 
     case 'get':
@@ -130,15 +228,23 @@ function main() {
         console.error('Error: Skill name required');
         process.exit(1);
       }
-      const skill = getSkillByName(args[1]);
-      if (skill) {
-        console.log(`Name: ${skill.name}`);
-        console.log(`Description: ${skill.description}`);
-        console.log(`Version: ${skill.version}`);
-      } else {
-        console.error(`Skill not found: ${args[1]}`);
+      cmdGet(args[1]);
+      break;
+
+    case 'role':
+      if (args.length < 2) {
+        console.error('Error: Role required (customer|provider|arbitrator|shared)');
         process.exit(1);
       }
+      cmdRole(args[1]);
+      break;
+
+    case 'recommend':
+      if (args.length < 2) {
+        console.error('Error: Intent description required');
+        process.exit(1);
+      }
+      cmdRecommend(args.slice(1).join(' '));
       break;
 
     case 'init':

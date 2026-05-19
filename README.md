@@ -17,7 +17,7 @@ Each skill is a `SKILL.md` file with YAML frontmatter. Claude Code discovers the
 ```
 npm install -g @wowok/skills
        │
-       └── postinstall ──→ Copies 6 SKILL.md to ~/.claude/skills/wowok-*/
+       └── postinstall ──→ Copies 7 SKILL.md to ~/.claude/skills/wowok-*/
                             AI discovers them on next session ✅
 ```
 
@@ -26,7 +26,7 @@ npm install -g @wowok/skills
 | Mode | Skills | Behavior |
 |------|--------|----------|
 | **Always** | `wowok-tools`, `wowok-safety` | Metadata always in prompt (~100 tokens each). AI auto-loads full content when needed. |
-| **On-demand** | `wowok-build`, `wowok-guard`, `wowok-machine`, `wowok-order` | AI matches description to task. Only loaded when relevant. |
+| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-guard`, `wowok-machine`, `wowok-order` | AI matches description to task. Only loaded when relevant. |
 
 ## Quick Start
 
@@ -53,7 +53,7 @@ See [WoWok Agent](https://github.com/wowok-ai/agent) for more details.
 npm install -g @wowok/skills
 ```
 
-This automatically installs all 6 skills to `~/.claude/skills/`. They will be available in your next Claude Code session.
+This automatically installs all 7 skills to `~/.claude/skills/`. They will be available in your next Claude Code session.
 
 ### 3. Install (Project — Team Sharing)
 
@@ -81,7 +81,7 @@ npm install -g @wowok/skills
 
 ```bash
 wowok-skills list
-wowok-skills get wowok-build
+wowok-skills get wowok-provider
 ```
 
 ### Update
@@ -118,19 +118,20 @@ wowok-skills uninit
 import { getSkills, getSkillByName } from '@wowok/skills';
 
 const skills = getSkills();
-const buildSkill = getSkillByName('wowok-build');
+const providerSkill = getSkillByName('wowok-provider');
 ```
 
 ## Available Skills
 
-| Skill | Purpose | Loading |
-|-------|---------|---------|
-| `wowok-build` | Complex system building (Service + Machine + Guard + Allocation + Reward) | On-demand |
-| `wowok-guard` | Guard design mastery (programmable trust rules) | On-demand |
-| `wowok-tools` | MCP tool usage mastery (13 tools, schema references) | Always |
-| `wowok-safety` | Safety protocol (dry-run → confirm → execute) | Always |
-| `wowok-machine` | Machine workflow design (state machines, progress tracking) | On-demand |
-| `wowok-order` | Order lifecycle management (payment, allocation, arbitration) | On-demand |
+| Skill | Purpose | Role | Loading |
+|-------|---------|------|---------|
+| `wowok-provider` | Service provider guide (create Service, Machine, Allocators, handle orders) | Service Provider (Merchant) | On-demand |
+| `wowok-arbitrator` | Arbitration service guide (create Arbitration, handle disputes, voting) | Arbitrator | On-demand |
+| `wowok-order` | Order lifecycle management (place orders, track progress, arbitration) | Customer | On-demand |
+| `wowok-guard` | Guard design mastery (programmable trust rules) | All Roles | On-demand |
+| `wowok-machine` | Machine workflow design (state machines, progress tracking) | Service Provider | On-demand |
+| `wowok-tools` | MCP tool usage mastery (13 tools, schema references) | All Roles | Always |
+| `wowok-safety` | Safety protocol (dry-run → confirm → execute) | All Roles | Always |
 
 ## Related Projects
 
@@ -147,10 +148,4 @@ npm run watch
 
 ## License
 
-Apache-2.0
-
-## Links
-
-- GitHub: [https://github.com/wowok-ai/skills](https://github.com/wowok-ai/skills)
-- npm: [https://www.npmjs.com/package/@wowok/skills](https://www.npmjs.com/package/@wowok/skills)
-- X: [https://x.com/Wowok_Ai](https://x.com/Wowok_Ai)
+MIT

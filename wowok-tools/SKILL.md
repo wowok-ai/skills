@@ -315,7 +315,7 @@ data: {
 }
 ```
 
-GuardNode types (70+ variants, see wowok-guard skill for complete reference):
+GuardNode types (70+ variants, see [wowok-guard](../wowok-guard/SKILL.md) skill for complete reference):
 - Logic: `logic_and`, `logic_or`, `logic_not`, `logic_equal`, `logic_string_contains`, `logic_string_nocase_contains`, `logic_string_nocase_equal`, `logic_as_u256_equal`, `logic_as_u256_greater`, `logic_as_u256_lesser`, `logic_as_u256_greater_or_equal`, `logic_as_u256_lesser_or_equal`
 - Arithmetic: `calc_number_add`, `calc_number_subtract`, `calc_number_multiply`, `calc_number_divide`, `calc_number_mod`, `calc_string_length`, `calc_string_contains`, `calc_string_nocase_contains`, `calc_string_nocase_equal`, `calc_string_indexof`, `calc_string_nocase_indexof`
 - Conversion: `convert_number_address`, `convert_address_number`, `convert_number_string`, `convert_string_number`, `convert_safe_u8`..`convert_safe_u256`

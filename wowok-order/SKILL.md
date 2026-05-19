@@ -20,7 +20,7 @@ when_to_use:
 
 ## Runtime Objects Overview
 
-After a Service is published (see [wowok-build](../wowok-build/SKILL.md)), users interact with it creating runtime objects:
+After a Service is published (see [wowok-provider](../wowok-provider/SKILL.md)), users interact with it creating runtime objects:
 
 | Object | Created By | Purpose |
 |--------|-----------|---------|
@@ -225,329 +225,10 @@ Once consensus is established, create the Order through the **Service** operatio
 - `namedNewAllocation`: Name the Allocation object
 - `namedNewProgress`: Name the Progress object
 
-**Order Holder (`builder`) Powers**:
-The `builder` (purchaser who creates the order) holds **all authority**:
-- Participate in Progress workflow transitions
-- Apply for arbitration and receive compensation
-- Claim rewards and incentives
-- Withdraw funds from the order
-- Transfer order ownership
-
-> **Note**: Agents assist in operations but cannot override the `builder`'s financial rights. This ensures the purchaser maintains ultimate control over funds.
-
-**Key Principle**: The order Machine will guide the subsequent workflow. Funds are released based on Progress transitions, with Allocators determining final distribution at completion nodes.
-
 **Service-Required Private Information (`customer_required`)**:
 - If Service specifies `customer_required` fields (e.g., phone, email, delivery address), these are **mandatory**
 - **Security**: Send this private information **via Messenger** (end-to-end encrypted) directly to Service customer service 
 - Messenger ensures **point-to-point secure communication** between buyer and seller — **no information is published on-chain**
-
-### Schema Reference for Order Operations
-
-```
-// Get Service operation schema (includes order_new field)
-schema_query({ action: "get", name: "onchain_operations_service" })
-
-// Get messenger operation schema
-schema_query({ action: "get", name: "messenger_operation" })
-
-// Get query toolkit schema
-schema_query({ action: "get", name: "query_toolkit" })
-```
-
-## Payment Flow
-
-### Direct Payment
-```
-onchain_operations({
-  operation_type: "payment",
-  data: {
-    op: "send",
-    from: "<sender_account>",
-    to: "<recipient_address>",
-    amount: "<amount>",
-    token_type: "<token_type>"
-  }
-})
-```
-
-### Payment via Order
-Orders can hold funds in escrow. Payment is released when order progresses through the Machine workflow.
-
-## Order Splitting (Allocation)
-
-**Allocators** define **conditional fund distribution strategies** at the Service level. When an Order is created, an **Allocation** object is generated as the execution engine — it evaluates all allocator Guards at exit nodes and executes the winning strategy.
-
-### Core Concept: Service-Level Allocators vs Order-Level Allocation
-
-```
-SERVICE SETUP (one-time)
-├── order_allocators: [
-│   ├── { guard: "merchant_win", sharing: [...] }  ← Strategy 1
-│   ├── { guard: "customer_win", sharing: [...] }  ← Strategy 2
-│   └── { guard: "return_accept", sharing: [...] } ← Strategy 3
-│   ]
-│
-ORDER CREATION (per transaction)
-├── Creates: Order + Progress + ALLOCATION (execution engine)
-│
-ORDER EXECUTION
-├── Progress advances through Machine nodes
-├── At exit node: All allocator Guards evaluate
-├── Allocation executes the ONE strategy whose Guard returns TRUE
-└── Funds distributed per that strategy's rules
-```
-
-### Create Multi-Strategy Allocators
-
-Define **multiple allocators** at Service level — one for each exit scenario:
-
-```
-onchain_operations({
-  operation_type: "service",
-  data: {
-    object: "<service_name>",
-    order_allocators: {
-      description: "Order fund distribution strategies",
-      threshold: 0,
-      allocators: [
-        // Strategy 1: Order completes successfully
-        {
-          guard: "merchant_win_guard",
-          sharing: [
-            { who: { Signer: "signer" }, sharing: 9500, mode: "Rate" },  // 95% to seller
-            { who: { Address: "<platform>" }, sharing: 500, mode: "Rate" }  // 5% platform fee
-          ]
-        },
-        // Strategy 2: Order cancelled/refunded
-        {
-          guard: "customer_win_guard",
-          sharing: [
-            { who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }  // 100% refund to buyer
-          ]
-        },
-        // Strategy 3: Return accepted
-        {
-          guard: "return_accept_guard",
-          sharing: [
-            { who: { Signer: "signer" }, sharing: 9000, mode: "Rate" },  // 90% refund
-            { who: { Address: "<platform>" }, sharing: 1000, mode: "Rate" }  // 10% restocking fee
-          ]
-        }
-      ]
-    }
-  }
-})
-```
-
-### How Allocators + Allocation Work Together
-
-| Step | Level | Action |
-|------|-------|--------|
-| 1 | **Service** | Define `order_allocators` array with multiple strategies (each with Guard + sharing rules) |
-| 2 | **Order** | When order created, **Allocation** object auto-generated as execution engine |
-| 3 | **Progress** | Order advances through Machine workflow nodes |
-| 4 | **Exit Node** | **Allocation** evaluates all allocator Guards against current state |
-| 5 | **Execution** | **Allocation** executes the ONE allocator whose Guard returns `true` |
-| 6 | **Distribution** | Funds split according to winning allocator's `sharing` rules |
-
-**Key Point:** Allocators are the **recipes** (defined once at Service level). Allocation is the **cook** (created per Order, executes the right recipe).
-
-### Allocation Modes
-
-| Mode | Description | Example |
-|------|-------------|---------|
-| `Rate` | Percentage-based (basis points: 10000 = 100%) | `sharing: 500` = 5% |
-| `Fixed` | Fixed token amount | `sharing: 1000000` = 1 token (6 decimals) |
-
-### Common Multi-Strategy Patterns
-
-**Pattern 1: E-Commerce (Complete vs Cancel vs Return)**
-```
-allocators: [
-  { guard: "order_complete", sharing: [{ seller: 95% }, { platform: 5% }] },
-  { guard: "order_cancelled", sharing: [{ buyer: 100% }] },
-  { guard: "return_accepted", sharing: [{ buyer: 90% }, { platform: 10% }] }
-]
-```
-
-**Pattern 2: Service Marketplace (Success vs Fail)**
-```
-allocators: [
-  { guard: "service_delivered", sharing: [{ provider: 100% }] },
-  { guard: "service_failed", sharing: [{ buyer: 80% }, { platform: 20% }] }
-]
-```
-
-**Pattern 3: Insurance (Claim vs No Claim)**
-```
-allocators: [
-  { guard: "claim_approved", sharing: [{ claimant: 100% }] },
-  { guard: "no_claim", sharing: [{ insurer: 100% }] }
-]
-```
-
-## Incentive Distribution (Reward)
-
-Reward defines incentive pools that distribute tokens based on Guard-validated conditions.
-
-### Create Reward
-```
-onchain_operations({
-  operation_type: "reward",
-  data: {
-    op: "create",
-    name: "<reward_name>",
-    service: "<service_id>",
-    ...
-  }
-})
-```
-
-### Reward Claim Flow
-1. User meets Reward conditions (validated by Guard)
-2. User claims reward → `onchain_table_data` query `onchain_table_item_reward_record`
-3. Tokens are distributed from the Reward pool
-
-## Treasury Management
-
-Treasury is a team fund for a Service.
-
-### Deposit to Treasury
-```
-onchain_operations({
-  operation_type: "treasury",
-  data: {
-    op: "deposit",
-    service: "<service_id>",
-    amount: "<amount>",
-    token_type: "<token_type>"
-  }
-})
-```
-
-### Withdraw from Treasury
-```
-onchain_operations({
-  operation_type: "treasury",
-  data: {
-    op: "withdraw",
-    service: "<service_id>",
-    amount: "<amount>",
-    token_type: "<token_type>",
-    recipient: "<address>"
-  }
-})
-```
-
-### Query Treasury History
-```
-onchain_table_data({
-  query_type: "onchain_table_item_treasury_history",
-  parent: "<treasury_id>",
-  address: "<payment_id>"
-})
-```
-
-## Arbitration (Dispute Resolution)
-
-When orders have disputes, Arbitration provides resolution.
-
-### Create Arbitration
-```
-onchain_operations({
-  operation_type: "arbitration",
-  data: {
-    op: "create",
-    name: "<arbitration_name>",
-    ...
-  }
-})
-```
-
-### Watch Arbitration Events
-```
-onchain_events({
-  type: "arbitration",
-  cursor: null,
-  limit: 20
-})
-```
-
-## Demand (Service Requests)
-
-Demand allows users to request services.
-
-### Create Demand
-```
-onchain_operations({
-  operation_type: "demand",
-  data: {
-    op: "create",
-    service: "<service_id>",
-    description: "<request_description>",
-    ...
-  }
-})
-```
-
-### Query Demand Presenters
-```
-onchain_table_data({
-  query_type: "onchain_table_item_demand_presenter",
-  parent: "<demand_id>",
-  address: "<presenter_address>"
-})
-```
-
-## Complete Order Flow Example
-
-### 1. Service Setup (done once)
-```
-Permission → Guard → Service → Machine → Allocation → Reward
-```
-
-### 2. Order Creation (per transaction)
-```
-1. Buyer creates Order referencing Service + Machine
-2. Buyer sends Payment to Order (escrow)
-3. Seller advances Progress through Machine nodes
-4. On completion, Allocation splits payment automatically
-5. Reward distributes incentives if conditions met
-```
-
-### 3. Dispute Resolution (if needed)
-```
-1. Either party initiates Arbitration
-2. Arbiter reviews evidence
-3. Arbiter resolves → funds released per resolution
-```
-
-## Querying Order State
-
-### Check Order Object
-```
-query_toolkit({
-  query_type: "onchain_objects",
-  objects: ["<order_name_or_id>"]
-})
-```
-
-### Check Order Progress
-```
-onchain_table_data({
-  query_type: "onchain_table",
-  parent: "<progress_id>"
-})
-```
-
-### Check Received Payments
-```
-query_toolkit({
-  query_type: "onchain_received",
-  name_or_address: "<object_id>"
-})
-```
 
 ## Order Operations (Post-Creation)
 
@@ -558,29 +239,187 @@ After order creation, the order holder (`builder`) and agents can perform variou
 ### Order Operation Categories
 
 **1. Agent Management (`agents`)**
-- Set or update agent list for the order
+- **Only `builder` (order owner)** can add or remove agents
 - Agents can: cancel order, modify status, advance progress, apply for arbitration
 - Agents **CANNOT**: withdraw funds (only `builder` can)
 
 **2. Progress Advancement (`progress`)**
-- Advance order through Machine workflow nodes
-- Submit required data for Guard validation
-- Move order toward completion or exit states
 
-**3. Arbitration Operations**
-- `arb_confirm`: Submit compensation request and apply for arbitration
-- `arb_objection`: Oppose and appeal arbitration results, request re-arbitration
-- `arb_claim_compensation`: Claim compensation from adjudicated Arb object
+Progress advancement follows Machine-defined workflow rules:
+
+**Step 1: Query Current Progress State**
+```
+query_toolkit({ query_type: "onchain_objects", objects: ["<order_name>"] })
+// Extract: order.progress (Progress object ID), order.machine (Machine ID)
+
+query_toolkit({ query_type: "onchain_objects", objects: ["<progress_id>"] })
+// Extract: progress.current_node (current node name, "" for initial node)
+```
+
+**Step 2: Check Machine Forward Permissions**
+
+Query Machine table to find available forward operations from current node:
+
+```
+// Query Machine nodes table (returns ALL node definitions)
+query_toolkit({ query_type: "onchain_table", parent: "<machine_id>" })
+
+// Returns: TableAnswer with items[] where each item is TableItem_MachineNode:
+// - key: node name (string)
+// - value: MachineNodePair[] with prev_node and forwards[]
+
+// Filter logic:
+// 1. Find node pair where pair.prev_node === Progress.current_node
+// 2. From that pair's forwards[], filter where namedOperator === ""
+// Result: Valid transitions FROM current node that Order can trigger
+```
+
+**Forward Structure**:
+- `namedOperator`: Namespace permission ("" = Order can operate)
+- `permissionIndex`: Index permission (alternative to namedOperator)
+- `weight`: Contribution weight toward threshold
+- `guard`: Optional Guard ID for validation
+- `threshold`: Required total weight to advance node
+
+**Algorithm**: Find valid transitions FROM current node where:
+- `pair.prev_node === Progress.current_node` (transition originates from current state)
+- `forward.namedOperator === ""` (Order has permission to execute)
+
+### CRITICAL: Path Selection & Game Theory
+
+**Core Principle**: The **consensus (Machine + Allocators) is immutable and transparent to all**, but **how to advance Progress depends on each party's own interests**.
+
+- **Service Provider** (seller): Wants to reach "completed" node to receive payment
+- **Buyer** (order builder): May want "refund", "dispute", or "completed" depending on satisfaction
+- **Both parties** operate within the same transparent rules, but choose different paths based on their interests
+
+**Multiple Paths Scenario**: A node may have **multiple forwards** leading to **different next nodes**. Each path has distinct consequences:
+
+```
+Current Node: "delivery_pending"
+├── Forward A → Node: "delivery_confirmed" 
+│   ├── Guard: "buyer_receipt_signed" (buyer confirms receipt)
+│   └── Allocation: 95% to seller, 5% to platform
+│
+├── Forward B → Node: "dispute_filed"
+│   ├── Guard: "arbitration_requested" (buyer disputes)
+│   └── Allocation: Funds frozen, arbitration begins
+│
+└── Forward C → Node: "return_initiated"
+    ├── Guard: "return_window_active" (within return period)
+    └── Allocation: 90% refund to buyer, 10% restocking fee
+```
+
+**AI Decision Framework**:
+
+1. **Query All Valid Paths**
+   ```
+   // For each forward where namedOperator === "":
+   // - Extract target node name
+   // - Extract guard ID (if any)
+   // - Query Guard to understand validation conditions
+   ```
+
+2. **Evaluate Guard Conditions**
+   ```
+   query_toolkit({ query_type: "onchain_objects", objects: ["<guard_id>"] })
+   // Understand: What data/proof is required to pass this Guard?
+   // Example: "buyer_receipt_signed" requires buyer's signature
+   ```
+
+3. **Assess Allocation Impact**
+   ```
+   // Query Service order_allocators to see which allocator triggers at each exit node:
+   query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
+   // Extract: service.order_allocators[]
+   // Match: allocator.guard with node's expected outcome
+   ```
+
+4. **Present Options to User**
+
+   | Path | Guard Condition | Allocation Outcome | User Action Required |
+   |------|----------------|-------------------|---------------------|
+   | A | Buyer signs receipt | 95% seller / 5% platform | Confirm delivery |
+   | B | Arbitration requested | Funds frozen | Submit dispute evidence |
+   | C | Within return window | 90% refund / 10% fee | Return merchandise |
+
+**Key Insight**: The **same current node** can lead to **drastically different financial outcomes**. User must understand:
+- Which path aligns with their interests
+- What Guard validation data they can provide
+- The final Allocation result of each path
+
+**AI Guidance**: 
+- **Always** query and present ALL available forwards
+- **Explain** the Guard condition for each path
+- **Map** each path to its Allocation consequence
+- **Recommend** based on user's stated goals and available evidence
+
+**Schema**: `schema_query({ action: "get", name: "onchain_operations_service" })` — review `order_allocators` structure
+
+---
+
+**Step 3: Execute Progress Operation (Via Order)**
+
+Order users **MUST** advance progress through the Order object, not directly via Progress.
+
+**Node Advancement Requirements**:
+- **Weight Threshold**: Sum of forward weights must reach/exceed node threshold
+- **Guard Validation**: If forward has `guard`, Guard must return true
+- **Permission**: Either `namedOperator` (namespace) or `permissionIndex` must authorize the operation
+
+**Schema**: `schema_query({ action: "get", name: "onchain_operations_order" })` 
+
+**3. Arbitration Operations (Dispute Resolution)**
+
+Arbitration allows order users to resolve disputes through third-party Arbitration objects. The process involves:
+
+**Arb Object Lifecycle** (created via `arbitration` operation, managed via `order` operation):
+- `Principal_confirming` → `Arbitrator_confirming` → `Voting` → `Arbitrated` → `Objectionable` → `Finished`/`Withdrawn`
+
+**Step-by-Step Process**:
+
+1. **Initiate Arbitration** (`arbitration.dispute`)
+   - Create new Arb object on a Service-supported Arbitration
+   - **User pays arbitration fee separately** (`arbitration.fee`) — NOT from Order balance
+   - **Order balance is isolated** — only distributed via `service.order_allocators`
+   - Arb object added to Order's `dispute` array
+
+2. **Generate & Submit Evidence** (Messenger)
+   - Generate WTS file from Messenger conversation history with Service
+   - WTS is cryptographically signed, tamper-proof, and self-verifying
+   - Send WTS to Arbitration's contact address via Messenger (end-to-end encrypted)
+   - **Privacy**: Evidence stays off-chain, only transmitted via encrypted Messenger
+
+3. **Confirm Submission** (`order.arb_confirm`)
+   - Signal "all evidence submitted" to Arbitration
+   - Arbitration reviews evidence and proceeds to voting/adjudication
+
+4. **Object to Result** (`order.arb_objection`)
+   - If dissatisfied with arbitration outcome, file objection
+   - Request re-arbitration or appeal
+
+5. **Claim Compensation** (`order.arb_claim_compensation`)
+   - After favorable arbitration decision, claim compensation
+   - Automatically extracted from Service's `compensation_fund`
+   - Funds transferred to Order's `builder` account
+
+**Key Rules**:
+- **Multiple Arb Objects**: Can create Arb objects on multiple Arbitrations simultaneously
+- **One Compensation**: Only ONE compensation claim allowed per Order (choose the best Arb result)
+- **Time Sensitivity**: Prolonged arbitration may exceed order's time-based allocation deadlines. If this is a major concern, discuss arbitration timelines during the **pre-order consensus phase** (Phase 2: Communication & Consensus Building)
+- **WTS Verification**: Arbitrations use `messenger_operation({ operation: "verify_wts" })` to validate evidence authenticity
+
+**Schema**: `schema_query({ action: "get", name: "onchain_operations_arbitration" })`
 
 **4. Fund Management (`receive`)**
 - Unwrap CoinWrapper objects received by the order
 - Transfer received funds to order owner (`builder`)
-- **Only `builder` can execute this operation**
+- **Agents and `builder` can both execute**, but only `builder` receives the funds
 
-**5. Information Submission (`required_info`)**
-- Submit Contact object (recipient info)
-- Submit WTS Proof object (delivery proof via Wowok Messenger)
-- Required for certain Machine node transitions
+**Examples of funds Order may receive**:
+- **Service penalties**: Late delivery compensation, quality issue compensation — separate from order funds, paid voluntarily by Service Provider to appease customer
+- **Collaboration payments**: Cross-service collaboration payments (e.g., courier late delivery penalty)
+- **Direct transfers**: Wallet-to-order payments for order-related purposes
 
 **6. Ownership Transfer (`transfer_to`)**
 - Transfer order ownership to new address
@@ -596,233 +435,6 @@ After order creation, the order holder (`builder`) and agents can perform variou
 
 > **Critical**: The `builder` maintains ultimate authority over funds. Agents assist in workflow operations but cannot override financial control. This protects the purchaser's investment.
 
-## Common Order Errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| "service not found" | Service doesn't exist | Create Service first |
-| "machine not found" | Machine doesn't exist | Create Machine first |
-| "insufficient balance" | Not enough tokens | Check balance with account_balance |
-| "allocation failed" | Invalid split rules | Check total shares = 100% |
-| "progress blocked" | Guard condition not met | Check forward Guard logic |
-| "arbitration not found" | No Arbiter configured | Create Arbitration object |
-
-## Real-World Order Flows (from tested examples)
-
-### Allocation Patterns
-
-**From [Insurance](../examples/Insurance/Insurance.md) — Single-Recipient Allocation**
-
-The Insurance service uses a single allocator with 100% going to the signer who completes the claim:
-
-```
-order_allocators: {
-  description: "Insurance order revenue allocation",
-  threshold: 0,
-  allocators: [{
-    guard: "insurance_withdraw_guard_v1",
-    sharing: [{ who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }]
-  }]
-}
-```
-
-`sharing: 10000` in `mode: "Rate"` = 100% (basis points: 10000 = 100%).
-
-**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Multi-Recipient Allocation**
-
-Dual-allocation pattern: one allocator for merchant-winning scenarios, one for customer-winning scenarios:
-
-```
-order_allocators: {
-  description: "Order fund allocation",
-  threshold: 0,
-  allocators: [
-    {
-      guard: "service_merchant_win_v2",
-      sharing: [{ who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }]
-    },
-    {
-      guard: "service_customer_win_v2",
-      sharing: [{ who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }]
-    }
-  ]
-}
-```
-
-Each allocator's Guard validates the order's current node — if the node is "Order Complete", "Wonderful", or "Return Fail", the merchant's allocator fires. If "Lost" or "Return Complete", the customer's allocator fires.
-
-### Order Creation Patterns
-
-**From [Insurance](../examples/Insurance/Insurance.md) — Order via Service**
-
-Orders can be created directly through the Service's `order_new` field:
-
-```
-onchain_operations({
-  operation_type: "service",
-  data: {
-    object: "insurance_service_v1",
-    order_new: {
-      buy: {
-        items: [{ name: "Outdoor Accident Insurance", stock: 1, wip_hash: "" }],
-        total_pay: { balance: 100000000 }
-      },
-      namedNewOrder: { name: "test_insurance_order_v1", replaceExistName: true }
-    }
-  }
-})
-```
-
-**From [Travel](../examples/Travel/Travel.md) — Order via Service with Discount**
-
-Orders can include discounts for time-limited promotions:
-
-```
-order_new: {
-  buy: {
-    items: [{ name: "Iceland Adventure", stock: 1 }],
-    total_pay: { balance: 200000000 }
-  },
-  namedNewOrder: { name: "alice_travel_order_v1" }
-}
-```
-
-### Reward Patterns
-
-**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Multi-Condition Rewards**
-
-Rewards can be added AFTER Service publish. Each reward uses a Guard to verify claim conditions:
-
-```
-onchain_operations({
-  operation_type: "reward",
-  data: {
-    object: { name: "myshop_reward_v2", permission: "myshop_permission_v2", replaceExistName: true },
-    description: "Reward pool for MyShop Advanced",
-    coin_add: { balance: 100000000 },
-    guard_add: [
-      {
-        guard: "reward_wonderful_v2",
-        recipient: { Signer: "signer" },
-        amount: { type: "Fixed", value: 10000 },
-        expiration_time: null
-      },
-      {
-        guard: "reward_lost_v2",
-        recipient: { Signer: "signer" },
-        amount: { type: "Fixed", value: 20000 },
-        expiration_time: null
-      },
-      {
-        guard: "reward_shipping_timeout_v2",
-        recipient: { Signer: "signer" },
-        amount: { type: "Fixed", value: 30000 },
-        expiration_time: null
-      }
-    ]
-  }
-})
-```
-
-Each guard checks the order's current node:
-- `reward_wonderful_v2`: order at "Wonderful" node → 10000 reward
-- `reward_lost_v2`: order at "Lost" node → 20000 compensation
-- `reward_shipping_timeout_v2`: order at "Shipping" node > 2 days → 30000 compensation
-
-### Progress Advancement Patterns
-
-**From [MyShop Advanced](../examples/MyShop_Advanced/MyShop_Advanced.md) — Progress with Submitted Data**
-
-When advancing through a node that requires Guard validation with submitted data:
-
-```
-onchain_operations({
-  operation_type: "progress",
-  data: {
-    object: "<progress_id>",
-    order: "<order_name>",
-    node: { name: "Shipping", forward: 0 },
-    pairs: [{ name: "prev_node", value: "Order Confirmed" }]
-  }
-})
-```
-
-For the Shipping node (which requires a Merkle root Guard), the Guard's `table` expects a submitted Merkle root string. The `pairs` field carries the runtime data the Guard validates.
-
-### Arbitration Patterns
-
-**From [Travel](../examples/Travel/Travel.md) — Pre-Service Arbitration**
-
-Arbitration can be created before the Service and bound during Service creation/update:
-
-```
-// Create Arbitration independently:
-onchain_operations({
-  operation_type: "arbitration",
-  data: {
-    object: { name: "travel_arbitration_v1", permission: "travel_permission_v1" },
-    description: "Arbitration for Iceland travel service disputes"
-  }
-})
-
-// Bind during Service update:
-onchain_operations({
-  operation_type: "service",
-  data: {
-    object: "travel_service_v1",
-    arbitrations: { op: "add", objects: ["travel_arbitration_v1"] }
-  }
-})
-```
-
-### Sub-Order (Supply Chain) Patterns
-
-**From [Travel](../examples/Travel/Travel.md) — Insurance Sub-Order**
-
-The Travel workflow creates a sub-order on the Insurance Service as part of its Machine progression. The "Buy Insurance" node's forward includes `forward_to_order_create` which automatically creates an order on the insurance service when the travel order reaches that node.
-
-The Insurance Service must already be deployed and published before the Travel Service creates sub-orders on it. See [wowok-build](../wowok-build/SKILL.md) Pattern C: Repository-Linked for the build order.
-
-### Order Lifecycle Summary (from tested examples)
-
-```
-1. SERVICE SETUP (one-time)
-   Permission → Guard(s) → Machine → Service (with multi-strategy allocation) → Publish
-   │
-   └── Allocation defines MULTIPLE strategies:
-       • order_complete → seller gets paid
-       • order_cancelled → buyer gets refund
-       • return_accepted → partial refund
-       • dispute_resolved → per arbitration
-
-2. ORDER CREATION (per transaction)
-   onchain_operations(operation_type: "service", data: { object, order_new: { buy: { items, total_pay } } })
-   │
-   └── Creates: Order + Progress + Allocation (execution engine)
-
-3. PROGRESS ADVANCEMENT (multi-step through Machine nodes)
-   onchain_operations(operation_type: "progress", data: { object, order, node: { name, forward } })
-   │
-   └── Order flows through: Created → Confirmed → Shipping → ... → Exit Node
-
-4. GUARD-CONTROLLED FUND DISTRIBUTION (at exit nodes)
-   When Progress reaches exit node:
-   │
-   ├── **Allocation** (execution engine) evaluates all Service-level allocator Guards
-   ├── ONLY the allocator whose Guard returns TRUE is selected
-   └── **Allocation** executes that strategy → distributes order funds
-   │
-   Examples:
-   • "Order Complete" node → merchant_win_guard TRUE → Allocation pays seller
-   • "Order Lost" node → customer_win_guard TRUE → Allocation refunds buyer
-   • "Return Complete" node → return_guard TRUE → Allocation does partial refund
-
-5. REWARD CLAIMS (on trigger nodes)
-   Reward Guard validates → tokens distributed to claimant
-
-6. DISPUTE RESOLUTION (if needed)
-   Arbitration → arb_confirm/arb_objection → resolution → allocation may be overridden
-```
 
 ---
 
@@ -831,5 +443,6 @@ The Insurance Service must already be deployed and published before the Travel S
 - **Service purchase**: Always pay through `Service`. Name the generated `Order`, `Progress`, and `Allocation` via `namedNew*` fields for easy management.
 - **Order operations**: All order user operations MUST go through the `Order` object — do not operate on `Progress` directly for order-related actions.
 - **Refunds/withdrawals**: Users satisfy `Allocation` Guard conditions to withdraw instantly.
-- **Arbitration claims**: Compensation payouts go through `Order`.
-- **Alternative payments**: `account_operation (transfer)` for direct wallet-to-wallet, or `onchain_operations (payment)` for commercial features (purpose tracking, Guard validation).
+- **Arbitration claims**: Compensation payouts go through `Order`. Use `receive` to extract funds to order owner.
+
+**Schema**: `schema_query({ action: "get", name: "onchain_operations_order" })`

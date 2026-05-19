@@ -9,7 +9,8 @@
   },
   "files": [
     "dist/",
-    "wowok-build/",
+    "wowok-provider/",
+    "wowok-arbitrator/",
     "wowok-guard/",
     "wowok-tools/",
     "wowok-safety/",
