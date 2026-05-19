@@ -10,15 +10,15 @@ description: |
 when_to_use:
   - User wants to create a commercial service/marketplace on WoWok
   - User wants to build a complete workflow system with order management
-  - User wants to set up order splitting (Allocators), incentive pools (Reward), or dispute resolution (Arbitration)
-  - User mentions "build service", "create marketplace", "setup workflow", "revenue sharing"
+  - User wants to set up order allocation strategies (Allocators), incentive pools (Reward), or dispute resolution (Arbitration)
+  - User mentions "build service", "create marketplace", "setup workflow", "revenue sharing", "order allocators"
 ---
 
 # WoWok Commercial Service Building
 
 Build production-ready service marketplaces on WoWok with proper dependency management.
 
-> **Prerequisites**: Understand CREATE vs MODIFY pattern in [_index.md](../docs/skills/onchain_operations/_index.md)  
+> **Prerequisites**: Understand CREATE vs MODIFY pattern — use `schema_query({ action: "get", name: "onchain_operations" })`  
 > **Auxiliary Objects**: Demand, Treasury, Repository, Contact — see [wowok-tools](../wowok-tools/SKILL.md)  
 > **Guard Design**: See [wowok-guard](../wowok-guard/SKILL.md) | **Order Lifecycle**: See [wowok-order](../wowok-order/SKILL.md)
 
@@ -41,22 +41,26 @@ Commercial services MUST be built in strict dependency order. An object cannot r
 
 ```
 PHASE 1 — Foundation
-  1. Permission — [permission.md](../docs/skills/onchain_operations/permission.md)
-  2. Service — [service.md](../docs/skills/onchain_operations/service.md) — CREATE only, DO NOT publish
-  3. Machine — [machine.md](../docs/skills/onchain_operations/machine.md) — CREATE and define ALL nodes, DO NOT publish
+  1. Permission — schema_query({ action: "get", name: "onchain_operations_permission" })
+  2. Service — schema_query({ action: "get", name: "onchain_operations_service" }) — CREATE only, DO NOT publish
+  3. Machine — schema_query({ action: "get", name: "onchain_operations_machine" }) — CREATE and define ALL nodes, DO NOT publish
 
 PHASE 2 — Trust Layer
-  4. Guards — [guard.md](../docs/skills/onchain_operations/guard.md) — validate Reward claims, Allocators conditions, Machine node transitions, etc. Create all guards needed.
+  4. Guards — schema_query({ action: "get", name: "onchain_operations_guard" }) — validate Reward claims, Allocators conditions, Machine node transitions, etc. Create all guards needed.
 
 PHASE 3 — Sub-Components
-  5. Allocators — [service.md](../docs/skills/onchain_operations/service.md) — CREATE rules, MODIFY Service.order_allocators to bind
-  6. Reward — [reward.md](../docs/skills/onchain_operations/reward.md) — CREATE/MODIFY incentive pools
-  7. Arbitration — [arbitration.md](../docs/skills/onchain_operations/arbitration.md) — CREATE/MODIFY dispute resolution
+  5. Allocators — schema_query({ action: "get", name: "onchain_operations_service" }) — DEFINE multiple allocator strategies (with Guards) at Service level
+  6. Reward — schema_query({ action: "get", name: "onchain_operations_reward" }) — CREATE/MODIFY incentive pools
+  7. Arbitration — schema_query({ action: "get", name: "onchain_operations_arbitration" }) — CREATE/MODIFY dispute resolution
 
 PHASE 4 — Publication
   8. Publish Machine — nodes become IMMUTABLE
   9. Bind Machine to Service — MODIFY Service.machine
-  10. Publish Service — Machine & Allocators LOCKED
+  10. Publish Service — Machine & order_allocators LOCKED
+
+> **Allocators vs Allocation**: 
+> - **Allocators** (plural): Defined at **Service** level — multiple distribution strategies with Guard conditions
+> - **Allocation** (singular): Auto-created per **Order** — the execution engine that evaluates Guards and runs the winning strategy
 ```
 
 ---
@@ -73,7 +77,7 @@ wowok_buildin_info({ info_type: "permissions" })
 wowok_buildin_info({ info_type: "guard_instructions" })
 ```
 
-**Schema**: [query_toolkit](../docs/skills/schema-query_toolkit.md) | [wowok_buildin_info](../docs/skills/schema-wowok_buildin_info.md)
+**Get schemas**: `schema_query({ action: "get", name: "query_toolkit" })` | `schema_query({ action: "get", name: "wowok_buildin_info" })`
 
 ---
 
@@ -81,7 +85,7 @@ wowok_buildin_info({ info_type: "guard_instructions" })
 
 ### CREATE vs MODIFY
 
-See [_index.md](../docs/skills/onchain_operations/_index.md) for the unified pattern:
+The unified CREATE vs MODIFY pattern (see `schema_query({ action: "get", name: "onchain_operations" })`):
 - **Object shape** (`{ name?, ... }`) = CREATE
 - **String value** (`"<name>"`) = MODIFY
 
@@ -109,7 +113,11 @@ guard2file({ guard: "<existing_guard_id>", file_path: "./my_guard.json" })
 
 **Benefits**: Leverage proven templates, modify only what differs, significantly reduce definition workload.
 
-**Schemas**: [machineNode2file](../docs/skills/schema-machineNode2file.md) | [guard2file](../docs/skills/schema-guard2file.md)
+**Get tool schemas:**
+```
+schema_query({ action: "get", name: "machineNode2file" })
+schema_query({ action: "get", name: "guard2file" })
+```
 
 ---
 
@@ -128,12 +136,20 @@ guard2file({ guard: "<existing_guard_id>", file_path: "./my_guard.json" })
 
 ## Schema Reference
 
-**Common Types**: [_common.md](../docs/skills/onchain_operations/_common.md) — `TypedPermissionObject`, `WithPermissionObject`, `CallEnv`, `SubmissionCall`
+Use `schema_query` tool to get complete JSON schemas:
 
-**Operations** (CREATE & MODIFY): [service](../docs/skills/onchain_operations/service.md) | [machine](../docs/skills/onchain_operations/machine.md) | [permission](../docs/skills/onchain_operations/permission.md) | [repository](../docs/skills/onchain_operations/repository.md) | [treasury](../docs/skills/onchain_operations/treasury.md) | [demand](../docs/skills/onchain_operations/demand.md) | [contact](../docs/skills/onchain_operations/contact.md) | [reward](../docs/skills/onchain_operations/reward.md) | [arbitration](../docs/skills/onchain_operations/arbitration.md)
+```
+schema_query({ action: "list" })                    // List all schemas
+schema_query({ action: "get", name: "onchain_operations_service" })   // Specific operation
+schema_query({ action: "list_operations" })         // List all on-chain operations
+```
 
-**CREATE-only**: [guard](../docs/skills/onchain_operations/guard.md) (immutable) | [payment](../docs/skills/onchain_operations/payment.md)
+**Common Types** (in `onchain_operations` schema): `TypedPermissionObject`, `WithPermissionObject`, `CallEnv`, `SubmissionCall`
 
-**MODIFY-only**: [order](../docs/skills/onchain_operations/order.md) | [progress](../docs/skills/onchain_operations/progress.md) | [personal](../docs/skills/onchain_operations/personal.md)
+**Operations** (CREATE & MODIFY): `onchain_operations_service` | `onchain_operations_machine` | `onchain_operations_permission` | `onchain_operations_repository` | `onchain_operations_treasury` | `onchain_operations_demand` | `onchain_operations_contact` | `onchain_operations_reward` | `onchain_operations_arbitration`
 
-**Tools**: [query_toolkit](../docs/skills/schema-query_toolkit.md) | [guard2file](../docs/skills/schema-guard2file.md) | [machineNode2file](../docs/skills/schema-machineNode2file.md) | [all_tools](../wowok-tools/SKILL.md)
+**CREATE-only**: `onchain_operations_guard` (immutable) | `onchain_operations_payment`
+
+**MODIFY-only**: `onchain_operations_order` | `onchain_operations_progress` | `onchain_operations_personal`
+
+**Tools**: `query_toolkit` | `guard2file` | `machineNode2file` | [all_tools](../wowok-tools/SKILL.md)

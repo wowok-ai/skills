@@ -26,36 +26,51 @@ After a Service is published (see [wowok-build](../wowok-build/SKILL.md)), users
 |--------|-----------|---------|
 | **Order** | User purchase | Order management and escrow |
 | **Progress** | Order creation | Workflow state tracking |
-| **Allocation** | Order completion | Fund distribution per consensus |
+| **Allocation** | Order creation | Executes allocators to distribute order funds |
 | **Arb(s)** | Dispute request | Arbitration for compensation |
+
+**Key Distinction:**
+- **Allocators** (plural): Defined at **Service** level — multiple distribution strategies with Guard conditions
+- **Allocation** (singular): Created per **Order** — the execution engine that runs the winning allocator strategy
 
 ```
 User Purchase
      ↓
-Service ──→ Order ──→ Progress ──→ Allocation
+Service ──→ Order ──→ Progress
               ↓           ↓
          Payment    Node Transitions
          (escrow)   (Guard validated)
                         ↓
-                   Completion
+              ┌─────────────────┐
+              │  Multiple Exit  │
+              │    Nodes →      │
+              │  Allocation     │
+              │  (Conditional)  │
+              └─────────────────┘
                         ↓
-              Fund Distribution
+            Fund Distribution
+            (Per Consensus Rules)
 ```
 
-## Order Lifecycle Overview
+### Allocation as Consensus-Driven Distribution
 
-```
-Demand → Order → Payment → Progress → Completion
-                                  ↓
-                            Arbitration (disputes)
-```
+**Allocation is not a single endpoint** — it's a set of **conditional distribution strategies** defined by mutual consensus between buyer and seller:
+
+| Scenario | Trigger Node | Allocation Strategy | Guard Control |
+|----------|-------------|---------------------|---------------|
+| **Order Complete** | "Completed" / "Wonderful" | Full payment to seller | `merchant_win_guard` |
+| **Order Cancelled** | "Cancelled" / "Lost" | Refund to buyer | `customer_win_guard` |
+| **Return Accepted** | "Return Complete" | Partial refund per policy | `return_accept_guard` |
+| **Return Rejected** | "Return Fail" | Payment to seller | `return_reject_guard` |
+
+Each allocation strategy is **independently validated by its Guard** — only the Guard that evaluates to `true` for the current Progress node will execute its distribution rules.
 
 ## Component Relationships
 
 ```
 Service (marketplace)
   ├── Machine (workflow template)
-  ├── Allocation (order splitting rules)
+  ├── Allocators (order splitting rules - multiple strategies)
   ├── Reward (incentive pool)
   └── Treasury (team fund)
 
@@ -63,25 +78,181 @@ Order (instance)
   ├── references Service
   ├── references Machine (for workflow)
   ├── Payment (funds transfer)
-  └── Progress (workflow tracking)
+  ├── Progress (workflow tracking)
+  └── Allocation (created at order creation, executes allocators)
+      └── Runs the winning allocator strategy when Guard validates
 ```
 
-## Order Creation
+## Order Lifecycle: From Discovery to Consensus
+
+Creating an order is NOT just a single transaction — it's a **matching and consensus-building process**. AI must help users gather sufficient information, evaluate the service, and establish clear mutual understanding before committing funds.
+
+### Phase 1: Service Discovery & Evaluation
+
+Before creating an order, thoroughly investigate the Service:
+
+**1. Query Service Configuration**
+```
+query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
+```
+
+Extract and analyze:
+- **Sales**: Pricing models, available offerings. Each sale includes:
+  - `name`, `price`, `stock`: Basic product info
+  - `wip`: HTTP URL to the Witness Promise file (product description, images, terms)
+  - `wip_hash`: Hash of the WIP file for integrity verification
+  - **Critical**: The WIP file represents the seller's **immutable commitment** to product specifications. If `wip_hash` is empty, the system auto-verifies against the WIP content; if provided, it must match. This commitment serves as **arbitration evidence** in case of disputes.
+- **Locations**: Geographic/service scope constraints
+- **Machine**: Workflow definition, node structure, exit conditions
+- **Allocators**: Fund distribution strategies and their Guard conditions
+- **Arbitrations**: Dispute resolution mechanisms
+- **Rewards**: Incentive programs for buyers/sellers
+- **Guards**: Validation rules that control state transitions
+
+**2. Deep Service Evaluation via EntityLinker (Optional but Recommended)**
+
+Query the Service's community endorsement graph to build a comprehensive service capability profile:
 
 ```
-onchain_operations({
-  operation_type: "order",
-  data: {
-    op: "create",
-    service: "<service_name_or_id>",
-    machine: "<machine_name_or_id>",
-    buyer: "<buyer_address>",
-    seller: "<seller_address>",
-    price: "<amount>",
-    token_type: "<token_type>",
-    ...
-  }
+// Get Service's EntityLinker data
+query_toolkit({ query_type: "onchain_table_item_entity_linker", address: "<service_name_or_address>" })
+```
+
+**Response Analysis**:
+- **`count`**: Follower count indicating community attention/activity level
+- **`votes`**: Array of vote records, each containing:
+  - `address`: Linked object address (order, arbitration, etc.)
+  - `like/dislike/affiliation`: Community sentiment
+  - `time`: When the relationship was established (most recent interaction time)
+
+**Query Associated Objects for Deep Analysis**:
+
+Objects may have associated table data. Query base object data first, then query tables if the object type supports them (Repository, Treasury, Machine, Progress, Permission, Reward, Demand, Resource, etc.):
+
+```
+// Query base object data
+query_toolkit({ query_type: "onchain_objects", objects: ["<order_address_1>", "<order_address_2>"] })
+
+// Query object's table items for detailed records
+query_toolkit({ query_type: "onchain_table", parent: "<progress_address>"})
+```
+
+**Schema Reference**:
+```
+schema_query({ action: "get", name: "query_toolkit" })
+// Look for: onchain_objects, onchain_table, onchain_table_item_repository_data
+```
+
+**Key Metrics to Calculate** (from Order object fields):
+- **Activity Level**: `count` and vote frequency in EntityLinker
+- **Order Completion Rate**: % of orders where `progress` reached terminal nodes (check Progress table for completion status)
+- **Arbitration Rate**: % of orders where `dispute` array is non-empty (lower is better)
+- **Average Resolution Time**: Calculate from Progress table node timestamps (time from order creation to reaching completion node)
+- **Customer Satisfaction**: Ratio of likes vs dislikes in EntityLinker votes
+- **Repeat Customer Rate**: % of unique `builder` (purchaser) addresses appearing multiple times across orders
+
+### Phase 2: Communication & Consensus Building (CRITICAL)
+
+Before committing funds, establish encrypted communication with the Service to clarify terms and build mutual understanding.
+
+**Step 1: Establish Messenger Contact with Service**
+
+Query the Service to get its Contact object (`um` field), then extract IM addresses for encrypted communication:
+
+```
+// Query Service to get um (Contact object)
+query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
+// Extract: service.um (Contact object ID)
+
+// Query Contact object for IM addresses
+query_toolkit({ query_type: "onchain_objects", objects: ["<contact_object_id>"] })
+// Extract: contact.ims[].at (IM addresses for encrypted communication)
+```
+
+**Step 2: Send Encrypted Messages**
+
+Use the encrypted messenger to communicate with Service customer service:
+
+```
+messenger_operation({
+  operation: "send_message",
+  from: "<your_account>",
+  to: "<service_im_address>",
+  content: "<your_message_content>"
 })
+```
+
+**Schema**: `schema_query({ action: "get", name: "messenger_operation" })`
+
+**Why Encrypted Messenger Matters**:
+- Messages are **end-to-end encrypted** and **NOT stored on-chain**
+- Establishes **off-chain consensus** before on-chain commitment
+- Creates **audit trail** for dispute resolution
+- Allows **negotiation** of terms not hardcoded in the Service
+
+**AI Guidance**: Proactively suggest users contact the seller to clarify:
+- Exact deliverables and acceptance criteria
+- Timeline and milestones
+- Handling of edge cases
+- Refund and cancellation terms
+- Delivery address, contact phone, and other logistics
+- Any custom requirements
+
+### Phase 3: Order Creation & Payment
+
+Once consensus is established, create the Order through the **Service** operation (`operation_type: "service"`), which atomically creates **Order + Allocation + Progress**.
+
+**Use `schema_query({ action: "get", name: "onchain_operations_service" })` to get the complete schema.** Key fields in `order_new`:
+
+**Purchase Specification (`buy`)**:
+- `items`: List of items to purchase (reference `Service.sales` for available products)
+- `total_pay`: Your payment budget — **excess funds are automatically refunded**
+- `discount`: Optional discount coupon object ID (if you own one)
+- `payment_remark`: Optional note/reference for the payment
+
+**Agent Delegation (`agents`)**:
+- Optional list of agent addresses who can operate the order on your behalf
+- **Agent powers**: Cancel order, modify status, participate in Progress workflow, apply for arbitration
+- **Agent limitation**: **CANNOT extract/withdraw funds** — only the order holder (`builder`) can receive payments
+
+**Order Required Info (`order_required_info`)**:
+- Contact object ID or WTS Proof object for delivery/communication (delivery address, contact phone, etc.)
+- **CRITICAL**: After order creation, must notify Service customer service via **Messenger** (see Phase 2 for how to establish contact)
+- Include the order ID and submitted info reference in the message
+
+**Object Naming** (optional but recommended):
+- `namedNewOrder`: Assign a local name to the Order for easy reference
+- `namedNewAllocation`: Name the Allocation object
+- `namedNewProgress`: Name the Progress object
+
+**Order Holder (`builder`) Powers**:
+The `builder` (purchaser who creates the order) holds **all authority**:
+- Participate in Progress workflow transitions
+- Apply for arbitration and receive compensation
+- Claim rewards and incentives
+- Withdraw funds from the order
+- Transfer order ownership
+
+> **Note**: Agents assist in operations but cannot override the `builder`'s financial rights. This ensures the purchaser maintains ultimate control over funds.
+
+**Key Principle**: The order Machine will guide the subsequent workflow. Funds are released based on Progress transitions, with Allocators determining final distribution at completion nodes.
+
+**Service-Required Private Information (`customer_required`)**:
+- If Service specifies `customer_required` fields (e.g., phone, email, delivery address), these are **mandatory**
+- **Security**: Send this private information **via Messenger** (end-to-end encrypted) directly to Service customer service 
+- Messenger ensures **point-to-point secure communication** between buyer and seller — **no information is published on-chain**
+
+### Schema Reference for Order Operations
+
+```
+// Get Service operation schema (includes order_new field)
+schema_query({ action: "get", name: "onchain_operations_service" })
+
+// Get messenger operation schema
+schema_query({ action: "get", name: "messenger_operation" })
+
+// Get query toolkit schema
+schema_query({ action: "get", name: "query_toolkit" })
 ```
 
 ## Payment Flow
@@ -105,49 +276,114 @@ Orders can hold funds in escrow. Payment is released when order progresses throu
 
 ## Order Splitting (Allocation)
 
-Allocation defines how order payments are automatically split among multiple recipients.
+**Allocators** define **conditional fund distribution strategies** at the Service level. When an Order is created, an **Allocation** object is generated as the execution engine — it evaluates all allocator Guards at exit nodes and executes the winning strategy.
 
-### Create Allocation
+### Core Concept: Service-Level Allocators vs Order-Level Allocation
+
+```
+SERVICE SETUP (one-time)
+├── order_allocators: [
+│   ├── { guard: "merchant_win", sharing: [...] }  ← Strategy 1
+│   ├── { guard: "customer_win", sharing: [...] }  ← Strategy 2
+│   └── { guard: "return_accept", sharing: [...] } ← Strategy 3
+│   ]
+│
+ORDER CREATION (per transaction)
+├── Creates: Order + Progress + ALLOCATION (execution engine)
+│
+ORDER EXECUTION
+├── Progress advances through Machine nodes
+├── At exit node: All allocator Guards evaluate
+├── Allocation executes the ONE strategy whose Guard returns TRUE
+└── Funds distributed per that strategy's rules
+```
+
+### Create Multi-Strategy Allocators
+
+Define **multiple allocators** at Service level — one for each exit scenario:
+
 ```
 onchain_operations({
-  operation_type: "allocation",
+  operation_type: "service",
   data: {
-    op: "create",
-    name: "<allocation_name>",
-    service: "<service_id>",
-    rules: [
-      {
-        recipient: "<address_or_guard>",
-        share: <percentage_or_fixed>,
-        discount_type: "RATES"  // or "FIXED"
-      }
-    ]
+    object: "<service_name>",
+    order_allocators: {
+      description: "Order fund distribution strategies",
+      threshold: 0,
+      allocators: [
+        // Strategy 1: Order completes successfully
+        {
+          guard: "merchant_win_guard",
+          sharing: [
+            { who: { Signer: "signer" }, sharing: 9500, mode: "Rate" },  // 95% to seller
+            { who: { Address: "<platform>" }, sharing: 500, mode: "Rate" }  // 5% platform fee
+          ]
+        },
+        // Strategy 2: Order cancelled/refunded
+        {
+          guard: "customer_win_guard",
+          sharing: [
+            { who: { Signer: "signer" }, sharing: 10000, mode: "Rate" }  // 100% refund to buyer
+          ]
+        },
+        // Strategy 3: Return accepted
+        {
+          guard: "return_accept_guard",
+          sharing: [
+            { who: { Signer: "signer" }, sharing: 9000, mode: "Rate" },  // 90% refund
+            { who: { Address: "<platform>" }, sharing: 1000, mode: "Rate" }  // 10% restocking fee
+          ]
+        }
+      ]
+    }
   }
 })
 ```
 
-### Discount Types
-| Type | Description |
-|------|-------------|
-| `RATES` | Percentage-based split (e.g., 30% = 30/100) |
-| `FIXED` | Fixed amount split |
+### How Allocators + Allocation Work Together
 
-### Common Allocation Patterns
+| Step | Level | Action |
+|------|-------|--------|
+| 1 | **Service** | Define `order_allocators` array with multiple strategies (each with Guard + sharing rules) |
+| 2 | **Order** | When order created, **Allocation** object auto-generated as execution engine |
+| 3 | **Progress** | Order advances through Machine workflow nodes |
+| 4 | **Exit Node** | **Allocation** evaluates all allocator Guards against current state |
+| 5 | **Execution** | **Allocation** executes the ONE allocator whose Guard returns `true` |
+| 6 | **Distribution** | Funds split according to winning allocator's `sharing` rules |
 
-**Pattern 1: Platform Fee**
+**Key Point:** Allocators are the **recipes** (defined once at Service level). Allocation is the **cook** (created per Order, executes the right recipe).
+
+### Allocation Modes
+
+| Mode | Description | Example |
+|------|-------------|---------|
+| `Rate` | Percentage-based (basis points: 10000 = 100%) | `sharing: 500` = 5% |
+| `Fixed` | Fixed token amount | `sharing: 1000000` = 1 token (6 decimals) |
+
+### Common Multi-Strategy Patterns
+
+**Pattern 1: E-Commerce (Complete vs Cancel vs Return)**
 ```
-rules: [
-  { recipient: "<platform_address>", share: 5, discount_type: "RATES" },
-  { recipient: "<seller_address>", share: 95, discount_type: "RATES" }
+allocators: [
+  { guard: "order_complete", sharing: [{ seller: 95% }, { platform: 5% }] },
+  { guard: "order_cancelled", sharing: [{ buyer: 100% }] },
+  { guard: "return_accepted", sharing: [{ buyer: 90% }, { platform: 10% }] }
 ]
 ```
 
-**Pattern 2: Multi-Party Split**
+**Pattern 2: Service Marketplace (Success vs Fail)**
 ```
-rules: [
-  { recipient: "<platform>", share: 3, discount_type: "RATES" },
-  { recipient: "<seller>", share: 70, discount_type: "RATES" },
-  { recipient: "<affiliate>", share: 27, discount_type: "RATES" }
+allocators: [
+  { guard: "service_delivered", sharing: [{ provider: 100% }] },
+  { guard: "service_failed", sharing: [{ buyer: 80% }, { platform: 20% }] }
+]
+```
+
+**Pattern 3: Insurance (Claim vs No Claim)**
+```
+allocators: [
+  { guard: "claim_approved", sharing: [{ claimant: 100% }] },
+  { guard: "no_claim", sharing: [{ insurer: 100% }] }
 ]
 ```
 
@@ -312,6 +548,53 @@ query_toolkit({
   name_or_address: "<object_id>"
 })
 ```
+
+## Order Operations (Post-Creation)
+
+After order creation, the order holder (`builder`) and agents can perform various operations using `operation_type: "order"`.
+
+**Schema**: `schema_query({ action: "get", name: "onchain_operations_order" })`
+
+### Order Operation Categories
+
+**1. Agent Management (`agents`)**
+- Set or update agent list for the order
+- Agents can: cancel order, modify status, advance progress, apply for arbitration
+- Agents **CANNOT**: withdraw funds (only `builder` can)
+
+**2. Progress Advancement (`progress`)**
+- Advance order through Machine workflow nodes
+- Submit required data for Guard validation
+- Move order toward completion or exit states
+
+**3. Arbitration Operations**
+- `arb_confirm`: Submit compensation request and apply for arbitration
+- `arb_objection`: Oppose and appeal arbitration results, request re-arbitration
+- `arb_claim_compensation`: Claim compensation from adjudicated Arb object
+
+**4. Fund Management (`receive`)**
+- Unwrap CoinWrapper objects received by the order
+- Transfer received funds to order owner (`builder`)
+- **Only `builder` can execute this operation**
+
+**5. Information Submission (`required_info`)**
+- Submit Contact object (recipient info)
+- Submit WTS Proof object (delivery proof via Wowok Messenger)
+- Required for certain Machine node transitions
+
+**6. Ownership Transfer (`transfer_to`)**
+- Transfer order ownership to new address
+- Requires order owner (`builder`) permission
+- New owner gains all `builder` powers
+
+### Key Principle: Permission Hierarchy
+
+| Role | Powers | Limitations |
+|------|--------|-------------|
+| **Builder** (Order Holder) | All operations + fund withdrawal | Cannot be restricted by agents |
+| **Agents** | Operational tasks (progress, arbitration, cancel) | **No fund access** |
+
+> **Critical**: The `builder` maintains ultimate authority over funds. Agents assist in workflow operations but cannot override financial control. This protects the purchaser's investment.
 
 ## Common Order Errors
 
@@ -504,22 +787,41 @@ The Insurance Service must already be deployed and published before the Travel S
 
 ```
 1. SERVICE SETUP (one-time)
-   Permission → Guard(s) → Machine → Service (with allocation) → Publish
+   Permission → Guard(s) → Machine → Service (with multi-strategy allocation) → Publish
+   │
+   └── Allocation defines MULTIPLE strategies:
+       • order_complete → seller gets paid
+       • order_cancelled → buyer gets refund
+       • return_accepted → partial refund
+       • dispute_resolved → per arbitration
 
 2. ORDER CREATION (per transaction)
    onchain_operations(operation_type: "service", data: { object, order_new: { buy: { items, total_pay } } })
+   │
+   └── Creates: Order + Progress + Allocation (execution engine)
 
-3. PROGRESS ADVANCEMENT (multi-step)
+3. PROGRESS ADVANCEMENT (multi-step through Machine nodes)
    onchain_operations(operation_type: "progress", data: { object, order, node: { name, forward } })
+   │
+   └── Order flows through: Created → Confirmed → Shipping → ... → Exit Node
 
-4. FUND DISTRIBUTION (automatic on completion)
-   Allocation fires → Payment split per allocator Guards
+4. GUARD-CONTROLLED FUND DISTRIBUTION (at exit nodes)
+   When Progress reaches exit node:
+   │
+   ├── **Allocation** (execution engine) evaluates all Service-level allocator Guards
+   ├── ONLY the allocator whose Guard returns TRUE is selected
+   └── **Allocation** executes that strategy → distributes order funds
+   │
+   Examples:
+   • "Order Complete" node → merchant_win_guard TRUE → Allocation pays seller
+   • "Order Lost" node → customer_win_guard TRUE → Allocation refunds buyer
+   • "Return Complete" node → return_guard TRUE → Allocation does partial refund
 
 5. REWARD CLAIMS (on trigger nodes)
    Reward Guard validates → tokens distributed to claimant
 
 6. DISPUTE RESOLUTION (if needed)
-   Arbitration → arb_confirm/arb_objection → resolution
+   Arbitration → arb_confirm/arb_objection → resolution → allocation may be overridden
 ```
 
 ---

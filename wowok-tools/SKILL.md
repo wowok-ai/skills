@@ -27,6 +27,27 @@ always: true
 
 # WoWok MCP Tool Usage Reference
 
+## Quick Template (Copy This)
+
+When calling `onchain_operations`, always use this structure:
+
+```json
+{
+  "operation_type": "<select from 16 types below>",
+  "data": { /* see specific operation_type for details */ },
+  "env": { "account": "", "network": "testnet" },
+  "submission": { /* only when Guard requires user submission */ }
+}
+```
+
+**Critical Rules:**
+1. `operation_type` MUST be one of the 16 types listed below
+2. `data` structure changes based on `operation_type` — see each operation's details
+3. `submission` is ONLY needed when Guard validation requires user-provided data
+4. Most operations return directly; only Guard-triggered flows need a second call with `submission`
+
+---
+
 ## The 13 Tools
 
 | # | Tool | Type | Description |
@@ -613,23 +634,38 @@ User wants to...
 
 ---
 
-## Bundled Schema Reference
+## Schema Query Tool — Authoritative Schema Source
 
-When MCP tool schemas are unavailable or ambiguous, consult the complete schema files bundled with this package. Each file contains the full discriminated union, all nested sub-fields, and exact type definitions.
+Use the `schema_query` MCP tool to retrieve complete JSON schemas for any WoWok tool or operation. This is the **authoritative source** — returns schemas directly from the MCP server with all properties, types, and descriptions.
 
-| Tool | Schema File | Contents |
-|------|-----------|----------|
-| `onchain_operations` | [schemas/onchain_operations/](../schemas/onchain_operations/) | 16 types split by operation_type. [_index.md](../schemas/onchain_operations/_index.md) for lookup, Value Types, and principles; [_common.md](../schemas/onchain_operations/_common.md) for shared schemas (CallEnv, SubmissionCall, Recipient, etc.) |
-| `query_toolkit` | [schemas/schema-query_toolkit.md](../schemas/schema-query_toolkit.md) | 8 query_types, pagination params, filter structures |
-| `onchain_table_data` | [schemas/schema-onchain_table_data.md](../schemas/schema-onchain_table_data.md) | 12 query_types, parent/key structures, result schemas |
-| `onchain_events` | [schemas/schema-onchain_events.md](../schemas/schema-onchain_events.md) | Event query types, pagination |
-| `account_operation` | [schemas/schema-account_operation.md](../schemas/schema-account_operation.md) | Local wallet operations (generate, sign, faucet, etc.) |
-| `local_mark_operation` | [schemas/schema-local_mark_operation.md](../schemas/schema-local_mark_operation.md) | Address book mark operations |
-| `local_info_operation` | [schemas/schema-local_info_operation.md](../schemas/schema-local_info_operation.md) | Private local data operations |
-| `messenger_operation` | [schemas/schema-messenger_operation.md](../schemas/schema-messenger_operation.md) | Encrypted messaging operations |
-| `wip_file` | [schemas/schema-wip_file.md](../schemas/schema-wip_file.md) | Witness promise file operations |
-| `guard2file` | [schemas/schema-guard2file.md](../schemas/schema-guard2file.md) | Guard export to file |
-| `machineNode2file` | [schemas/schema-machineNode2file.md](../schemas/schema-machineNode2file.md) | Machine nodes export to file |
-| `wowok_buildin_info` | [schemas/schema-wowok_buildin_info.md](../schemas/schema-wowok_buildin_info.md) | Protocol constants, permissions, guard instructions |
+### Usage Examples
 
-**When to use**: Always verify the schema before calling complex tools like `onchain_operations` — the discriminated union has 16 branches with 5-6 levels of nesting, and one wrong field name causes immediate failure.
+**List all available schemas:**
+```
+schema_query({ action: "list" })
+```
+
+**Get a specific tool schema:**
+```
+schema_query({ action: "get", name: "onchain_operations" })
+schema_query({ action: "get", name: "onchain_operations_service" })
+schema_query({ action: "get", name: "query_toolkit" })
+```
+
+**Search schemas by keyword:**
+```
+schema_query({ action: "search", query: "guard" })
+```
+
+**List all on-chain operation types:**
+```
+schema_query({ action: "list_operations" })
+```
+
+### Available Schema Names
+
+**Main Tools:** `onchain_operations`, `query_toolkit`, `onchain_table_data`, `onchain_events`, `account_operation`, `local_mark_operation`, `local_info_operation`, `messenger_operation`, `wip_file`, `guard2file`, `machineNode2file`, `wowok_buildin_info`, `schema_query`
+
+**Individual Operations:** `onchain_operations_service`, `onchain_operations_machine`, `onchain_operations_order`, `onchain_operations_progress`, `onchain_operations_guard`, `onchain_operations_permission`, `onchain_operations_arbitration`, `onchain_operations_repository`, `onchain_operations_contact`, `onchain_operations_treasury`, `onchain_operations_reward`, `onchain_operations_allocation`, `onchain_operations_personal`, `onchain_operations_payment`, `onchain_operations_demand`, `onchain_operations_gen_passport`
+
+**When to use**: Always call `schema_query` before using complex tools like `onchain_operations` — the discriminated unions have 16 branches with 5-6 levels of nesting, and one wrong field name causes immediate failure. Use `action: "get"` with the specific operation name (e.g., `onchain_operations_service`) when you need the complete structure for a single operation type.
