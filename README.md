@@ -26,7 +26,7 @@ npm install -g @wowok/skills
 | Mode | Skills | Behavior |
 |------|--------|----------|
 | **Always** | `wowok-tools`, `wowok-safety` | Metadata always in prompt (~100 tokens each). AI auto-loads full content when needed. |
-| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-guard`, `wowok-machine`, `wowok-order` | AI matches description to task. Only loaded when relevant. |
+| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-guard`, `wowok-machine` | AI matches description to task. Only loaded when relevant. |
 
 ## Quick Start
 
@@ -53,7 +53,7 @@ See [WoWok Agent](https://github.com/wowok-ai/agent) for more details.
 npm install -g @wowok/skills
 ```
 
-This automatically installs all 7 skills to `~/.claude/skills/`. They will be available in your next Claude Code session.
+This automatically installs all 8 skills to `~/.claude/skills/`. They will be available in your next Claude Code session.
 
 ### 3. Install (Project — Team Sharing)
 
@@ -128,6 +128,7 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-provider` | Service provider guide (create Service, Machine, Allocators, handle orders) | Service Provider (Merchant) | On-demand |
 | `wowok-arbitrator` | Arbitration service guide (create Arbitration, handle disputes, voting) | Arbitrator | On-demand |
 | `wowok-order` | Order lifecycle management (place orders, track progress, arbitration) | Customer | On-demand |
+| `wowok-messenger` | Encrypted messaging (E2E communication, WTS evidence, conversation management) | All Roles | On-demand |
 | `wowok-guard` | Guard design mastery (programmable trust rules) | All Roles | On-demand |
 | `wowok-machine` | Machine workflow design (state machines, progress tracking) | Service Provider | On-demand |
 | `wowok-tools` | MCP tool usage mastery (13 tools, schema references) | All Roles | Always |

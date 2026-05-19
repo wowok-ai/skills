@@ -14,6 +14,7 @@ const SKILL_DIRS = [
   'wowok-provider',
   'wowok-arbitrator',
   'wowok-order',
+  'wowok-messenger',
   'wowok-guard',
   'wowok-machine',
   'wowok-tools',

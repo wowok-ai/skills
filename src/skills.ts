@@ -32,7 +32,7 @@ export const wowokSkills: SkillConfig = {
       version: '1.0.0',
       role: 'customer',
       loading: 'on-demand',
-      related: ['wowok-provider', 'wowok-arbitrator', 'wowok-tools']
+      related: ['wowok-provider', 'wowok-arbitrator', 'wowok-messenger', 'wowok-tools']
     },
 
     // === PROVIDER ROLE ===
@@ -42,7 +42,7 @@ export const wowokSkills: SkillConfig = {
       version: '1.0.0',
       role: 'provider',
       loading: 'on-demand',
-      related: ['wowok-machine', 'wowok-guard', 'wowok-tools']
+      related: ['wowok-machine', 'wowok-guard', 'wowok-messenger', 'wowok-tools']
     },
     {
       name: 'wowok-machine',
@@ -60,10 +60,18 @@ export const wowokSkills: SkillConfig = {
       version: '1.0.0',
       role: 'arbitrator',
       loading: 'on-demand',
-      related: ['wowok-order', 'wowok-tools']
+      related: ['wowok-order', 'wowok-messenger', 'wowok-tools']
     },
 
     // === SHARED / ALL ROLES ===
+    {
+      name: 'wowok-messenger',
+      description: 'Encrypted messaging — end-to-end encrypted communication, WTS evidence generation, conversation management. Used by all roles for secure off-chain communication and arbitration evidence.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-order', 'wowok-provider', 'wowok-arbitrator']
+    },
     {
       name: 'wowok-tools',
       description: 'MCP tool usage mastery — query_toolkit, onchain_operations, messenger_operation, schema_query, and all 13+ tools with correct parameter formats. ALWAYS loaded for all roles.',

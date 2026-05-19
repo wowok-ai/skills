@@ -26,6 +26,7 @@ Build and operate commercial services on WoWok as a service provider.
 > **Prerequisites**: Understand CREATE vs MODIFY pattern — use `schema_query({ action: "get", name: "onchain_operations" })`  
 > **Customer Perspective**: See [wowok-order](../wowok-order/SKILL.md)  
 > **Arbitration**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md)  
+> **Messenger**: See [wowok-messenger](../wowok-messenger/SKILL.md) for customer communication  
 > **Tools**: See [wowok-tools](../wowok-tools/SKILL.md)
 
 ---
@@ -159,7 +160,7 @@ ORDER CREATION (per transaction)
 │
 ORDER EXECUTION
 ├── Progress advances through Machine nodes
-├── At exit node: All allocator Guards evaluate
+├── At trigger nodes: All allocator Guards evaluate (any node can trigger, not just exit nodes)
 ├── Allocation executes the ONE strategy whose Guard returns TRUE
 └── Funds distributed per that strategy's rules
 ```
@@ -171,7 +172,7 @@ ORDER EXECUTION
 | 1 | **Service** | Define `order_allocators` array with multiple strategies (each with Guard + sharing rules) |
 | 2 | **Order** | When order created, **Allocation** object auto-generated as execution engine |
 | 3 | **Progress** | Order advances through Machine workflow nodes |
-| 4 | **Exit Node** | **Allocation** evaluates all allocator Guards against current state |
+| 4 | **Trigger Node** | **Allocation** evaluates all allocator Guards against current state (any node can be trigger) |
 | 5 | **Execution** | **Allocation** executes the ONE allocator whose Guard returns `true` |
 | 6 | **Distribution** | Funds split according to winning allocator's `sharing` rules |
 
@@ -215,6 +216,64 @@ allocators: [
 
 ---
 
+## Product Information (WIP Files)
+
+WIP (Witness Information Promise) files are **immutable product commitments** that serve as both marketing material and arbitration evidence.
+
+### Creating WIP Files
+
+Use the `wip_file` tool to generate product descriptions:
+
+```typescript
+wip_file({
+  operation: "generate",
+  markdown: "# Product Name\n\n## Description\nDetailed product description...\n\n## Specifications\n- Spec 1\n- Spec 2",
+  images: ["./product-image-1.png", "./product-image-2.jpg"],
+  outputPath: "./my-product.wip"
+})
+```
+
+**WIP File Operations**:
+- `generate`: Create WIP from markdown + images
+- `verify`: Check integrity of WIP file
+- `sign`: Add digital signatures
+- `wip2html`: Convert to HTML for display
+
+**Schema**: `schema_query({ action: "get", name: "wip_file" })`
+
+### Attaching WIP to Service
+
+When creating/updating Service, attach WIP to sales items:
+
+```typescript
+onchain_operations({
+  operation_type: "service",
+  data: {
+    object: "my-service",
+    sales: {
+      op: "add",
+      list: [{
+        name: "Premium Package",
+        price: "1000000000",  // 1000 tokens
+        stock: 100,
+        wip: "https://my-storage.com/product-a.wip",  // WIP file URL
+        wip_hash: "<sha256-hash-of-wip-file>"  // Integrity hash (optional but recommended)
+      }]
+    }
+  }
+})
+```
+
+**Why WIP Matters**:
+- **Immutable commitment**: Content is hashed and signed
+- **Arbitration evidence**: Disputes are resolved against WIP claims
+- **Customer trust**: Transparent product specifications
+- **Legal protection**: Tamper-proof record of promises
+
+> **Best Practice**: Always provide `wip_hash` to enable automatic integrity verification. If empty, the system will use the hash embedded in the WIP file.
+
+---
+
 ## Order Processing (Progress Operations)
 
 During order fulfillment, **always advance the workflow through the Order's Progress object**, not through the Order object directly.
@@ -223,7 +282,7 @@ During order fulfillment, **always advance the workflow through the Order's Prog
 
 | Object | Purpose | Can Advance Workflow? |
 |--------|---------|----------------------|
-| **Order** | Holds funds, records buyer/seller, manages agents, arbitration | ❌ No |
+| **Order** | Holds funds, records buyer/seller, manages order-level operations | ❌ No |
 | **Progress** | Tracks workflow state, executes Machine nodes, triggers Allocation | ✅ Yes |
 
 **Critical**: The Order's `progress` field contains the Progress object ID. Use this ID to operate the workflow.
@@ -259,7 +318,7 @@ onchain_operations({
 ```
 
 **Why Lock (hold: true)**:
-- Prevents **race conditions** when multiple agents/permissions compete
+- Prevents **race conditions** when multiple permissions compete
 - Ensures **atomic workflow advancement**
 - Required for **multi-step operations** with off-chain dependencies
 
@@ -393,6 +452,8 @@ Service Providers handle customer communication through Wowok Messenger for:
 - **Issue resolution**: Address complaints before they escalate to arbitration
 - **Evidence collection**: WTS files for dispute resolution
 
+> **Complete Messenger Guide**: See [wowok-messenger](../wowok-messenger/SKILL.md) for messaging operations, WTS generation, and evidence management.
+
 ### Setting Up Customer Service Contact
 
 Service's `um` field references a Contact object with Messenger addresses:
@@ -402,11 +463,24 @@ Service.um → Contact.object_id
 Contact.ims[] → List of IM addresses for customer service
 ```
 
+### Responding to Customer Inquiries
+
+```typescript
+messenger_operation({
+  operation: "send_message",
+  to: "<customer_address>",
+  content: "Response to inquiry with clear terms and confirmation..."
+})
+```
+
+**Evidence Closure Principle**: Messages only become valid evidence when you **explicitly confirm** (ARK signature). Ensure you respond to customer messages to create valid evidence trail.
+
 **Best Practices**:
 - Respond promptly to customer inquiries
 - Document all agreements via Messenger (generates WTS evidence)
 - Proactively communicate delays or issues
 - Use WTS files as tamper-proof conversation records
+- **Always confirm understanding** — unconfirmed messages have limited evidentiary value
 
 ---
 
