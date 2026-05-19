@@ -1,4 +1,4 @@
-﻿---
+---
 name: wowok-order
 description: |
   WoWok order lifecycle management — covers the complete order flow from
@@ -521,3 +521,13 @@ The Insurance Service must already be deployed and published before the Travel S
 6. DISPUTE RESOLUTION (if needed)
    Arbitration → arb_confirm/arb_objection → resolution
 ```
+
+---
+
+## Payments & Refunds Rules
+
+- **Service purchase**: Always pay through `Service`. Name the generated `Order`, `Progress`, and `Allocation` via `namedNew*` fields for easy management.
+- **Order operations**: All order user operations MUST go through the `Order` object — do not operate on `Progress` directly for order-related actions.
+- **Refunds/withdrawals**: Users satisfy `Allocation` Guard conditions to withdraw instantly.
+- **Arbitration claims**: Compensation payouts go through `Order`.
+- **Alternative payments**: `account_operation (transfer)` for direct wallet-to-wallet, or `onchain_operations (payment)` for commercial features (purpose tracking, Guard validation).

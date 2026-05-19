@@ -373,3 +373,53 @@ The Guard is now ready to be referenced by other operations (service, machine, p
 | "table field required" | Missing table array | Guards MUST have `table[]` |
 | "guard validation failed" | Logic error | Export with `guard2file`, review logic |
 | "object not found" | Wrong query object | Verify object addresses/identifiers |
+
+---
+
+## Query Witness Conversion Types
+
+When using a `query` node's `convert_witness` field, the following numeric IDs allow cross-object type conversion — accessing a related object from the current context:
+
+| Conversion | ID | Description |
+|-----------|-----|-------------|
+| TypeOrderProgress | 100 | From Order, get its Progress |
+| TypeOrderMachine | 101 | From Order, get its Machine |
+| TypeOrderService | 102 | From Order, get its Service |
+| TypeProgressMachine | 103 | From Progress, get its Machine |
+| TypeArbOrder | 104 | From Arb, get its Order |
+| TypeArbArbitration | 105 | From Arb, get its Arbitration |
+| TypeArbProgress | 106 | From Arb, get its Progress |
+| TypeArbMachine | 107 | From Arb, get its Machine |
+| TypeArbService | 108 | From Arb, get its Service |
+
+**Example**: To verify that an Order's Progress is at a specific node, query the Order with `convert_witness: 100` (TypeOrderProgress) to fetch the Progress object, then query the Progress's current node name.
+
+---
+
+## Discovering Query Instructions via `wowok_buildin_info`
+
+Before using `query` nodes, discover available query instructions and their signatures:
+
+```typescript
+// Query all Guard instructions and object queries
+{
+  info: "guard instructions",
+  filter: {
+    scope: "all",           // "instruct" | "object query" | "all"
+    objectType?: string,    // Filter by object type (for object queries)
+    returnType?: string,    // Filter by return type
+    paramCount?: number,    // Filter by parameter count
+    name?: string           // Case-insensitive name filter
+  }
+}
+```
+
+This returns a list of all available operations with:
+- `id`: Numeric operation ID
+- `name`: Human-readable name (e.g., "machine.description")
+- `objectType`: Target object type
+- `parameters`: Array of expected parameter types
+- `return`: Return value type
+- `description`: Detailed usage description
+
+Always query `guard instructions` before designing complex Guards to ensure correct IDs, parameter types, and return types.

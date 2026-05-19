@@ -1,4 +1,4 @@
-﻿---
+---
 name: wowok-machine
 description: |
   WoWok Machine workflow design — defines multi-step workflows (state machines)
@@ -524,3 +524,36 @@ Sensitive logistics and customer data flow through Messenger's end-to-end encryp
 | Mutual confirmation | Both parties sign | Both submit confirmation proofs |
 
 This pattern is used in Machine workflows where off-chain actions (shipping, delivery) need on-chain verification via Guard proofs.
+
+---
+
+## Forward Permission Model
+
+Each forward must specify either `permissionIndex` or `namedOperator`:
+
+| Field | Scope | Typical Use |
+|-------|-------|-------------|
+| `permissionIndex` | Shared across all Progress instances | Internal roles (merchant operators, admins) |
+| `namedOperator` | Per-Progress namespace | External roles per order instance |
+
+**Order user operations** MUST use `namedOperator("")` — this maps to the order's owner (customer).
+
+---
+
+## Guard in Forwards — Use Cases
+
+The optional `guard` field in a Forward validates critical operation results before allowing the forward to complete:
+
+- **Repository submission validation**: Verify that required data was successfully submitted to a specified Repository object
+- **Supply chain commitment validation**: Confirm that sub-order commitments in the supply chain were fulfilled
+- **External condition checks**: Validate any external state or conditions that must be met before proceeding
+
+When a forward has a Guard, the Guard's logic is evaluated when a user attempts to execute that forward. If the Guard returns `false`, the forward cannot be completed.
+
+---
+
+## Progress Advancement Rules
+
+- Sum of completed forward weights ≥ threshold → session moves to history, next node becomes current
+- Order users advance via `Order` object
+- Non-order users advance via `Progress` object directly
