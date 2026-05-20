@@ -17,12 +17,10 @@
     "wowok-machine/",
     "wowok-order/",
     "examples/",
-    "schemas/",
     "scripts/install.js",
     "README.md"
   ],
   "scripts": {
-    "prebuild": "node scripts/copy-assets.js",
     "build": "tsc",
     "watch": "tsc --watch",
     "prepublishOnly": "npm run build",
