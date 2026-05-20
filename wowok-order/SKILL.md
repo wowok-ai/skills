@@ -184,6 +184,66 @@ Once consensus is reached, create the order through Service operation.
 
 When creating an order via the `buy` operation, you can apply a discount coupon by including the `discount` field with the coupon name/ID.
 
+**Finding Available Discounts**:
+
+Discount coupons are separate objects that you receive (usually transferred from Service marketing campaigns or other users). To find discounts applicable to the current Service:
+
+**Step 1: Query all Discount objects you own**
+
+Use `query_toolkit` with `onchain_received` query type to get all Discount objects:
+
+```json
+{
+  "query_type": "onchain_received",
+  "name_or_address": "your_account_name",
+  "type": "0x2::service::Discount", // Discount type on-chain
+  "cursor": null,
+  "limit": 50
+}
+```
+
+This returns `ReceivedNormal[]` where each item's `content_raw` contains Discount fields:
+- `name`: Discount name
+- `discount_type`: "rate" (percentage) or "fixed" (absolute amount)
+- `benchmark`: Minimum order amount required
+- `off`: Discount value (e.g., 1000 for 10% if rate, or 100 for 100 units if fixed)
+- `time_start` / `time_end`: Validity period
+- `service`: Parent Service object ID (which Service this discount belongs to)
+- `transferable`: Whether it can be transferred to others
+
+**Step 2: Filter discounts for the current Service**
+
+Each Discount has a `service` field indicating which Service it can be used with. Filter the received Discount objects by comparing each Discount's `service` field with the target Service object ID you're purchasing from. Only Discounts where `service` matches the target Service can be applied to that Service.
+
+**Step 3: Validate discount applicability**
+
+Before using a discount, verify:
+1. **Time validity**: `time_start` ≤ current_time ≤ `time_end`
+2. **Minimum amount**: Order total ≥ `benchmark`
+3. **Service match**: Discount's `service` field matches the Service being purchased
+
+**Step 4: Apply discount in order creation**
+
+Include the selected Discount object ID in the `buy.discount` field:
+
+```json
+{
+  "operation_type": "service",
+  "data": {
+    "buy": {
+      "items": [...],
+      "total_pay": "10000",
+      "discount": "discount_object_id_here"
+    }
+  }
+}
+```
+
+**Discount Calculation**:
+- If `discount_type` is "rate": Discount = `total_pay` × (`off` / 10000)
+- If `discount_type` is "fixed": Discount = min(`off`, `total_pay`)
+- Final payment = `total_pay` - Discount
+
 | `namedNewOrder` | Local name for Order | Recommended for easy reference |
 | `namedNewProgress` | Local name for Progress | Recommended |
 | `namedNewAllocation` | Local name for Allocation | Recommended |
