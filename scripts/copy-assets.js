@@ -40,28 +40,8 @@ if (!examplesFromDocs) {
   }
 }
 
-// --- Schemas ---
-const schemasSrc = path.join(DOCS, 'skills');
-const schemasDest = path.join(ROOT, 'schemas');
-
-const schemasFromDocs = copyDirIfExists(schemasSrc, schemasDest, 'schemas');
-if (!schemasFromDocs) {
-  const schemasExist = checkDirExists(schemasDest, 'schemas');
-  if (!schemasExist) {
-    console.error('[ERR]  schemas: source not found and dest does not exist. Run skill-deploy.sh or ensure docs/ is at ../docs');
-    hasError = true;
-  }
-}
-
-// Exclude WOWOK.md from schemas (covered by skills framework)
-const wowokPath = path.join(schemasDest, 'WOWOK.md');
-if (fs.existsSync(wowokPath)) {
-  fs.unlinkSync(wowokPath);
-  console.log('[ok]   schemas: removed WOWOK.md (covered by skills)');
-}
-
 if (hasError) {
-  console.error('\n[FAIL] Asset copy incomplete. Build may produce a package missing examples or schemas.');
+  console.error('\n[FAIL] Asset copy incomplete. Build may produce a package missing examples.');
   process.exit(1);
 }
 
