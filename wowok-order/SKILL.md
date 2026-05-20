@@ -61,11 +61,11 @@ Thoroughly investigate before committing funds.
 
 ### 1.1 Query Service Configuration
 
-```typescript
-query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
-```
+**Tool**: Use `query_toolkit` with `onchain_objects` query type to retrieve Service configuration.
 
-**Analyze these fields**:
+**Schema Reference**: `schema_query({ action: "get", name: "query_toolkit" })`
+
+**Key Fields to Analyze**:
 
 | Field | What to Check | Risk Signals |
 |-------|---------------|--------------|
@@ -82,19 +82,11 @@ query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
 
 ### 1.2 Evaluate Service Reputation
 
-Query the Service's EntityLinker for community endorsement data:
+Query the Service's EntityLinker for community endorsement data.
 
-```typescript
-query_toolkit({ query_type: "onchain_table_item_entity_linker", address: "<service_address>" })
-```
+**Tool**: `query_toolkit` with `onchain_table_item_entity_linker` query type.
 
-**Calculate Key Metrics**:
-
-```typescript
-// Query associated orders for deep analysis
-query_toolkit({ query_type: "onchain_objects", objects: ["<order_addr_1>", "<order_addr_2>"] })
-query_toolkit({ query_type: "onchain_table", parent: "<progress_address>" })
-```
+**Key Metrics to Calculate**:
 
 | Metric | How to Calculate | Good Sign |
 |--------|------------------|-----------|
@@ -125,11 +117,7 @@ Establish mutual understanding with seller BEFORE purchasing. Consensus is built
 
 Before contacting seller, thoroughly understand the immutable rules:
 
-```typescript
-// Query Service for consensus parameters
-query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
-// Analyze: machine (workflow), order_allocators (fund rules), arbitrations (dispute resolution)
-```
+**Tool**: `query_toolkit` with `onchain_objects` query type to retrieve Service data.
 
 **Key On-Chain Consensus Elements**:
 - **Machine**: Workflow nodes and transitions — defines how order progresses
@@ -139,28 +127,19 @@ query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
 
 ### 2.2 Get Service Contact
 
-```typescript
-// Step 1: Query Service to get Contact object
-query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
-// Extract: service.um (Contact object ID)
+**Steps**:
+1. Query Service object to extract `um` field (Contact object ID)
+2. Query Contact object to retrieve `ims[]` array (Messenger addresses)
 
-// Step 2: Query Contact for IM addresses
-query_toolkit({ query_type: "onchain_objects", objects: ["<contact_id>"] })
-// Extract: contact.ims[].at (Messenger addresses)
-```
+**Tool**: `query_toolkit` with `onchain_objects` query type.
 
 ### 2.3 Send Encrypted Messages
 
-Use Messenger to clarify on-chain rules and negotiate specifics:
+Use Messenger to clarify on-chain rules and negotiate specifics.
 
-```typescript
-messenger_operation({
-  operation: "send_message",
-  from: "<your_account>",
-  to: "<service_im_address>",
-  content: "Questions about: deliverables, timeline, refund policy, how Machine node X works..."
-})
-```
+**Tool**: `messenger_operation` with `send_message` operation.
+
+**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
 
 **Evidence Closure Principle**: Messages only become valid evidence when the recipient **explicitly confirms** (ARK signature). One-sided claims are not evidence.
 
@@ -188,7 +167,11 @@ Once consensus is reached, create the order through Service operation.
 
 ### 3.1 Key Parameters
 
-**Schema**: `schema_query({ action: "get", name: "onchain_operations_service" })`
+**Operation**: `onchain_operations` with `operation_type: "service"`
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_service" })`
+
+**Key Parameters**:
 
 | Parameter | Purpose | Notes |
 |-----------|---------|-------|
@@ -208,13 +191,7 @@ If Service requires private info (`customer_required`):
 2. Include order ID in the message
 3. Confirm receipt with seller
 
-```typescript
-messenger_operation({
-  operation: "send_message",
-  to: "<service_im_address>",
-  content: "Order: <order_id>. Required info: phone=xxx, address=yyy"
-})
-```
+**Tool**: `messenger_operation` with `send_message` operation.
 
 ### 3.3 Post-Creation Notification
 
@@ -226,7 +203,7 @@ messenger_operation({
 
 All operations use `operation_type: "order"`.
 
-**Schema**: `schema_query({ action: "get", name: "onchain_operations_order" })`
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_order" })`
 
 ### 4.1 Permission Hierarchy
 
@@ -245,21 +222,14 @@ The Machine workflow defines who can operate each forward transition:
 - **Order-operable forwards**: `namedOperator === ""` — you can execute via `order.progress`
 - **Permission-operable forwards**: Require specific namespace permission — typically for Service Provider or collaborators
 
-**Step-by-Step**:
+**Steps**:
+1. Query Order object to get `progress` (Progress ID) and `machine` (Machine ID)
+2. Query Progress object to get `current_node`
+3. Query Machine table to find valid transitions from current node
 
-```typescript
-// Step 1: Get current state
-query_toolkit({ query_type: "onchain_objects", objects: ["<order_name>"] })
-// Extract: order.progress (Progress ID), order.machine (Machine ID)
-
-query_toolkit({ query_type: "onchain_objects", objects: ["<progress_id>"] })
-// Extract: progress.current_node ("" = initial)
-
-// Step 2: Query valid transitions
-query_toolkit({ query_type: "onchain_table", parent: "<machine_id>" })
-// Filter: pair.prev_node === current_node AND forward.namedOperator === ""
-// These are the transitions YOU (as order holder) can execute
-```
+**Tools**: 
+- `query_toolkit` with `onchain_objects` query type
+- `query_toolkit` with `onchain_table` query type
 
 > **Note**: Service Providers or their collaborators may operate other forwards directly via Progress if the Machine design grants them permission. The Machine consensus is immutable — both parties operate within the same transparent rules.
 
@@ -321,12 +291,17 @@ When disputes cannot be resolved directly, use third-party Arbitration.
 | 6 | `order.arb_objection` | (Optional) Object to unfavorable result |
 | 7 | `order.arb_claim_compensation` | Claim payout from `service.compensation_fund` |
 
+**Schema References**:
+- `schema_query({ action: "get", name: "onchain_operations_arbitration" })`
+- `schema_query({ action: "get", name: "onchain_operations_order" })`
+- `schema_query({ action: "get", name: "messenger_operation" })`
+
 ### 5.2 Key Rules
 
 - **Multiple Arb Objects**: Can arbitrate on multiple services simultaneously
 - **One Compensation**: Only ONE claim per Order (choose best result)
 - **Time Sensitivity**: Long arbitration may exceed order deadlines — discuss timelines pre-purchase
-- **Evidence Privacy**: WTS files verify authenticity via `messenger_operation({ operation: "verify_wts" })`
+- **Evidence Privacy**: WTS files verify authenticity via `messenger_operation` with `verify_wts` operation
 
 ### 5.3 Arb Object Lifecycle
 
@@ -342,6 +317,10 @@ Principal_confirming → Arbitrator_confirming → Voting → Arbitrated → Obj
 
 Extract funds sent to Order (compensation, penalties, rewards) to your wallet.
 
+**Operation**: `onchain_operations` with `operation_type: "order"` and `receive` field.
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_order" })`
+
 **Sources**:
 - Arbitration compensation (from `service.compensation_fund`)
 - Service penalties (late delivery, quality issues)
@@ -354,28 +333,23 @@ Extract funds sent to Order (compensation, penalties, rewards) to your wallet.
 
 Transfer order ownership to new address. Requires builder permission.
 
+**Operation**: `onchain_operations` with `operation_type: "order"` and `transfer_to` field.
+
 ---
 
 ## Quick Reference
 
 ### Essential Schemas
 
-```typescript
-// Service operations (purchase)
-schema_query({ action: "get", name: "onchain_operations_service" })
+| Purpose | Schema Name |
+|---------|-------------|
+| Service operations (purchase) | `onchain_operations_service` |
+| Order operations (progress, arbitration, receive) | `onchain_operations_order` |
+| Arbitration operations (dispute) | `onchain_operations_arbitration` |
+| Messenger (encrypted communication) | `messenger_operation` |
+| Query toolkit (object data, tables) | `query_toolkit` |
 
-// Order operations (progress, arbitration, receive)
-schema_query({ action: "get", name: "onchain_operations_order" })
-
-// Arbitration operations (dispute)
-schema_query({ action: "get", name: "onchain_operations_arbitration" })
-
-// Messenger (encrypted communication)
-schema_query({ action: "get", name: "messenger_operation" })
-
-// Query toolkit (object data, tables)
-schema_query({ action: "get", name: "query_toolkit" })
-```
+**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
 
 ### Common Workflows
 

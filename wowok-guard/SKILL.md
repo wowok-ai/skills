@@ -26,34 +26,25 @@ A Guard is a **recursive computational tree** that evaluates to a boolean result
 
 ## Guard Structure
 
-```typescript
-Guard {
-  namedNew?: { name: string; tags?: string[]; onChain?: boolean; replaceExistName?: boolean };
-  description?: string;
+**Operation**: `onchain_operations` with `operation_type: "guard"`.
 
-  table: {                            // Data table — what the Guard validates
-    identifier: number;               // 0-255, unique within this Guard
-    b_submission: boolean;            // Must user submit this value?
-    value_type: ValueType;            // Expected type (0-18)
-    value?: SupportedValue;           // Default value (if b_submission = false)
-    name?: string;                    // Human-readable field name
-  }[];
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_guard" })`
 
-  root: {
-    type: "node";
-    node: GuardNode;                  // The recursive validation tree
-  } | {
-    type: "file";
-    file_path: string;                // Load from JSON/Markdown file
-    format?: "json" | "markdown";
-  };
-
-  rely?: {                            // Depend on other Guards
-    guards: string[];                 // Guard IDs or names
-    logic_or?: boolean;               // OR (true) vs AND (false/default)
-  };
-}
-```
+**Key Fields**:
+- `namedNew`: Object creation options (name, tags, onChain, replaceExistName)
+- `description`: Guard description
+- `table`: Data table defining what the Guard validates
+  - `identifier`: 0-255, unique within this Guard
+  - `b_submission`: Must user submit this value?
+  - `value_type`: Expected type (0-18, see ValueType enum)
+  - `value`: Default value (if b_submission = false)
+  - `name`: Human-readable field name
+- `root`: The computational tree
+  - `type: "node"`: Inline node definition
+  - `type: "file"`: Load from JSON/Markdown file
+- `rely`: Dependencies on other Guards
+  - `guards`: Array of Guard IDs or names
+  - `logic_or`: OR (true) vs AND (false/default)
 
 **CRITICAL**: The Guard's `table` defines ALL data the Guard uses — both submitted values and values passed from the calling object. Every `identifier` node in the tree references a table entry.
 
@@ -61,39 +52,46 @@ Guard {
 
 ## GuardNode — The Computational Tree
 
-The GuardNode is a `z.discriminatedUnion("type", [...])` — 70+ type variants. Every node has a `type` field. Below are all categories.
+The GuardNode is a discriminated union with 70+ type variants. Every node has a `type` field.
 
 ### Leaf Nodes (No Children)
 
 #### identifier — Read from Guard Table
-```typescript
-{ type: "identifier"; identifier: number }
-```
-Returns the value at the specified Guard table index (0-255). This is how data enters the computation tree.
+
+**Type**: `identifier`
+
+**Key Field**:
+- `identifier`: Guard table index (0-255)
+
+Returns the value at the specified Guard table index.
 
 #### value_type — Get ValueType of Child
-```typescript
-{ type: "value_type"; node: GuardNode }
-```
+
+**Type**: `value_type`
+
+**Key Field**:
+- `node`: Child GuardNode
+
 Returns U8: the ValueType identifier of the child node's result.
 
 ---
 
 ### Query Node — Fetch On-Chain Data
 
-```typescript
-{
-  type: "query";
-  query: number | string;             // Query instruction ID or name
-  object: {
-    identifier: number;               // Guard table index for target object
-    convert_witness?: number;         // Optional witness conversion
-  };
-  parameters: GuardNode[];            // Parameters for the query
-}
-```
+**Type**: `query`
 
-Fetches data from on-chain WoWok objects. The `query` field references a built-in query instruction (e.g., `1001` for permission description, or name `"permission.description"`). Use `wowok_buildin_info` with `info_type: "guard_instructions"` to discover available queries.
+**Key Fields**:
+- `query`: Query instruction ID (number) or name (string)
+- `object`: Target object specification
+  - `identifier`: Guard table index for target object
+  - `convert_witness`: Optional witness conversion ID
+- `parameters`: Array of GuardNode parameters for the query
+
+Fetches data from on-chain WoWok objects. The `query` field references a built-in query instruction.
+
+**Discover Available Queries**:
+
+**Tool**: `wowok_buildin_info` with `info_type: "guard_instructions"`.
 
 **System Addresses for Entity Queries**:
 | Constant | Value | Use For |
@@ -108,26 +106,30 @@ Fetches data from on-chain WoWok objects. The `query` field references a built-i
 All return **Bool**. Each takes 2-8 children unless noted.
 
 #### Core Logic
-| type | Children | Description |
+
+| Type | Children | Description |
 |------|----------|-------------|
 | `logic_and` | `nodes[]` | ALL children must be true |
 | `logic_or` | `nodes[]` | ANY child must be true |
 | `logic_not` | `node` (1) | Inverts boolean result |
 
 #### Equality
-| type | Children | Description |
+
+| Type | Children | Description |
 |------|----------|-------------|
 | `logic_equal` | `nodes[]` | Type+value equality; all must match first |
 | `logic_string_nocase_equal` | `nodes[]` | Case-insensitive string equality |
 
 #### String Comparison
-| type | Children | Description |
+
+| Type | Children | Description |
 |------|----------|-------------|
 | `logic_string_contains` | `nodes[]` | First contains all others (case-sensitive) |
 | `logic_string_nocase_contains` | `nodes[]` | First contains all others (case-insensitive) |
 
 #### Numeric Comparison (U256)
-| type | Children | Description |
+
+| Type | Children | Description |
 |------|----------|-------------|
 | `logic_as_u256_equal` | `nodes[]` | First == all others |
 | `logic_as_u256_greater` | `nodes[]` | First > all others |
@@ -140,7 +142,8 @@ All return **Bool**. Each takes 2-8 children unless noted.
 ### Arithmetic Nodes (calc_*)
 
 #### Numeric (all return U256, 2-8 children)
-| type | Operation |
+
+| Type | Operation |
 |------|-----------|
 | `calc_number_add` | first + second + third + ... |
 | `calc_number_subtract` | first - second - third - ... |
@@ -149,7 +152,8 @@ All return **Bool**. Each takes 2-8 children unless noted.
 | `calc_number_mod` | (first % second) % third % ... (throws on zero) |
 
 #### String (return U64 or Bool)
-| type | Children | Returns | Description |
+
+| Type | Children | Returns | Description |
 |------|----------|---------|-------------|
 | `calc_string_length` | `node` (1) | U64 | UTF-8 byte length |
 | `calc_string_contains` | `nodes[]` (2-8) | Bool | cs substring check |
@@ -157,9 +161,10 @@ All return **Bool**. Each takes 2-8 children unless noted.
 | `calc_string_nocase_equal` | `nodes[]` (2-8) | Bool | ci equality |
 
 #### String Index (return U64)
-| type | Children | Description |
+
+| Type | Children | Description |
 |------|----------|-------------|
-| `calc_string_indexof` | `nodeLeft` + `nodeRight` + `order` | Find substring index (cs). `order`: "forward" \| "backward". Not found → u64::MAX |
+| `calc_string_indexof` | `nodeLeft` + `nodeRight` + `order` | Find substring index (cs). `order`: "forward" or "backward". Not found → u64::MAX |
 | `calc_string_nocase_indexof` | `nodeLeft` + `nodeRight` + `order` | Find substring index (ci) |
 
 ---
@@ -168,7 +173,7 @@ All return **Bool**. Each takes 2-8 children unless noted.
 
 All take single `node` child.
 
-| type | Input → Output | Description |
+| Type | Input → Output | Description |
 |------|---------------|-------------|
 | `convert_number_address` | Number → Address | Numeric to Address type |
 | `convert_address_number` | Address → U256 | Address to numeric |
@@ -186,7 +191,8 @@ All take single `node` child.
 ### Vector Operations (vec_*)
 
 #### Vector Properties
-| type | Children | Returns | Description |
+
+| Type | Children | Returns | Description |
 |------|----------|---------|-------------|
 | `vec_length` | `node` (1) | U64 | Number of elements |
 
@@ -194,7 +200,7 @@ All take single `node` child.
 
 First node = vector, remaining nodes = values to check.
 
-| type | Vector Type | Element Type |
+| Type | Vector Type | Element Type |
 |------|------------|--------------|
 | `vec_contains_bool` | VecBool (9) or Value (19) | Bool (0) or Value (19) |
 | `vec_contains_address` | VecAddress (10) or Value (19) | Address (1) or Value (19) |
@@ -204,7 +210,7 @@ First node = vector, remaining nodes = values to check.
 
 #### Vector Index (return U64)
 
-| type | Children | Description |
+| Type | Children | Description |
 |------|----------|-------------|
 | `vec_indexof_bool` | `nodeLeft` + `nodeRight` + `order` | Find bool index |
 | `vec_indexof_address` | `nodeLeft` + `nodeRight` + `order` | Find address index |
@@ -212,7 +218,7 @@ First node = vector, remaining nodes = values to check.
 | `vec_indexof_string_nocase` | `nodeLeft` + `nodeRight` + `order` | Find string index (ci) |
 | `vec_indexof_number` | `nodeLeft` + `nodeRight` + `order` | Find number index |
 
-`order`: "forward" \| "backward". Not found → u64::MAX.
+`order`: "forward" or "backward". Not found → u64::MAX.
 
 ---
 
@@ -222,7 +228,7 @@ Query on-chain records to validate operations. All return **Bool**.
 
 These nodes check historical records (orders, progress steps, rewards, treasury operations) to enforce limits.
 
-| type | Key Parameters | Description |
+| Type | Key Parameters | Description |
 |------|---------------|-------------|
 | `record_check_recipient_order` | `receipt_type` + `recipient` | Check order count/status by recipient |
 | `record_check_recipient_progress` | `recipient` | Check progress count by recipient |
@@ -242,122 +248,104 @@ Each uses `GuardNode` sub-nodes for its parameters (e.g., `recipient` is a Guard
 ## Guard Design Workflow
 
 ### Step 1: Query Available Instructions
-```
-wowok_buildin_info({ info_type: "guard_instructions" })
-```
+
+**Tool**: `wowok_buildin_info` with `info_type: "guard_instructions"`.
+
 Discover what queries are available and their expected parameter types.
 
 ### Step 2: Query Value Types
-```
-wowok_buildin_info({ info_type: "value_types" })
-```
-Understand the ValueType enum (Bool=0, Address=1, String=2, U8=3, ..., U256=8, VecBool=9, ..., VecVecU8=18).
+
+**Tool**: `wowok_buildin_info` with `info_type: "value_types"`.
+
+Understand the ValueType enum:
+- Bool=0, Address=1, String=2
+- U8=3, U16=4, U32=5, U64=6, U128=7, U256=8
+- VecBool=9, VecAddress=10, VecString=11
+- VecU8=12, VecU16=13, VecU32=14, VecU64=15, VecU128=16, VecU256=17
+- VecVecU8=18
 
 ### Step 3: Design the Table
+
 Decide what data the Guard needs:
 - **Submitted data** (b_submission = true): User provides at operation time
 - **Passed data** (b_submission = false): Object provides automatically
 
 ### Step 4: Build the Root Tree
+
 - Start with `logic_and` as the root
 - Add child nodes for each condition
 - Use `query` + `identifier` patterns for data fetching
 - Use comparison nodes for validation
 
 ### Step 5: Create Guard
-```
-onchain_operations({
-  operation_type: "guard",
-  data: {
-    namedNew: { name: "my_guard" },
-    description: "Validates X, Y, Z",
-    table: [...],
-    root: { type: "node", node: { type: "logic_and", nodes: [...] } }
-  }
-})
-```
+
+**Operation**: `onchain_operations` with `operation_type: "guard"`.
+
+**Key Fields**:
+- `namedNew`: Guard creation options with name
+- `description`: Guard purpose
+- `table`: Data table array
+- `root`: Computational tree with `type: "node"` and `node` containing the tree
 
 Guard creation is a **one-step** operation — the `guard` operation type has no `submission` field. It either succeeds (returns transaction) or fails (returns error).
 
 ### Step 6: Export for Review
-```
-guard2file({ guard: "my_guard", file_path: "./my_guard.json", format: "json" })
-```
+
+**Tool**: `guard2file`.
+
+**Key Fields**:
+- `guard`: Guard ID or name
+- `file_path`: Output file path
+- `format`: Output format ("json" or "markdown")
 
 ### Step 7: Use Guard in Operations
+
 The Guard is now ready to be referenced by other operations (service, machine, progress, etc.) via their `submission` field.
-
-**Get the complete Guard schema:**
-```
-schema_query({ action: "get", name: "onchain_operations_guard" })
-```
-
-**Get the general on-chain operations schema (for submission flow):**
-```
-schema_query({ action: "get", name: "onchain_operations" })
-```
 
 ---
 
 ## Common Guard Patterns
 
 ### Pattern 1: Identity Check (is sender == expected address?)
-```typescript
-{
-  type: "logic_equal",
-  nodes: [
-    { type: "identifier", identifier: 0 },    // submitted address
-    { type: "identifier", identifier: 1 }     // stored address
-  ]
-}
-```
+
+**Node Structure**:
+- Type: `logic_equal`
+- Nodes: Two `identifier` nodes
+  - First: identifier 0 (submitted address)
+  - Second: identifier 1 (stored address)
 
 ### Pattern 2: Minimum Balance
-```typescript
-{
-  type: "logic_as_u256_greater_or_equal",
-  nodes: [
-    {
-      type: "query",
-      query: "balance",                         // check wowok_buildin_info for correct ID
-      object: { identifier: 0 },                // account from table[0]
-      parameters: [
-        { type: "identifier", identifier: 1 }   // coin_type from table[1]
-      ]
-    },
-    { type: "identifier", identifier: 2 }       // minimum balance from table[2]
-  ]
-}
-```
+
+**Node Structure**:
+- Type: `logic_as_u256_greater_or_equal`
+- Nodes:
+  - First: `query` node
+    - query: "balance" (check wowok_buildin_info for correct ID)
+    - object: { identifier: 0 } (account from table[0])
+    - parameters: [ { type: "identifier", identifier: 1 } ] (coin_type from table[1])
+  - Second: `identifier` node with identifier 2 (minimum balance from table[2])
 
 ### Pattern 3: Entity Registration Count
-```typescript
-{
-  type: "logic_as_u256_greater",
-  nodes: [
-    {
-      type: "query",
-      query: "entity_registrar_records_length",
-      object: { identifier: 0 },                // ENTITY_REGISTRAR_ADDRESS (0xaab)
-      parameters: []
-    },
-    { type: "identifier", identifier: 1 }       // 0 (check count > 0)
-  ]
-}
-```
+
+**Node Structure**:
+- Type: `logic_as_u256_greater`
+- Nodes:
+  - First: `query` node
+    - query: "entity_registrar_records_length"
+    - object: { identifier: 0 } (ENTITY_REGISTRAR_ADDRESS 0xaab)
+    - parameters: []
+  - Second: `identifier` node with identifier 1 (0 to check count > 0)
 
 ### Pattern 4: Rate Limiting (record check)
-```typescript
-{
-  type: "logic_not",
-  node: {
-    type: "record_check_recipient_order",
-    receipt_type: "specific_value",
-    recipient: { type: "identifier", identifier: 0 }
-  }
-}
-// Inverts: "has records" → false (blocked)
-```
+
+**Node Structure**:
+- Type: `logic_not`
+- Node:
+  - Type: `record_check_recipient_order`
+  - receipt_type: "specific_value"
+  - recipient: { type: "identifier", identifier: 0 }
+
+Inverts: "has records" → false (blocked)
 
 ---
 
@@ -397,39 +385,17 @@ When using a `query` node's `convert_witness` field, the following numeric IDs a
 | TypeOrderService | 102 | From Order, get its Service |
 | TypeProgressMachine | 103 | From Progress, get its Machine |
 | TypeArbOrder | 104 | From Arb, get its Order |
-| TypeArbArbitration | 105 | From Arb, get its Arbitration |
-| TypeArbProgress | 106 | From Arb, get its Progress |
-| TypeArbMachine | 107 | From Arb, get its Machine |
-| TypeArbService | 108 | From Arb, get its Service |
-
-**Example**: To verify that an Order's Progress is at a specific node, query the Order with `convert_witness: 100` (TypeOrderProgress) to fetch the Progress object, then query the Progress's current node name.
 
 ---
 
-## Discovering Query Instructions via `wowok_buildin_info`
+## Schema Reference
 
-Before using `query` nodes, discover available query instructions and their signatures:
+| Purpose | Schema Name |
+|---------|-------------|
+| Guard operations | `onchain_operations_guard` |
+| General on-chain operations | `onchain_operations` |
+| Build-in info | `wowok_buildin_info` |
 
-```typescript
-// Query all Guard instructions and object queries
-{
-  info: "guard instructions",
-  filter: {
-    scope: "all",           // "instruct" | "object query" | "all"
-    objectType?: string,    // Filter by object type (for object queries)
-    returnType?: string,    // Filter by return type
-    paramCount?: number,    // Filter by parameter count
-    name?: string           // Case-insensitive name filter
-  }
-}
-```
+**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
 
-This returns a list of all available operations with:
-- `id`: Numeric operation ID
-- `name`: Human-readable name (e.g., "machine.description")
-- `objectType`: Target object type
-- `parameters`: Array of expected parameter types
-- `return`: Return value type
-- `description`: Detailed usage description
-
-Always query `guard instructions` before designing complex Guards to ensure correct IDs, parameter types, and return types.
+**Related Skills**: [wowok-machine](../wowok-machine/SKILL.md) | [wowok-order](../wowok-order/SKILL.md) | [wowok-provider](../wowok-provider/SKILL.md)

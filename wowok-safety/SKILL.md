@@ -63,18 +63,24 @@ Proceed with execution?
 ### 2.2 Amount Verification
 
 - Always display amounts with token symbol (e.g., "10 WOW" not "10000000000").
-- Query token decimals first if unsure: `query_toolkit({ query_type: "token_list" })`.
+- Query token decimals first if unsure.
+
+**Tool**: `query_toolkit` with `query_type: "token_list"`.
+
 - **Amounts in operations are ALWAYS submitted as U64 integers**. If the user specifies "2 WOW", do NOT submit the string "2 WOW". Instead, calculate and submit `2000000000` (2 × 10^9, where 9 is WOW's decimals).
 - **Never assume token decimals**. If the token's decimals cannot be queried, HALT the amount submission and alert the user. Do not proceed with hardcoded or guessed precision.
 - Show both raw and human-readable amounts when clarifying with users.
-
 
 ### 2.3 Publish Confirmation
 
 Before publishing a Service or Machine:
 
-1. **Export and review**: Use `guard2file` and `machineNode2file` to export definitions
+1. **Export and review**:
+   - Use `guard2file` to export Guard definitions
+   - Use `machineNode2file` to export Machine nodes
+
 2. **Verify logic**: Confirm Guards and Machine nodes match user intent
+
 3. **Warn about immutability**: Once published, many fields become locked
 
 ```
@@ -135,12 +141,8 @@ Controls name collision behavior:
 When displaying an address (0x prefix + 64 hex characters) to the user:
 
 1. **Query local mark first**:
-   ```typescript
-   query_toolkit({
-     query_type: "local_mark_list",
-     filter: { address: "0x<64_hex_chars>" }
-   })
-   ```
+
+**Tool**: `query_toolkit` with `query_type: "local_mark_list"` and filter by address.
 
 2. **Display format**:
    - If local mark exists: `{name} ({short_address})`
@@ -159,7 +161,7 @@ When displaying an address (0x prefix + 64 hex characters) to the user:
 
 ### 5.1 Multi-Token Support & Amount Formats
 
-- **Multi-Token**: All operations support custom `token_type`. ALWAYS query precision via `query_toolkit (token_list)` first. Never assume decimals.
+- **Multi-Token**: All operations support custom `token_type`. ALWAYS query precision via `query_toolkit` with `query_type: "token_list"` first. Never assume decimals.
 - **Amount Formats**:
   - With unit: `"2WOW"`, `"10.5USDT"` — auto-converted using token precision.
   - Plain number: internal unit (e.g., `1000000000` = 1 WOW). Always clarify with users when displaying plain numbers.
@@ -174,7 +176,10 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 ## 6. Query-First Pattern
 
-- **Query before mutate**: Always query current state before modifications. Use `query_toolkit` with filters.
+- **Query before mutate**: Always query current state before modifications.
+
+**Tool**: `query_toolkit` with appropriate filters.
+
 - **Pagination**: All on-chain list queries (events, tables, received) support `cursor`/`limit`. Loop for large datasets.
 - **Cache control**: Use `no_cache: true` for time-sensitive reads.
 
@@ -192,17 +197,12 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 ### 7.2 Address Resolution & Display Format
 
-**Resolve addresses to names** via `query_toolkit` with `local_names` query type:
+**Resolve addresses to names** via `query_toolkit`:
 
-```json
-{
-  "query_type": "local_names",
-  "addresses": ["0x{64_hex_chars}", ...]
-}
-```
+**Tool**: `query_toolkit` with `query_type: "local_names"` and `addresses` array parameter.
 
 - Each address must be a valid WOW ID: `0x` prefix + **64 hex characters**.
-- Returns `{ account?, local_mark?, address }[]` — for each address, the resolved account name and/or local mark name.
+- Returns resolved account name and/or local mark name for each address.
 - Name priority follows [7.1](#71-name-resolution-priority): `local_mark` > `account`.
 
 **Address truncation** (for display):
@@ -239,9 +239,15 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 ## 9. Testing & Validation Workflow
 
 1. **Design Phase**: Use `wowok_buildin_info` to discover available permissions and Guard instructions
+
+**Tool**: `wowok_buildin_info` with `info_type: "permissions"` or `info_type: "guard_instructions"`.
+
 2. **Export & Review**: Before publishing, use `guard2file` and `machineNode2file` to export and review definitions
+
 3. **Incremental Testing**: Build objects step-by-step, verifying each step
+
 4. **Final Validation**: Test all Guard conditions and Machine transitions before publishing
+
 5. **Publish**: Only after thorough testing, publish Service and Machine
 
 ---
@@ -254,3 +260,19 @@ For complex objects with many fields (Service, Machine), use **incremental build
 - Errors are isolated to specific fields
 - Easier to retry failed steps without re-executing successful ones
 - Better user feedback at each stage
+
+---
+
+## Schema Reference
+
+| Purpose | Schema Name |
+|---------|-------------|
+| Query toolkit | `query_toolkit` |
+| Token list | `query_toolkit` with `query_type: "token_list"` |
+| Guard export | `guard2file` |
+| Machine export | `machineNode2file` |
+| Build-in info | `wowok_buildin_info` |
+
+**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
+
+**Related Skills**: [wowok-tools](../wowok-tools/SKILL.md) | [wowok-guard](../wowok-guard/SKILL.md) | [wowok-machine](../wowok-machine/SKILL.md)

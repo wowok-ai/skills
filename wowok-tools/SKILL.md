@@ -31,7 +31,7 @@ always: true
 
 When calling `onchain_operations`, always use this structure:
 
-```json
+```
 {
   "operation_type": "<select from 16 types below>",
   "data": { /* see specific operation_type for details */ },
@@ -78,338 +78,244 @@ The `operation_type` field determines WHICH `data` schema applies. Each type has
 
 #### service — Service Listing
 
-```typescript
-// operation_type: "service"
-data: {
-  object: TypedPermissionObject;  // STRING for existing, OBJECT {name, permission, tags, type_parameter} for new
-  description?: string;
-  location?: string;
-  sales?: {
-    op: "add" | "set";
-    sales: { name: string; price: number; stock: number; suspension: boolean; wip: string; wip_hash: string }[];
-  } | { op: "remove"; sales_name: string[] } | { op: "clear" };
-  repositories?: ObjectsOp;
-  rewards?: ObjectsOp;
-  arbitrations?: ObjectsOp;
-  machine?: string | null;
-  discount?: { name: string; discount_type: 0 | 1; discount_value: number; benchmark?: number; time_ms_start?: number; time_ms_end?: number; count?: number; recipient: ManyAccountOrMark_Address; transferable?: boolean };
-  discount_destroy?: string[];
-  customer_required?: string[];
-  order_allocators?: { description: string; threshold: number; allocators: { guard: string; sharing: { who: Recipient; sharing: number; mode: "Amount" | "Rate" | "Surplus" }[]; fix?: number; max?: number }[] } | null;
-  buy_guard?: string | null;
-  change_guard?: string | null;
-  pause?: boolean;
-  publish?: boolean;
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_service" })`
 
-Key rules:
+**Key Fields**:
+- `object`: TypedPermissionObject — STRING for existing, OBJECT for new
+- `description`: Service description
+- `location`: Service location
+- `sales`: Sales configuration with operations (add/set/remove/clear)
+- `repositories`: Repository objects
+- `rewards`: Reward objects
+- `arbitrations`: Arbitration objects
+- `machine`: Machine object ID or null
+- `discount`: Discount configuration
+- `discount_destroy`: Array of discount names to destroy
+- `customer_required`: Required customer info fields
+- `order_allocators`: Fund distribution rules
+- `buy_guard`: Guard ID for purchase validation
+- `change_guard`: Guard ID for order changes
+- `pause`: Pause service flag
+- `publish`: Publish service flag (LOCKS machine and order_allocators)
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID for Messenger
+
+**Key Rules**:
 - `publish: true` LOCKS `machine` reference and `order_allocators` — unchangeable after publish
 - `rewards` and `arbitrations` can be ADDED after publish, not removed
 - `sales`, `discount`, `description`, `location` remain mutable after publish
 
 #### machine — Workflow Template
 
-```typescript
-// operation_type: "machine"
-data: {
-  object: WithPermissionObject;  // STRING for existing, OBJECT for new
-  progress_new?: ProgressNewSchema;
-  description?: string;
-  repository?: ObjectsSchema;
-  node?: NodeFieldSchema;  // { op: "add"|"set"|"remove"|"clear"|"exchange"|"rename", nodes: [...], bReplace?: boolean } OR { json_or_markdown_file: "path" }
-  pause?: boolean;
-  publish?: boolean;
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_machine" })`
 
-Key rules:
+**Key Fields**:
+- `object`: WithPermissionObject — STRING for existing, OBJECT for new
+- `progress_new`: Progress new schema
+- `description`: Machine description
+- `repository`: Repository objects
+- `node`: Node field schema with operations (add/set/remove/clear/exchange/rename) OR file path
+- `pause`: Pause flag
+- `publish`: Publish flag (makes nodes IMMUTABLE)
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
+
+**Key Rules**:
 - `publish: true` makes node definitions IMMUTABLE
-- `node` supports incremental ops (add/set/remove/clear/exchange/rename/remove_prior_node/add_forward/remove_forward) OR complete replacement from file
 - Machine must be created BEFORE Service references it
 
 #### progress — Workflow Advancement
 
-```typescript
-// operation_type: "progress"
-data: {
-  object: NameOrAddress;  // Progress object ID
-  order: NameOrAddress;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_progress" })`
 
-  // Advance mode
-  node?: { name: string; forward: number | string; hold?: boolean };
-  nodes?: { name: string; forward: number | string; hold?: boolean }[];  // Multi-step advance
-
-  // Admin control
-  admin_hold?: boolean;
-  admin_unhold?: boolean;
-  admin_unhold_node?: number;
-
-  // Acceptance
-  accept?: boolean;
-  recipient_accept?: NameOrAddress;
-
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: Progress object ID
+- `order`: Order ID
+- `node`: Single node advancement
+- `nodes`: Multi-step advancement array
+- `admin_hold`: Admin hold flag
+- `admin_unhold`: Admin unhold flag
+- `admin_unhold_node`: Admin unhold node index
+- `accept`: Accept flag
+- `recipient_accept`: Recipient for acceptance
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### repository — Consensus Data
 
-```typescript
-// operation_type: "repository"
-data: {
-  object: WithPermissionObject;
-  description?: string;
-  entity?: string | NameOrAddress | null;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_repository" })`
 
-  // Submit records
-  submit?: { op: "add" | "set" | "remove" | "clear"; records?: { address?: string; record: { timestamp: number; identifier: number; name?: string; description?: string; link?: string; linkPrototype?: string }; sign_buf?: number[]; sign_key_type?: string }[]; names?: string[] };
-  // Submit & sign records
-  submit_and_sign?: { op: "add" | "set" | "remove" | ...; records?: { ...; sign_buf?: number[] }[]; names?: string[] };
-  // Verify records
-  verify?: { records: { name: string }[]; verify_for_self?: boolean };
-  // Vote on records
-  vote?: { op: "add"; records?: { name: string; entity?: string }[] };
-
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: WithPermissionObject
+- `description`: Repository description
+- `entity`: Entity reference
+- `submit`: Submit records operation
+- `submit_and_sign`: Submit and sign records
+- `verify`: Verify records
+- `vote`: Vote on records
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### arbitration — Dispute Resolution
 
-```typescript
-// operation_type: "arbitration"
-data: {
-  object: WithPermissionObject;
-  description?: string;
-  entity?: string | NameOrAddress | null;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_arbitration" })`
 
-  // Arbitrators
-  arbitrators?: { op: "add" | "set" | "remove" | "clear"; accounts?: ManyAccountOrMark_Address[]; accounts_remove?: string[] };
-
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: WithPermissionObject
+- `description`: Arbitration description
+- `entity`: Entity reference
+- `arbitrators`: Arbitrators configuration
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### contact — IM Contact Profile
 
-```typescript
-// operation_type: "contact"
-data: {
-  object: WithPermissionObject;
-  my_status?: string;
-  description?: string;
-  location?: string;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_contact" })`
 
-  ims?: { op: "add" | "set"; im: { at: string; description?: string }[] }
-      | { op: "remove"; im: string[] }
-      | { op: "clear" };
-
-  owner_receive?: ReceivedObjectsOrRecently;
-}
-```
+**Key Fields**:
+- `object`: WithPermissionObject
+- `my_status`: Status message
+- `description`: Contact description
+- `location`: Location
+- `ims`: IM addresses with operations (add/set/remove/clear)
+- `owner_receive`: Owner fund extraction
 
 #### treasury — Team Fund
 
-```typescript
-// operation_type: "treasury"
-data: {
-  object: TypedPermissionObject;
-  description?: string;
-  receive?: ReceivedBalanceOrRecently;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_treasury" })`
 
-  deposit?: { coin: CoinParam; by_external_deposit_guard?: string; payment_info: { remark?: string; index?: number }; namedNewPayment?: NamedObject };
-  withdraw?: { amount: { fixed: number } | { by_external_withdraw_guard: string }; recipient: AccountOrMark_Address; payment_info: { remark?: string; index?: number }; namedNewPayment?: NamedObject };
-
-  external_deposit_guard?: { op: "add" | "set"; guards: { guard: string; identifier?: number | null; store_from_id?: number | null }[] }
-                          | { op: "remove"; guards: string[] }
-                          | { op: "clear" };
-  external_withdraw_guard?: { op: "add" | "set"; guards: { guard: string; identifier?: number | null; store_from_id?: number | null }[] }
-                           | { op: "remove"; guards: string[] }
-                           | { op: "clear" };
-
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: TypedPermissionObject
+- `description`: Treasury description
+- `receive`: Received balance
+- `deposit`: Deposit configuration
+- `withdraw`: Withdraw configuration
+- `external_deposit_guard`: External deposit guards
+- `external_withdraw_guard`: External withdraw guards
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### reward — Incentive Pool
 
-```typescript
-// operation_type: "reward"
-data: {
-  object: TypedPermissionObject;
-  claim?: string;  // Guard ID — verify and trigger reward
-  description?: string;
-  coin_add?: CoinParam;
-  receive?: ReceivedBalanceOrRecently;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_reward" })`
 
-  guard_add?: { guard: string; recipient: Recipient; amount: { type: "GuardU64Identifier"; value: number } | { type: "Fixed"; value: number }; expiration_time?: number; store_from_id?: number | null }[];
-  guard_remove_expired?: boolean;
-  guard_expiration_time?: number | null;
-
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: TypedPermissionObject
+- `claim`: Guard ID for claim verification
+- `description`: Reward description
+- `coin_add`: Coin to add
+- `receive`: Received balance
+- `guard_add`: Guards for reward distribution
+- `guard_remove_expired`: Remove expired guards flag
+- `guard_expiration_time`: Guard expiration time
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### allocation — Auto-Distribution
 
-ALLOCATION HAS TWO MODES discriminated by object format:
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_allocation" })`
 
-```typescript
-// MODE 1: CREATE new Allocation
-data: {
-  object: { name?: string; tags?: string[]; onChain?: boolean; replaceExistName?: boolean; type_parameter?: string };
-  allocators: { description: string; threshold: number; allocators: { guard: string; sharing: { who: Recipient; sharing: number; mode: "Amount" | "Rate" | "Surplus" }[]; fix?: number; max?: number | null }[] };
-  coin: CoinParam;
-  payment_info: { remark?: string; index?: number };
-}
+**Two Modes**:
 
-// MODE 2: OPERATE existing Allocation
-data: {
-  object: string;  // Allocation ID or name
-  received_coins?: ReceivedBalanceOrRecently;
-  alloc_by_guard?: string;
-}
-```
+**MODE 1: CREATE new Allocation**
+- `object`: Object with name, tags, onChain, replaceExistName, type_parameter
+- `allocators`: Allocator configuration
+- `coin`: Coin parameter
+- `payment_info`: Payment info
+
+**MODE 2: OPERATE existing Allocation**
+- `object`: Allocation ID or name (STRING)
+- `received_coins`: Received balance
+- `alloc_by_guard`: Guard for allocation
 
 #### permission — Access Control
 
-```typescript
-// operation_type: "permission"
-data: {
-  object: WithPermissionObject;
-  description?: string;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_permission" })`
 
-  // Write Guard policies
-  policy_add?: { who: AccountOrMark_Address; guard: string; store_from_id?: number | null }[];
-  policy_remove?: { who: AccountOrMark_Address }[];
-  policy_clear?: boolean;
-
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: WithPermissionObject
+- `description`: Permission description
+- `policy_add`: Add policies
+- `policy_remove`: Remove policies
+- `policy_clear`: Clear all policies
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### guard — Programmable Validation
 
-```typescript
-// operation_type: "guard"
-data: {
-  namedNew?: NamedObject;
-  description?: string;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_guard" })`
 
-  table?: { identifier: number; b_submission: boolean; value_type: ValueType; value?: SupportedValue; name?: string }[];
+**Key Fields**:
+- `namedNew`: Named object options
+- `description`: Guard description
+- `table`: Data table array with identifier, b_submission, value_type, value, name
+- `root`: Computational tree — either inline node or file reference
+  - `type: "node"`: Inline GuardNode
+  - `type: "file"`: Load from file
+- `rely`: Dependencies on other Guards
 
-  root: { type: "node"; node: GuardNode } | { type: "file"; file_path: string; format?: "json" | "markdown" };
-
-  rely?: { guards: string[]; logic_or?: boolean };
-}
-```
-
-GuardNode types (70+ variants, see [wowok-guard](../wowok-guard/SKILL.md) skill for complete reference):
-- Logic: `logic_and`, `logic_or`, `logic_not`, `logic_equal`, `logic_string_contains`, `logic_string_nocase_contains`, `logic_string_nocase_equal`, `logic_as_u256_equal`, `logic_as_u256_greater`, `logic_as_u256_lesser`, `logic_as_u256_greater_or_equal`, `logic_as_u256_lesser_or_equal`
-- Arithmetic: `calc_number_add`, `calc_number_subtract`, `calc_number_multiply`, `calc_number_divide`, `calc_number_mod`, `calc_string_length`, `calc_string_contains`, `calc_string_nocase_contains`, `calc_string_nocase_equal`, `calc_string_indexof`, `calc_string_nocase_indexof`
-- Conversion: `convert_number_address`, `convert_address_number`, `convert_number_string`, `convert_string_number`, `convert_safe_u8`..`convert_safe_u256`
-- Vector: `vec_length`, `vec_contains_bool`, `vec_contains_address`, `vec_contains_string`, `vec_contains_string_nocase`, `vec_contains_number`, `vec_indexof_bool`, `vec_indexof_address`, `vec_indexof_string`, `vec_indexof_string_nocase`, `vec_indexof_number`
-- Records: `record_check_recipient_order`, `record_check_recipient_progress`, `record_check_recipient_reward`, `record_check_treasury_history_item`, `record_check_progress_history_item`, and more
-- Special: `query`, `identifier`, `value_type`
+See [wowok-guard](../wowok-guard/SKILL.md) skill for complete GuardNode reference.
 
 #### personal — On-Chain Public Identity
 
-```typescript
-// operation_type: "personal"
-data: {
-  description?: string;
-  referrer?: string | AccountOrMark_Address | null;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_personal" })`
 
-  information?: { op: "add"; data: { name: string; value_type: ValueType; value: SupportedValue }[] }
-              | { op: "remove"; name: string[] }
-              | { op: "clear" };
-
-  mark?: { op: "add"; data: { address: string; name?: string; tags?: string[] }[] }
-       | { op: "remove"; data: { address: string; tags?: string[] }[] }
-       | { op: "clear"; address: ManyAccountOrMark_Address }
-       | { op: "transfer"; to: AccountOrMark_Address }
-       | { op: "replace"; new_mark_object: string }
-       | { op: "destroy" };
-}
-```
+**Key Fields**:
+- `description`: Personal description
+- `referrer`: Referrer reference
+- `information`: Information operations (add/remove/clear)
+- `mark`: Mark operations (add/remove/clear/transfer/replace/destroy)
 
 ⚠️ CRITICAL: Everything in `personal` is PERMANENTLY PUBLIC on-chain.
 
 #### payment — Irreversible Coin Transfer
 
-```typescript
-// operation_type: "payment"
-data: {
-  object: { name?: string; tags?: string[]; onChain?: boolean; replaceExistName?: boolean; type_parameter?: string };
-  revenue: { recipient: AccountOrMark_Address; amount: CoinParam }[];
-  info: { remark?: string; index?: number };
-}
-```
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_payment" })`
+
+**Key Fields**:
+- `object`: Named object options
+- `revenue`: Revenue recipients array
+- `info`: Payment info (remark, index)
 
 ⚠️ CRITICAL: Payment is IRREVERSIBLE. Always confirm recipient, amount, and token type before executing.
 
 #### demand — Service Request
 
-```typescript
-// operation_type: "demand"
-data: {
-  object: WithPermissionObject;
-  present?: { recommend: string; by_guard?: string; service?: string };
-  description?: string;
-  location?: string;
-  rewards?: ObjectsOp;
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_demand" })`
 
-  guards?: { op: "add" | "set"; guard: { guard: string; service_identifier?: number | null }[] }
-         | { op: "remove"; guard: string[] }
-         | { op: "clear" };
-
-  feedback?: { who: AccountOrMark_Address; acceptance_score?: number; feedback?: string }[];
-  owner_receive?: ReceivedObjectsOrRecently;
-  um?: string | null;
-}
-```
+**Key Fields**:
+- `object`: WithPermissionObject
+- `present`: Present configuration
+- `description`: Demand description
+- `location`: Location
+- `rewards`: Reward objects
+- `guards`: Guards configuration
+- `feedback`: Feedback entries
+- `owner_receive`: Owner fund extraction
+- `um`: Contact object ID
 
 #### order — Order Lifecycle
 
-```typescript
-// operation_type: "order"
-data: {
-  object: string | NameOrAddress;  // Order ID or name (required)
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_order" })`
 
-  agents?: ManyAccountOrMark_Address;
-  required_info?: string | null;
-
-  progress?: { operation: { next_node_name: string; forward: string }; hold?: boolean; adminUnhold?: boolean; message?: string };
-
-  arb_confirm?: { arb: string; confirm: boolean; description?: string; proposition?: string[] };
-  arb_objection?: { arb: string; objection: string };
-  arb_claim_compensation?: { arb: string };
-
-  receive?: QueryReceivedResult;
-  transfer_to?: AccountOrMark_Address;
-}
-```
+**Key Fields**:
+- `object`: Order ID or name
+- `agents`: Agent addresses
+- `required_info`: Required info field
+- `progress`: Progress advancement
+- `arb_confirm`: Arbitration confirmation
+- `arb_objection`: Arbitration objection
+- `arb_claim_compensation`: Claim compensation
+- `receive`: Receive funds
+- `transfer_to`: Transfer order to new owner
 
 #### gen_passport — Immutable Credential
 
-```typescript
-// operation_type: "gen_passport"
-data: {
-  guard: string | string[];  // Guard object ID(s) to verify. Can be a single guard or an array of guards.
-  info?: SubmissionCall;
-}
-```
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_gen_passport" })`
+
+**Key Fields**:
+- `guard`: Guard ID(s) — single string or array of strings
+- `info`: Submission call info
 
 **Features:**
 - **Single Guard**: Pass a single guard ID or name as a string
@@ -423,15 +329,12 @@ data: {
 **WithPermissionObject**: Same as TypedPermissionObject but WITHOUT `type_parameter`
 
 **SubmissionCall** (for execution):
-```typescript
-{
-  sender: string;
-  gas_budget: string;
-  // additional network/execution params
-}
-```
+- `sender`: string
+- `gas_budget`: string
+- Additional network/execution params
 
 **CoinParam**: `number` (raw) or `string` (e.g., "2WOW", "100USDT")
+
 **NamedObject**: `{ name: string; tags?: string[]; onChain?: boolean; replaceExistName?: boolean }`
 
 ---
@@ -440,61 +343,68 @@ data: {
 
 **MCP Input**: `{ query_type: string, ... }` — discriminated union
 
+**Schema Reference**: `schema_query({ action: "get", name: "query_toolkit" })`
+
 ### 8 query_types
 
 #### local_mark_list
-```typescript
-{ query_type: "local_mark_list"; network?: string }
-```
-Returns: list of local name→address mappings
+- `query_type`: "local_mark_list"
+- `network`: Optional network
+- Returns: list of local name→address mappings
 
 #### account_list
-```typescript
-{ query_type: "account_list" }
-```
-Returns: list of local accounts
+- `query_type`: "account_list"
+- Returns: list of local accounts
 
 #### local_info_list
-```typescript
-{ query_type: "local_info_list"; network?: string }
-```
-Returns: local private data entries
+- `query_type`: "local_info_list"
+- `network`: Optional network
+- Returns: local private data entries
 
 #### token_list
-```typescript
-{ query_type: "token_list"; network?: string }
-```
-Returns: available token types with precision info
+- `query_type`: "token_list"
+- `network`: Optional network
+- Returns: available token types with precision info
 
 #### account_balance
-```typescript
-{ query_type: "account_balance"; address: string; token_type?: string; network?: string }
-```
-Returns: account token balance
+- `query_type`: "account_balance"
+- `address`: Account address
+- `token_type`: Optional token type
+- `network`: Optional network
+- Returns: account token balance
 
 #### onchain_personal_profile
-```typescript
-{ query_type: "onchain_personal_profile"; address: string; network?: string; no_cache?: boolean }
-```
-Returns: on-chain public profile
+- `query_type`: "onchain_personal_profile"
+- `address`: Account address
+- `network`: Optional network
+- `no_cache`: Optional flag
+- Returns: on-chain public profile
 
 #### onchain_objects
-```typescript
-{ query_type: "onchain_objects"; address?: string; name_or_address?: string; network?: string; no_cache?: boolean }
-```
-Returns: on-chain objects owned by address
+- `query_type`: "onchain_objects"
+- `address`: Optional address
+- `name_or_address`: Optional name or address
+- `network`: Optional network
+- `no_cache`: Optional flag
+- Returns: on-chain objects owned by address
 
 #### onchain_received
-```typescript
-{ query_type: "onchain_received"; name_or_address: string | AccountOrMark_Address; all_type?: boolean; cursor?: string | null; limit?: number | null; no_cache?: boolean; network?: string }
-```
-Returns: received CoinWrapper objects
+- `query_type`: "onchain_received"
+- `name_or_address`: Name or address
+- `all_type`: Optional boolean
+- `cursor`: Optional cursor
+- `limit`: Optional limit
+- `no_cache`: Optional flag
+- `network`: Optional network
+- Returns: received CoinWrapper objects
 
 ---
 
 ## 3. onchain_table_data — Table Sub-Items
 
 **MCP Input**: `{ query_type: string, parent: string, ... }` — 12 query_types
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_table_data" })`
 
 | query_type | Parent | Key | Returns |
 |------------|--------|-----|---------|
@@ -519,6 +429,8 @@ All support: `no_cache?: boolean`, `network?: "localnet" | "testnet"`
 
 **MCP Input**: `{ operation_type: string, data: object }`
 
+**Schema Reference**: `schema_query({ action: "get", name: "account_operation" })`
+
 Operations: `generate`, `suspend`, `resume`, `faucet`, `sign`, `signData`, `query`
 
 100% LOCAL — never touches blockchain.
@@ -529,22 +441,20 @@ Operations: `generate`, `suspend`, `resume`, `faucet`, `sign`, `signData`, `quer
 
 **MCP Input**: `{ operation_type: string, data: object }`
 
-```typescript
-// Add marks
-{ operation_type: "add", data: { marks: { name: string; address: string; tags?: string[] }[], network?: string } }
+**Schema Reference**: `schema_query({ action: "get", name: "local_mark_operation" })`
 
-// Remove marks
-{ operation_type: "remove", data: { marks: { name: string }[]; network?: string } }
-
-// Clear all
-{ operation_type: "clear", data: { network?: string } }
-```
+Operations:
+- `add`: Add marks with `{ marks: { name, address, tags? }[], network? }`
+- `remove`: Remove marks with `{ marks: { name }[], network? }`
+- `clear`: Clear all with `{ network? }`
 
 ---
 
 ## 6. local_info_operation — LOCAL Private Data
 
 **MCP Input**: `{ operation_type: string, data: object }`
+
+**Schema Reference**: `schema_query({ action: "get", name: "local_info_operation" })`
 
 Store sensitive info (phone, address, contacts) locally.
 
@@ -554,18 +464,57 @@ Store sensitive info (phone, address, contacts) locally.
 
 **MCP Input**: varies by operation
 
+**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
+
 Operations: `watch_conversations`, `send_message`, `send_file`, `watch_messages`, `extract_zip_messages`, `generate_wts`, `verify_wts`, `sign_wts`, `wts2html`, `proof_message`, `mark_messages_as_viewed`, `mark_conversation_as_viewed`, `blacklist`, `friendslist`, `guardlist`, `settings`
+
+See [wowok-messenger](../wowok-messenger/SKILL.md) skill for detailed usage.
 
 ---
 
 ## 8-13 Quick Reference
 
-- **wip_file**: `{ operation: "generate"|"verify"|"sign"|"wip2html", data: object }`
-- **guard2file**: `{ guard: string; file_path: string; format?: "json"|"markdown" }`
-- **machineNode2file**: `{ machine: string; file_path: string; format?: "json"|"markdown" }`
-- **onchain_events**: `{ type: string; cursor?: string | null; limit?: number | null }`
-- **wowok_buildin_info**: `{ info_type: "constants"|"permissions"|"guard_instructions"|"network"|"value_types" }`
-- **documents_and_learn**: `{ document_type?: string }`
+### wip_file
+
+**Schema Reference**: `schema_query({ action: "get", name: "wip_file" })`
+
+Operations: `generate`, `verify`, `sign`, `wip2html`
+
+### guard2file
+
+**Schema Reference**: `schema_query({ action: "get", name: "guard2file" })`
+
+- `guard`: Guard ID or name
+- `file_path`: Output file path
+- `format`: "json" or "markdown"
+
+### machineNode2file
+
+**Schema Reference**: `schema_query({ action: "get", name: "machineNode2file" })`
+
+- `machine`: Machine ID or name
+- `file_path`: Output file path
+- `format`: "json" or "markdown"
+
+### onchain_events
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_events" })`
+
+- `type`: Event type
+- `cursor`: Optional cursor
+- `limit`: Optional limit
+
+### wowok_buildin_info
+
+**Schema Reference**: `schema_query({ action: "get", name: "wowok_buildin_info" })`
+
+- `info_type`: "constants", "permissions", "guard_instructions", "network", "value_types"
+
+### documents_and_learn
+
+**Schema Reference**: `schema_query({ action: "get", name: "documents_and_learn" })`
+
+- `document_type`: Optional document type
 
 ---
 

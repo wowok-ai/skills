@@ -65,50 +65,43 @@ ARBITRATION CASE (Arb object) — per dispute
 
 ### Step 1: Create Arbitration Object
 
-```typescript
-onchain_operations({
-  operation_type: "arbitration",
-  data: {
-    name: "my-arbitration-service",
-    description: "Fair dispute resolution for e-commerce",
-    fee: "1000000",  // Arbitration fee per case (1 token, 6 decimals)
-    // Other configuration
-  }
-})
-```
+**Operation**: `onchain_operations` with `operation_type: "arbitration"`.
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_arbitration" })`
+
+**Key Fields**:
+- `object`: Arbitration object name (CREATE) or ID (MODIFY)
+- `description`: Service description
+- `fee`: Arbitration fee per case (token amount)
+- Other configuration fields per schema
 
 ### Step 2: Set Up Contact for Messenger
 
-Arbitration's `um` field references a Contact object with Messenger addresses:
+Arbitration's `um` field references a Contact object with Messenger addresses.
 
-```typescript
-// Create Contact object with IM addresses
-onchain_operations({
-  operation_type: "contact",
-  data: {
-    name: "arbitration-contact",
-    description: "Contact for arbitration submissions",
-    ims: [
-      { name: "customer-service", at: "<messenger_address_1>" },
-      { name: "evidence-review", at: "<messenger_address_2>" }
-    ]
-  }
-})
+**Create Contact**:
 
-// Link Contact to Arbitration
-onchain_operations({
-  operation_type: "arbitration",
-  data: {
-    object: "my-arbitration-service",
-    um: "arbitration-contact"  // Link Contact object
-  }
-})
-```
+**Operation**: `onchain_operations` with `operation_type: "contact"`.
+
+**Key Fields**:
+- `object`: Contact object name (CREATE) or ID (MODIFY)
+- `description`: Contact purpose description
+- `ims`: Array of IM addresses with:
+  - `name`: Identifier for this IM endpoint
+  - `at`: Messenger address
+
+**Link Contact to Arbitration**:
+
+**Operation**: `onchain_operations` with `operation_type: "arbitration"`.
+
+**Key Field**:
+- `um`: Contact object ID or name to link
 
 ### Step 3: Configure Compensation Fund (Optional)
 
-Services can link to your Arbitration and contribute to compensation fund:
+Services can link to your Arbitration and contribute to compensation fund.
 
+**Flow**:
 ```
 Service.compensation_fund → Holds tokens for arbitration payouts
 When customer wins arbitration → Funds transferred to customer's Order
@@ -120,23 +113,22 @@ When customer wins arbitration → Funds transferred to customer's Order
 
 ### Receiving Evidence via Messenger
 
-Customers submit evidence through encrypted Messenger communication:
+Customers submit evidence through encrypted Messenger communication.
 
 **Process**:
 1. Customer queries Arbitration's Contact object (`arbitration.um`)
 2. Customer extracts IMS addresses from `contact.ims[]`
-3. Customer sends WTS files via `messenger_operation({ operation: "send_message" })`
+3. Customer sends WTS files via Messenger
 4. Arbitrator receives and verifies WTS authenticity
 
 **WTS Verification**:
-```typescript
-// Verify WTS file authenticity
-messenger_operation({
-  operation: "verify_wts",
-  wtsFilePath: "<path_to_received_wts_file>"
-})
-// Returns: { valid: true/false, error?: string }
-```
+
+**Tool**: `messenger_operation` with `verify_wts` operation.
+
+**Key Field**:
+- `wtsFilePath`: Path to received WTS file
+
+**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
 
 ### Arb Object Lifecycle
 
@@ -193,16 +185,17 @@ Customer pays fee ──→ Arbitration.balance
 
 ### Extracting Fees
 
-Arbitrators can extract accumulated fees:
+Arbitrators can extract accumulated fees.
 
-```typescript
-// Query Arbitration balance
-query_toolkit({ query_type: "onchain_objects", objects: ["my-arbitration-service"] })
-// Extract: arbitration.balance
+**Query Balance**:
 
-// Extract fees (via receive operation or arbitration-specific withdrawal)
-// Schema: schema_query({ action: "get", name: "onchain_operations_arbitration" })
-```
+**Tool**: `query_toolkit` with `onchain_objects` query type.
+
+**Extract Field**: `arbitration.balance`
+
+**Withdrawal Operation**:
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_arbitration" })` — look for withdrawal/receive fields
 
 ---
 
@@ -268,14 +261,16 @@ Customer wins arbitration
 
 Use `schema_query` tool to get complete JSON schemas:
 
-```
-schema_query({ action: "list" })                    // List all schemas
-schema_query({ action: "get", name: "onchain_operations_arbitration" })   // Arbitration operations
-schema_query({ action: "get", name: "onchain_operations_order" })         // Order arbitration operations
-schema_query({ action: "get", name: "messenger_operation" })              // Messenger for evidence
-```
+| Purpose | Schema Name |
+|---------|-------------|
+| List all schemas | `schema_query({ action: "list" })` |
+| Arbitration operations | `onchain_operations_arbitration` |
+| Order arbitration operations | `onchain_operations_order` |
+| Messenger for evidence | `messenger_operation` |
 
-**Key Schemas**:
+**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
+
+**Key Object Schemas** (via `query_toolkit`):
 - `ObjectArbitrationSchema`: Arbitration object structure
 - `ObjectArbSchema`: Arb case object structure
 - `ArbStatusSchema`: Arb lifecycle states

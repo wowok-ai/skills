@@ -76,58 +76,46 @@ Created → Pending → Confirmed → Read
 
 ### Send a Message
 
-```typescript
-messenger_operation({
-  operation: "send_message",
-  from: "<your_account>",      // Optional, uses default if omitted
-  to: "<recipient_address>",   // Can be address or account name
-  content: "Your message here..."
-})
-```
+**Tool**: `messenger_operation` with `send_message` operation.
+
+**Key Fields**:
+- `from`: Sender account (optional, uses default if omitted)
+- `to`: Recipient address or account name
+- `content`: Message text content
 
 **Result**: Message ID, Merkle tree proof data, server confirmation
 
+**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
+
 ### Watch Conversations
 
-```typescript
-messenger_operation({
-  operation: "watch_conversations",
-  filter: {
-    unreadOnly: true,              // Only show conversations with unread messages
-    previewMessageCount: 3,        // Include last 3 messages per conversation
-    sortBy: "lastMessageAt",       // Sort by most recent activity
-    sortOrder: "desc"
-  }
-})
-```
+**Tool**: `messenger_operation` with `watch_conversations` operation.
+
+**Key Fields**:
+- `filter.unreadOnly`: Show only conversations with unread messages
+- `filter.previewMessageCount`: Number of recent messages to include per conversation
+- `filter.sortBy`: Sort field (e.g., "lastMessageAt")
+- `filter.sortOrder`: Sort direction ("asc" or "desc")
 
 ### Watch Messages
 
-```typescript
-messenger_operation({
-  operation: "watch_messages",
-  filter: {
-    peerAddress: "<other_party_address>",
-    direction: "received",         // or "sent"
-    decryptedOnly: true,
-    confirmedOnly: true
-  }
-})
-```
+**Tool**: `messenger_operation` with `watch_messages` operation.
+
+**Key Fields**:
+- `filter.peerAddress`: Filter by specific peer
+- `filter.direction`: "received" or "sent"
+- `filter.decryptedOnly`: Show only successfully decrypted messages
+- `filter.confirmedOnly`: Show only confirmed messages
 
 ### Send Files
 
-```typescript
-messenger_operation({
-  operation: "send_file",
-  to: "<recipient_address>",
-  filePath: "./document.pdf",
-  options: {
-    contentType: "zip",           // Files are compressed as ZIP
-    fileName: "custom-name.zip"
-  }
-})
-```
+**Tool**: `messenger_operation` with `send_file` operation.
+
+**Key Fields**:
+- `to`: Recipient address
+- `filePath`: Path to file to send
+- `options.contentType`: File type (files compressed as ZIP)
+- `options.fileName`: Custom filename for the sent file
 
 ---
 
@@ -137,35 +125,27 @@ WTS (Witness Transaction Statement) files are tamper-proof exports of conversati
 
 ### Generate WTS Evidence
 
-```typescript
-messenger_operation({
-  operation: "generate_wts",
-  params: {
-    myAccount: "<your_account>",
-    peerAccount: "<other_party_address>",
-    range: {
-      type: "time",
-      start: 1704067200000,        // Start timestamp (ms)
-      end: 1706745600000           // End timestamp (ms)
-    },
-    outputDir: "./evidence/"
-  }
-})
-```
+**Tool**: `messenger_operation` with `generate_wts` operation.
+
+**Key Fields**:
+- `params.myAccount`: Your account address/name
+- `params.peerAccount`: Other party's address/name
+- `params.range.type`: Range type ("time", "messageId", "seqIndex")
+- `params.range.start`: Start boundary (timestamp, message ID, or sequence index)
+- `params.range.end`: End boundary
+- `params.outputDir`: Directory for output WTS file
 
 **Range Types**:
-- `time`: By timestamp range
+- `time`: By timestamp range (milliseconds)
 - `messageId`: By message ID range
 - `seqIndex`: By sequence index range
 
 ### Verify WTS Authenticity
 
-```typescript
-messenger_operation({
-  operation: "verify_wts",
-  wtsFilePath: "./evidence/conversation.wts"
-})
-```
+**Tool**: `messenger_operation` with `verify_wts` operation.
+
+**Key Field**:
+- `wtsFilePath`: Path to WTS file to verify
 
 **Verification checks**:
 - Hash integrity
@@ -174,30 +154,24 @@ messenger_operation({
 
 ### Sign WTS
 
-Add your signature to WTS for submission as arbitration evidence:
+Add your signature to WTS for submission as arbitration evidence.
 
-```typescript
-messenger_operation({
-  operation: "sign_wts",
-  wtsFilePath: "./evidence/conversation.wts",
-  account: "<your_account>",
-  outputPath: "./evidence/signed-conversation.wts"
-})
-```
+**Tool**: `messenger_operation` with `sign_wts` operation.
+
+**Key Fields**:
+- `wtsFilePath`: Path to WTS file to sign
+- `account`: Your account for signing
+- `outputPath`: Output path for signed WTS file
 
 ### Convert WTS to HTML
 
-```typescript
-messenger_operation({
-  operation: "wts2html",
-  wtsPath: "./evidence/conversation.wts",
-  options: {
-    title: "Order Negotiation Evidence",
-    theme: "light",
-    outputPath: "./evidence/conversation.html"
-  }
-})
-```
+**Tool**: `messenger_operation` with `wts2html` operation.
+
+**Key Fields**:
+- `wtsPath`: Path to WTS file
+- `options.title`: HTML document title
+- `options.theme`: Visual theme ("light" or "dark")
+- `options.outputPath`: Output path for HTML file
 
 ---
 
@@ -205,54 +179,38 @@ messenger_operation({
 
 ### Friends List
 
-Manage trusted contacts for easier messaging:
+Manage trusted contacts for easier messaging.
 
-```typescript
-// Add friends
-messenger_operation({
-  operation: "friendslist",
-  friendslist: { op: "add", users: ["alice", "bob"] }
-})
+**Tool**: `messenger_operation` with `friendslist` operation.
 
-// Check if in friends list
-messenger_operation({
-  operation: "friendslist",
-  friendslist: { op: "exist", users: ["alice"] }
-})
-
-// Get friends list
-messenger_operation({
-  operation: "friendslist",
-  friendslist: { op: "get" }
-})
-```
+**Operations**:
+- `op: "add"`: Add users to friends list
+  - `users`: Array of user addresses/names to add
+- `op: "exist"`: Check if users are in friends list
+  - `users`: Array of user addresses/names to check
+- `op: "get"`: Retrieve current friends list
 
 ### Blacklist
 
-Block unwanted contacts:
+Block unwanted contacts.
 
-```typescript
-messenger_operation({
-  operation: "blacklist",
-  blacklist: { op: "add", users: ["spammer_address"] }
-})
-```
+**Tool**: `messenger_operation` with `blacklist` operation.
+
+**Key Fields**:
+- `op`: Operation type ("add", "remove", "get")
+- `users`: Array of user addresses/names (for add/remove)
 
 ### Guard List
 
-Add Guards for message validation:
+Add Guards for message validation.
 
-```typescript
-messenger_operation({
-  operation: "guardlist",
-  guardlist: {
-    op: "add",
-    guards: [
-      { guard: "my-guard", passportValiditySeconds: 86400 }
-    ]
-  }
-})
-```
+**Tool**: `messenger_operation` with `guardlist` operation.
+
+**Key Fields**:
+- `op`: Operation type ("add", "remove", "get")
+- `guards`: Array of guard configurations with:
+  - `guard`: Guard object ID/name
+  - `passportValiditySeconds`: Passport validity duration
 
 ---
 
@@ -261,21 +219,21 @@ messenger_operation({
 ### Customer → Service Provider
 
 **Pre-Purchase Negotiation**:
-```typescript
-// 1. Get Service contact
-query_toolkit({ query_type: "onchain_objects", objects: ["<service_name>"] })
-// Extract: service.um → Contact → ims[].at
 
-// 2. Send inquiry
-messenger_operation({
-  operation: "send_message",
-  to: "<service_im_address>",
-  content: "Questions about: deliverables, timeline, refund policy, shipping..."
-})
+1. **Get Service contact**:
+   - Query Service object to extract `service.um` (Contact ID)
+   - Query Contact object to get `ims[].at` (Messenger addresses)
+   - **Tool**: `query_toolkit` with `onchain_objects` query type
 
-// 3. Wait for explicit confirmation (ARK)
-// 4. Generate WTS for evidence
-```
+2. **Send inquiry**:
+   - Use `messenger_operation` with `send_message` operation
+   - Include clear questions about deliverables, timeline, refund policy
+
+3. **Wait for explicit confirmation (ARK)**:
+   - Ensure recipient confirms understanding
+
+4. **Generate WTS for evidence**:
+   - Use `generate_wts` operation to export conversation
 
 **Required Clarifications** (AI should proactively suggest):
 - Exact deliverables and acceptance criteria
@@ -287,13 +245,8 @@ messenger_operation({
 ### Service Provider → Customer
 
 **Customer Service Response**:
-```typescript
-messenger_operation({
-  operation: "send_message",
-  to: "<customer_address>",
-  content: "Response to inquiry with clear terms..."
-})
-```
+
+Use `messenger_operation` with `send_message` operation to respond to customer inquiries.
 
 **Best Practices**:
 - Respond promptly to maintain trust
@@ -303,31 +256,20 @@ messenger_operation({
 
 ### Arbitration Evidence Submission
 
-```typescript
-// 1. Generate WTS from conversation history
-messenger_operation({
-  operation: "generate_wts",
-  params: {
-    myAccount: "<your_account>",
-    peerAccount: "<other_party_address>",
-    range: { type: "time", start: <order_start>, end: <now> },
-    outputDir: "./arbitration-evidence/"
-  }
-})
+**Process**:
 
-// 2. Sign WTS
-messenger_operation({
-  operation: "sign_wts",
-  wtsFilePath: "./arbitration-evidence/negotiation.wts"
-})
+1. **Generate WTS from conversation history**:
+   - Use `generate_wts` operation
+   - Set range to cover order negotiation period
+   - Specify output directory
 
-// 3. Send to Arbitration contact
-messenger_operation({
-  operation: "send_file",
-  to: "<arbitration_im_address>",
-  filePath: "./arbitration-evidence/signed-negotiation.wts"
-})
-```
+2. **Sign WTS**:
+   - Use `sign_wts` operation
+   - Add your cryptographic signature
+
+3. **Send to Arbitration contact**:
+   - Use `send_file` operation
+   - Send signed WTS file to arbitration's IM address
 
 ---
 
@@ -349,13 +291,13 @@ messenger_operation({
 
 ## Schema Reference
 
-```typescript
-// All messenger operations
-schema_query({ action: "get", name: "messenger_operation" })
+| Purpose | Schema Name |
+|---------|-------------|
+| All messenger operations | `messenger_operation` |
+| WIP file operations (for product info) | `wip_file` |
+| Query on-chain objects | `query_toolkit` |
 
-// WIP file operations (for product info)
-schema_query({ action: "get", name: "wip_file" })
-```
+**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
 
 ---
 

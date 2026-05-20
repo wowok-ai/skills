@@ -26,29 +26,27 @@ A Machine is a **workflow template** that defines how orders progress through st
 
 ## Machine Structure
 
-```
-Machine {
-  service: "<service_id>",         // Which Service this Machine belongs to
-  guard: "<guard_id>",             // Guard for workflow validation
-  node: {
-    op: "set",
-    nodes: [
-      {
-        name: "<node_name>",       // Unique node identifier
-        pairs: [                   // Data fields at this node
-          { name: "<field>", value_type: "<type>", description: "..." }
-        ],
-        forwards: [                // Allowed next nodes
-          { name: "<next_node>", guard: "<guard_id>" }
-        ],
-        guard: "<guard_id>",       // Guard for entering this node
-        threshold: <number>        // Required signers to advance
-      }
-    ],
-    bReplace: true
-  }
-}
-```
+**Operation**: `onchain_operations` with `operation_type: "machine"`.
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_machine" })`
+
+**Key Fields**:
+- `object`: Machine object name (CREATE) or ID (MODIFY)
+- `service`: Which Service this Machine belongs to
+- `guard`: Guard for workflow validation
+- `node`: Node configuration with:
+  - `op`: Operation type ("set", "add", "remove")
+  - `nodes`: Array of node definitions
+  - `bReplace`: Replace existing nodes flag
+
+### Node Structure
+
+Each node contains:
+- `name`: Unique node identifier
+- `pairs`: Data fields at this node (array of pair definitions)
+- `forwards`: Allowed next nodes (array of forward definitions)
+- `guard`: Guard for entering this node
+- `threshold`: Required signers to advance
 
 ## Machine Node Design Rules
 
@@ -75,14 +73,11 @@ Start → Step1 → Step2 → Step3 → Done
 ```
 Simple sequential workflow. Each node forwards to exactly one next node.
 
-```
-nodes: [
-  { name: "pending", forwards: [{ name: "in_progress" }] },
-  { name: "in_progress", forwards: [{ name: "review" }] },
-  { name: "review", forwards: [{ name: "completed" }] },
-  { name: "completed", forwards: [] }
-]
-```
+**Node Configuration**:
+- Node "pending": forwards to "in_progress"
+- Node "in_progress": forwards to "review"
+- Node "review": forwards to "completed"
+- Node "completed": no forwards (terminal)
 
 ### Pattern 2: Branching Workflow
 ```
@@ -92,18 +87,14 @@ Start → Review
 ```
 Conditional branching based on Guard validation.
 
-```
-nodes: [
-  { name: "review", forwards: [
-    { name: "approved", guard: "<approval_guard>" },
-    { name: "rejected", guard: "<rejection_guard>" }
-  ]},
-  { name: "approved", forwards: [{ name: "completed" }] },
-  { name: "rejected", forwards: [{ name: "revision" }] },
-  { name: "revision", forwards: [{ name: "review" }] },
-  { name: "completed", forwards: [] }
-]
-```
+**Node Configuration**:
+- Node "review": two forwards with different guards
+  - Forward to "approved" with approval guard
+  - Forward to "rejected" with rejection guard
+- Node "approved": forward to "completed"
+- Node "rejected": forward to "revision"
+- Node "revision": forward back to "review"
+- Node "completed": terminal
 
 ### Pattern 3: Multi-Party Approval
 ```
@@ -111,11 +102,8 @@ Start → Review (threshold: 3) → Completed
 ```
 Requires multiple signers to advance.
 
-```
-nodes: [
-  { name: "review", threshold: 3, forwards: [{ name: "completed" }] }
-]
-```
+**Node Configuration**:
+- Node "review": threshold = 3, forward to "completed"
 
 ### Pattern 4: Parallel Tracks
 ```
@@ -130,82 +118,68 @@ Multiple parallel work streams that converge.
 Progress tracks an order's movement through a Machine's workflow.
 
 ### Advance Progress
-```
-onchain_operations({
-  operation_type: "progress",
-  data: {
-    op: "advance",
-    order: "<order_id>",
-    node: "<target_node_name>",
-    pairs: { <node_data> }
-  }
-})
-```
+
+**Operation**: `onchain_operations` with `operation_type: "progress"`.
+
+**Key Fields**:
+- `op`: Operation type ("advance", "create", etc.)
+- `order`: Order ID to advance
+- `node`: Target node name
+- `pairs`: Node data to submit
 
 ### Query Progress History
-```
-onchain_table_data({
-  query_type: "onchain_table_item_progress_history",
-  parent: "<progress_id>",
-  u64: <sequence_number>
-})
-```
+
+**Tool**: `onchain_table_data` with `query_type: "onchain_table_item_progress_history"`.
+
+**Key Fields**:
+- `parent`: Progress ID
+- `u64`: Sequence number
+
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_table_data" })`
 
 ## Machine Creation Workflow
 
 ### Step 1: Design Nodes on Paper
-Sketch the workflow graph before coding. Identify all nodes, transitions, and conditions.
+Sketch the workflow graph before implementation. Identify all nodes, transitions, and conditions.
 
 ### Step 2: Create Guards for Transitions
 Each conditional forward needs a Guard. Create these Guards first (see [wowok-guard](../wowok-guard/SKILL.md) skill).
 
 ### Step 3: Create the Machine (Dry Run)
-```
-onchain_operations({
-  operation_type: "machine",
-  data: {
-    op: "create",
-    name: "<machine_name>",
-    description: "<description>",
-    service: "<service_id>",
-    guard: "<guard_id>",
-    node: {
-      op: "set",
-      nodes: [ ... ],
-      bReplace: true
-    }
-  }
-})
-```
+
+**Operation**: `onchain_operations` with `operation_type: "machine"`.
+
+**Key Fields**:
+- `op`: "create"
+- `object`: Machine name
+- `description`: Machine description
+- `service`: Service ID this Machine belongs to
+- `guard`: Guard ID for workflow validation
+- `node`: Node configuration object
 
 ### Step 4: Export and Review
-```
-machineNode2file({
-  machine: "<machine_id>",
-  file_path: "<output_path>",
-  format: "json"
-})
-```
+
+**Tool**: `machineNode2file`.
+
+**Key Fields**:
+- `machine`: Machine ID
+- `file_path`: Output file path
+- `format`: Output format ("json" or "markdown")
 
 ### Step 5: Execute
-After review, add `submission` to execute.
+After review, add `submission` field to execute the operation.
 
 ## Machine from File
 
 Load node definitions from a local file:
-```
-onchain_operations({
-  operation_type: "machine",
-  data: {
-    op: "create",
-    name: "<machine_name>",
-    service: "<service_id>",
-    node: {
-      json_or_markdown_file: "<path_to_file>"
-    }
-  }
-})
-```
+
+**Operation**: `onchain_operations` with `operation_type: "machine"`.
+
+**Key Fields**:
+- `op`: "create"
+- `object`: Machine name
+- `service`: Service ID
+- `node.json_or_markdown_file`: Path to node definition file
 
 ## Common Machine Errors
 
@@ -230,37 +204,15 @@ Order Confirmation → Shipping → In Transit → Completed
                                          ↘ Order End (Cancel Order)
 ```
 
-**Key Design**: The first node (`Order Confirmation`) has two `pairs` entries — one for the initial transition (threshold=0, from empty `prev_node`) and one for cancel. Normal flow goes through Shipping → In Transit → Completed. The customer (order owner) can cancel from Order Confirmation using `namedOperator: ""`.
+**Key Design**: The first node (`Order Confirmation`) has two `pairs` entries — one for the initial transition (threshold=0, from empty `prev_node`) and one for cancel. Normal flow goes through Shipping → In Transit → Completed. The customer (order owner) can cancel from Order Confirmation.
 
-```
-nodes: [
-  {
-    name: "Order Confirmation",
-    pairs: [
-      { prev_node: "", threshold: 0, forwards: [{ name: "Confirm Order", permissionIndex: 1000, weight: 1 }] },
-      { prev_node: "Order Confirmation", threshold: 0, forwards: [{ name: "Cancel Order", permissionIndex: 1001, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Shipping",
-    pairs: [
-      { prev_node: "Order Confirmation", threshold: 1, forwards: [{ name: "Start Shipping", permissionIndex: 1000, weight: 1 }] }
-    ]
-  },
-  {
-    name: "In Transit",
-    pairs: [
-      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Mark In Transit", permissionIndex: 1000, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Completed",
-    pairs: [
-      { prev_node: "In Transit", threshold: 1, forwards: [{ name: "Complete Order", permissionIndex: 1002, weight: 1 }] }
-    ]
-  }
-]
-```
+**Node Structure**:
+- Node "Order Confirmation": Two pairs
+  - From empty prev_node: threshold 0, forward to "Confirm Order"
+  - From "Order Confirmation": threshold 0, forward to "Cancel Order"
+- Node "Shipping": From "Order Confirmation", threshold 1, forward to "Start Shipping"
+- Node "In Transit": From "Shipping", threshold 1, forward to "Mark In Transit"
+- Node "Completed": From "In Transit", threshold 1, forward to "Complete Order"
 
 ### MyShop Advanced: 11-Node Multi-Path Workflow
 
@@ -287,80 +239,6 @@ Order Confirmed ──→ Shipping ──→ Delivery Complete ──→ Order C
 - **Wonderful rating**: Customer can rate delivery as "Wonderful" from the Shipping node, triggering reward
 - **"Who completes, who submits"**: The party responsible for an action submits the on-chain proof (e.g., merchant submits Merkle Root for shipping, customer for returns)
 
-```
-nodes: [
-  {
-    name: "Order Confirmed",
-    pairs: [
-      { prev_node: "", threshold: 0, forwards: [{ name: "Confirm Order", permissionIndex: 1010, weight: 1 }] },
-      { prev_node: "Order Confirmed", threshold: 0, forwards: [{ name: "Cancel Order", permissionIndex: 1010, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Order Cancel",
-    pairs: [
-      { prev_node: "Order Confirmed", threshold: 1, forwards: [{ name: "Cancel Order", permissionIndex: 1010, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Shipping",
-    pairs: [
-      { prev_node: "Order Confirmed", threshold: 1, forwards: [{ name: "Ship Order", permissionIndex: 1011, weight: 1, guard: { guard: "machine_merkle_root_v2" } }] }
-    ]
-  },
-  {
-    name: "Delivery Complete",
-    pairs: [
-      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Confirm Delivery", permissionIndex: 1012, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Wonderful",
-    pairs: [
-      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Rate Wonderful", permissionIndex: 1013, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Order Complete",
-    pairs: [
-      { prev_node: "Shipping", threshold: 1, forwards: [{ name: "Auto Complete (10d)", permissionIndex: 1011, weight: 1, guard: { guard: "machine_time_10d_v2" } }] },
-      { prev_node: "Delivery Complete", threshold: 1, forwards: [{ name: "Complete Order", permissionIndex: 1011, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Lost",
-    pairs: [
-      { prev_node: "Shipping", threshold: 2, forwards: [{ name: "Report Lost", permissionIndex: 1014, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Non-receipt Return",
-    pairs: [
-      { prev_node: "Delivery Complete", threshold: 2, forwards: [{ name: "Return (No Receipt)", permissionIndex: 1015, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Receipt Return",
-    pairs: [
-      { prev_node: "Delivery Complete", threshold: 2, forwards: [{ name: "Return (With Receipt)", permissionIndex: 1016, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Return Fail",
-    pairs: [
-      { prev_node: "Receipt Return", threshold: 1, forwards: [{ name: "Return Failed (10d)", permissionIndex: 1011, weight: 1, guard: { guard: "machine_time_10d_v2" } }] }
-    ]
-  },
-  {
-    name: "Return Complete",
-    pairs: [
-      { prev_node: "Non-receipt Return", threshold: 2, forwards: [{ name: "Complete Return", permissionIndex: 1017, weight: 1 }] },
-      { prev_node: "Receipt Return", threshold: 2, forwards: [{ name: "Complete Return", permissionIndex: 1017, weight: 1 }] }
-    ]
-  }
-]
-```
-
 ### Insurance: 2-Node Time-Lock Workflow
 
 **Source**: [Insurance Example](../examples/Insurance/Insurance.md)
@@ -373,22 +251,9 @@ Start → Complete (time-lock guard: clock > progress.current_time + 1000ms)
 
 **Key Design**: The Complete forward uses a Guard with `convert_witness: 100` (TypeOrderProgress) to access the Order's Progress object and query `progress.current_time`. This creates a time-lock — the claim cannot be completed until the lock duration passes.
 
-```
-nodes: [
-  {
-    name: "Start",
-    pairs: [
-      { prev_node: "", threshold: 0, forwards: [{ name: "start_claim", permissionIndex: 1000, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Complete",
-    pairs: [
-      { prev_node: "Start", threshold: 1, forwards: [{ name: "complete_claim", permissionIndex: 1001, weight: 1, guard: { guard: "insurance_complete_guard_v1" } }] }
-    ]
-  }
-]
-```
+**Node Structure**:
+- Node "Start": From empty prev_node, threshold 0, forward to "start_claim"
+- Node "Complete": From "Start", threshold 1, forward to "complete_claim" with time guard
 
 ### Travel: 5-Node Weather-Dependent Workflow
 
@@ -408,43 +273,6 @@ Start → Buy Insurance (creates sub-order) → SPA → Ice Scooting (weather ch
 - **Time-lock completion**: The Complete forward uses `convert_witness: 100` for time-lock (same as Insurance)
 - **Named forwards**: Each forward uses a descriptive `forward_name` for event tracking
 
-```
-nodes: [
-  {
-    name: "Start",
-    pairs: [
-      { prev_node: "", threshold: 0, forwards: [{ forward_name: "start_travel", permissionIndex: 1000, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Buy Insurance",
-    pairs: [
-      { prev_node: "Start", threshold: 1, forwards: [{ forward_name: "buy_insurance", permissionIndex: 1001, weight: 1, guard: { guard: "travel_buy_insurance_guard_v1" } }] }
-    ]
-  },
-  {
-    name: "SPA",
-    pairs: [
-      { prev_node: "Buy Insurance", threshold: 1, forwards: [{ forward_name: "enjoy_spa", permissionIndex: 1002, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Ice Scooting",
-    pairs: [
-      { prev_node: "SPA", threshold: 1, forwards: [
-        { forward_name: "ice_scooting", permissionIndex: 1003, weight: 1, guard: { guard: "weather_check_guard_v1" } }
-      ]}
-    ]
-  },
-  {
-    name: "Complete",
-    pairs: [
-      { prev_node: "Ice Scooting", threshold: 1, forwards: [{ forward_name: "complete_travel", permissionIndex: 1004, weight: 1, guard: { guard: "travel_complete_guard_v1" } }] }
-    ]
-  }
-]
-```
-
 ### ThreeBody Signature: 2-Node Simple Workflow
 
 **Source**: [ThreeBody Signature Example](../examples/ThreeBody_Signature/ThreeBody_Signature.md)
@@ -455,22 +283,9 @@ The simplest possible workflow — just delivery and completion:
 Book Delivered → Signature Completed
 ```
 
-```
-nodes: [
-  {
-    name: "Book Delivered",
-    pairs: [
-      { prev_node: "", threshold: 0, forwards: [{ name: "Confirm Delivery", permissionIndex: 1000, weight: 1 }] }
-    ]
-  },
-  {
-    name: "Signature Completed",
-    pairs: [
-      { prev_node: "Book Delivered", threshold: 1, forwards: [{ name: "Complete Signature", permissionIndex: 1001, weight: 1 }] }
-    ]
-  }
-]
-```
+**Node Structure**:
+- Node "Book Delivered": From empty prev_node, threshold 0, forward to "Confirm Delivery"
+- Node "Signature Completed": From "Book Delivered", threshold 1, forward to "Complete Signature"
 
 ## Machine Workflow Design Checklist
 
@@ -570,26 +385,9 @@ Delivery Node ──→ Late Delivery Detected (Guard: time > deadline)
 ```
 
 **Machine Design**:
-```javascript
-{
-  name: "Delivery",
-  pairs: [{
-    prev_node: "Shipping",
-    threshold: 1,
-    forwards: [
-      // Normal delivery path
-      { name: "On Time Delivery", permissionIndex: 1001, weight: 1 },
-      // Late delivery with penalty
-      { 
-        name: "Late Delivery", 
-        permissionIndex: 1001, 
-        weight: 1,
-        guard: { guard: "delivery_time_check" }  // Checks if past deadline
-      }
-    ]
-  }]
-}
-```
+- Node "Delivery" with two forwards from "Shipping" node:
+  - "On Time Delivery" forward: normal path
+  - "Late Delivery" forward: with guard checking if past deadline
 
 **Guard Logic** (`delivery_penalty_guard`):
 - Query Progress: Get `progress.current_time` vs `expected_delivery_time`
@@ -622,7 +420,7 @@ Travel Order ──→ Courier Sub-order ──→ Late Delivery
 3. Travel Order's `receive` operation extracts penalty to customer
 4. Workflow continues only after penalty verified
 
-**Schema**: `schema_query({ action: "get", name: "onchain_operations_payment" })` — for penalty payment validation
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_payment" })` — for penalty payment validation
 
 ---
 
@@ -631,3 +429,19 @@ Travel Order ──→ Courier Sub-order ──→ Late Delivery
 - Sum of completed forward weights ≥ threshold → session moves to history, next node becomes current
 - Order users advance via `Order` object
 - Non-order users advance via `Progress` object directly
+
+---
+
+## Schema Reference
+
+| Purpose | Schema Name |
+|---------|-------------|
+| Machine operations | `onchain_operations_machine` |
+| Progress operations | `onchain_operations_progress` |
+| Query on-chain objects | `query_toolkit` |
+| Query table data | `onchain_table_data` |
+| Payment operations | `onchain_operations_payment` |
+
+**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
+
+**Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) | [wowok-order](../wowok-order/SKILL.md) | [wowok-provider](../wowok-provider/SKILL.md)
