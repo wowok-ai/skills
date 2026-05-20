@@ -177,8 +177,13 @@ Once consensus is reached, create the order through Service operation.
 |-----------|---------|-------|
 | `buy.items` | Products to purchase | Reference `Service.sales` |
 | `buy.total_pay` | Payment budget | **Excess automatically refunded** |
-| `buy.discount` | Coupon object ID | Optional |
+| `buy.discount` | Coupon object ID | Optional — see 3.1.1 below |
 | `agents` | Delegated operators | Can operate order but **CANNOT withdraw funds** |
+
+#### 3.1.1 Using Discount Coupons
+
+When creating an order via the `buy` operation, you can apply a discount coupon by including the `discount` field with the coupon name/ID.
+
 | `namedNewOrder` | Local name for Order | Recommended for easy reference |
 | `namedNewProgress` | Local name for Progress | Recommended |
 | `namedNewAllocation` | Local name for Allocation | Recommended |

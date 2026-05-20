@@ -273,14 +273,8 @@ Optional mechanisms to attract and retain customers.
 
 ### 4.1 Discount Coupons
 
-Issue promotional discounts to attract new customers or reward loyal ones.
+Issue promotional discounts to attract new customers or reward loyal ones (AI: query `schema_query` for `onchain_operations_service` to view `discount` field definitions).
 **Operation**: `onchain_operations` with `operation_type: "service"`.
-
-**Customer Uses Coupon**:
-
-When customer creates order via `buy` operation, they include `discount` field with the discount name/ID.
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_service" })` — look for `BuySchema`
 
 ### 4.2 Review & Reward Incentives
 
@@ -289,27 +283,35 @@ Encourage post-order feedback and engagement.
 **Design Pattern — Review Incentive**:
 ```
 Machine Workflow:
-├── "Order Completed" Node
-│   └── Forward: "Review Requested"
-│       └── Guard: time_elapsed(7_days)
-│
-└── "Review Submitted" Node
-    └── Forward: "Reward Issued"
-        └── Guard: valid_review_submitted
-        └── Action: Reward tokens released to customer
+"order_completed" → "like" (threshold: 1)
+└── Forward: "positive_feedback" (weight: 1)
+
+"order_completed" → "suggest" (threshold: 1)
+└── Forward: "negative_feedback" (weight: 1)
 ```
 
 **Creating Reward Pool**:
 
 **Operation**: `onchain_operations` with `operation_type: "reward"`.
 
-**Key Fields**:
-- `object`: Reward object name (CREATE) or ID (MODIFY)
-- `guards`: Array of RewardGuard objects defining:
-  - `guard`: Guard object ID that validates reward claim
-  - `recipient`: Who receives the reward
-  - `amount`: Reward amount (Fixed or Guard-derived)
-  - `expiration_time`: Optional expiration for this reward rule
+**Example Configuration**:
+
+Create 2 Guards that check if Progress reached "like" node, then bind to Reward with different amounts:
+
+```
+Guard 1: "reward_like_200k"
+└── Condition: progress.current_node == "like"
+
+Guard 2: "reward_suggest_100k"  
+└── Condition: progress.current_node == "suggest"
+
+Reward Configuration:
+├── Guard: "reward_like_200k"
+│   └── Amount: 200000
+│
+└── Guard: "reward_suggest_100k"
+    └── Amount: 100000
+```
 
 > **Note**: Reward is an optional advanced feature. See `schema_query({ action: "get", name: "onchain_operations_reward" })` for full configuration.
 
@@ -334,14 +336,12 @@ Machine Implementation:
 ```
 
 **Benefits**:
-- **Transparency**: Customers see exactly who fulfills components
-- **Quality assurance**: Commits you to vetted suppliers
+- **Transparency & Quality assurance**: Commits you to vetted suppliers
 - **Trust building**: "We use X brand" becomes verifiable on-chain
 
 **Prerequisites**:
 - Supplier Service must be published first
 - Your Machine references their Service ID
-- Sub-order creates independent Order with its own Allocation
 
 ---
 
@@ -363,18 +363,13 @@ Advance orders through your Machine workflow via the Progress object.
 
 **Operation**: `onchain_operations` with `operation_type: "progress"`.
 
-**Step 1: Lock permission**:
+**Step 1: Lock permission** (Prevents race conditions):
 - `object`: Progress object ID (from Order.progress)
 - `operate.operation`: Target node operation (e.g., `{ Next: "shipped" }`)
 - `operate.hold`: `true` to lock permission
 
 **Step 2: Complete off-chain work, then submit**:
 - Same operation with `hold: false` to release lock and submit
-
-**Why Lock (hold: true)**:
-- Prevents race conditions
-- Ensures atomic operations
-- Required for multi-step processes
 
 **Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_progress" })`
 
@@ -397,7 +392,7 @@ Machine Design:
 
 **Payment Flow**:
 ```
-Merchant Wallet
+Merchant or Participant Wallet
     ├──→ Payment (penalty) ──→ Customer's Order
     │                              └──→ Customer extracts via receive()
     └──→ Guard validates before workflow continues
@@ -437,28 +432,8 @@ Contact.ims[] → Your customer service addresses
 | Design Machine + Allocators together | Design workflow without considering fund flow |
 | Provide generous compensation_fund | Skip compensation fund for high-value services |
 | Use clear, verifiable Guard conditions | Create ambiguous validation logic |
-| Test with small orders first | Publish without testing |
+| Test on testnet first, then mainnet | Publish to mainnet without testing |
 | Document WIP thoroughly | Make vague product promises |
-
-### Common Errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| "dependency not found" | Referencing non-existent object | Create dependencies first |
-| "cannot modify after publish" | Trying to change locked fields | Machine/Service immutable after publish |
-| Guard validation failure | Guard logic doesn't match data | Review Guard table vs submitted data |
-| "invalid object format" | Wrong CREATE/MODIFY syntax | Object=CREATE, String=MODIFY |
-
-### Trust Building Checklist
-
-Before promoting your service:
-- [ ] WIP files clearly specify deliverables
-- [ ] Machine covers all success/failure paths
-- [ ] Allocators fairly distribute funds in all scenarios
-- [ ] Compensation fund adequately funded
-- [ ] Arbitration services configured
-- [ ] Test order completed successfully
-- [ ] Customer service contact responsive
 
 ---
 
@@ -476,15 +451,3 @@ Before promoting your service:
 | Query toolkit | `query_toolkit` |
 
 **Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
-
-### Build Sequence
-1. Permission → Service (unpublished) → Machine (unpublished)
-2. Guards → Allocators → Reward/Arbitration/Compensation
-3. Publish Machine → Bind to Service → Publish Service
-
-### Key Metrics to Monitor
-- Order completion rate
-- Arbitration rate (keep <5%)
-- Average resolution time
-- Customer feedback sentiment
-- Compensation fund utilization
