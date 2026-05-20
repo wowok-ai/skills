@@ -48,6 +48,73 @@ When calling `onchain_operations`, always use this structure:
 
 ---
 
+## Top-Level Structure
+
+Every `onchain_operations` call uses this standard wrapper:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `operation_type` | string | Yes | One of 16 types |
+| `data` | object | Yes | Type-specific data |
+| `env` | object | No | Environment (account, network, etc.) |
+| `submission` | object | No | Guard submission data (see Submission Flow) |
+
+### Structure Exceptions — No `data` Field
+
+These four operations use a **flat structure** — the `data` wrapper does NOT exist, and the schema fields sit directly alongside the top-level fields:
+
+| Operation | Structure | Notes |
+|-----------|-----------|-------|
+| `gen_passport` | `{ guard, info?, env? }` | Also has no `submission` field |
+| `guard` | `{ data, env? }` | No `submission` field |
+| `payment` | `{ data, env? }` | No `submission` field |
+| `personal` | `{ data, env? }` | No `submission` field |
+
+### Structure Exceptions — No `submission` Field
+
+In addition to the four above, `arbitration`, `contact`, `permission`, and `allocation` typically complete without Guard submission, but the `submission` field exists in their schemas and may be used depending on configuration.
+
+---
+
+## CREATE vs MODIFY Pattern
+
+All on-chain object operations use a **unified discriminated pattern** for CREATE vs MODIFY:
+
+| Format | Meaning | Example |
+|--------|---------|---------|
+| **String** | Reference EXISTING object | `object: "my-service"` or `object: "0x1234..."` |
+| **Object** | CREATE NEW object | `object: { name: "my-service", permission: "..." }` |
+
+### Type Mapping
+
+| Object Type | Used By | CREATE Shape | MODIFY Shape |
+|-------------|---------|--------------|--------------|
+| `TypedPermissionObject` | `service`, `arbitration`, `treasury`, `reward` | `{ name?, tags?, onChain?, replaceExistName?, type_parameter, permission? }` | `string` |
+| `WithPermissionObject` | `machine`, `repository`, `demand`, `contact` | `{ name?, tags?, onChain?, replaceExistName?, permission? }` | `string` |
+| `TypedDescriptionObject` | *(not directly used by operations)* | `{ name?, tags?, onChain?, replaceExistName?, type_parameter }` | `string` |
+| `TypeNamedObject` | `allocation` (CREATE), `payment` | `{ name?, tags?, onChain?, replaceExistName?, type_parameter? }` | N/A |
+| `DescriptionObject` | `permission` field of other types | `{ name?, tags?, onChain?, replaceExistName?, description? }` | `string` |
+| `NormalObject` | `permission` | `{ name?, tags?, onChain?, replaceExistName? }` | `string` |
+| `NamedObject` | `namedNew*`, `guard.namedNew` | `{ name?, tags?, onChain?, replaceExistName? }` | N/A |
+
+### Common CREATE Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Human-readable name |
+| `tags` | string[] | Filter/manage via tags |
+| `onChain` | boolean | Register name on-chain (public) |
+| `replaceExistName` | boolean | Force claim an in-use name |
+| `description` | string | Human-readable description |
+| `permission` | DescriptionObject | Access control reference |
+| `type_parameter` | string | Token type (e.g., `"0x2::wow::WOW"`) |
+
+### Guard Exception
+
+`guard` operation is **CREATE-only** and immutable. Guards cannot be modified after creation. Create a new Guard when you need to update validation logic.
+
+---
+
 ## The 13 Tools
 
 | # | Tool | Type | Description |
@@ -566,6 +633,67 @@ User wants to...
 2. Show preview to user → Get explicit confirmation
 3. Call onchain_operations WITH submission → Execute
 ```
+
+### Guard Submission Flow — Two-Step Pattern
+
+When an `onchain_operations` call triggers a Guard whose table contains entries with **`b_submission: true`**, the tool returns a response with **`type: "submission"`** instead of a transaction result. This is the **only scenario** where a second call is needed.
+
+**Step 1 — Initial Call:**
+```
+onchain_operations({ operation_type: "<type>", data: { ... } })
+→ Response: { type: "submission", ... }
+  ├── guard: [{ object, impack }] — Guards requiring verification
+  └── submission: [{ guard, submission: [{ identifier, value_type, value?, name }] }]
+```
+
+The response contains a **pre-filled template**. Each entry has `identifier`, `value_type`, and optionally `name` already set. **You ONLY fill the `value` field.**
+
+**Step 2 — Re-submit with Completed Data:**
+```
+Same operation_type and data as Step 1 (unchanged)
+Add top-level submission:
+{
+  "type": "submission",
+  "guard": [{ "object": "guard_name", "impack": true }],
+  "submission": [{
+    "guard": "guard_name",
+    "submission": [
+      { "identifier": 0, "value_type": "String", "value": "your_data_here" }
+    ]
+  }]
+}
+```
+
+**Critical Rules:**
+- **Only fill `value`**: Never modify `identifier`, `value_type`, or `name` — they are pre-filled by the server
+- **Value type matching**: The `value` must match the declared `value_type` exactly (e.g., `"Address"` expects a hex address, `"U64"` expects a number)
+- **All fields required**: Fill every entry in the `submission` array; incomplete data causes a validation error
+- **Data and env unchanged**: The `data` and `env` portions of the original call must remain identical
+- **Impack flag**: `impack: true` means this Guard's result affects the final outcome. All `impack: true` Guards must pass for the operation to proceed
+
+**Common Submission Scenarios:**
+- **Merkle Root proof**: `value_type: "String"`, value = hex string proving data inclusion
+- **Progress/Order address**: `value_type: "Address"`, value = object name or on-chain ID
+- **Signature verification**: `value_type: "String"`, value = signed challenge response
+
+**When NOT to submit:**
+- If the response returns a transaction result directly (no `type: "submission"`), the operation is complete
+- `guard`, `payment`, `personal`, and `gen_passport` do not use the submission flow
+
+### Field Execution Order
+
+Schema field order determines execution order — the order of fields in the JSON Schema definition controls which operation happens first, **regardless of the order of keys in the submitted JSON object**.
+
+**AI Guidelines:**
+1. **Check schema field order** against the user's intended operation sequence before calling
+2. **Split into multiple calls** when schema order conflicts with the desired sequence — do not rely on a single call to enforce ordering that contradicts the schema
+3. **Prefer incremental steps** over single batch operations when uncertain
+4. **Verify between steps**: After each modification, confirm it landed on-chain before proceeding to the next:
+   ```
+   query_toolkit({ query_type: "onchain_objects", objects: ["<name>"], no_cache: true })
+   ```
+
+**Example**: If a Service schema lists `sales` before `machine`, the sales configuration is applied before the machine binding — regardless of how you order the keys in JSON. If you need the machine bound first, make two separate calls: one with `machine` set, then a second with `sales`.
 
 ---
 

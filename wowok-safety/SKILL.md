@@ -238,9 +238,24 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 ## 9. Testing & Validation Workflow
 
-1. **Design Phase**: Use `wowok_buildin_info` to discover available permissions and Guard instructions
+1. **Design Phase**: Use `wowok_buildin_info` to discover available permissions, Guard instructions, and value types
 
-**Tool**: `wowok_buildin_info` with `info_type: "permissions"` or `info_type: "guard_instructions"`.
+**Tool**: `wowok_buildin_info` with `info: "permissions"`, `info: "guard_instructions"`, or `info: "value types"`.
+
+### 9.1 Value Types — Built-in Type Annotation System
+
+WoWok's value type system is the foundation for type-safe data declarations used across Guards, records, and query instructions. Every data field in a Guard table or Guard submission carries a `value_type` annotation, ensuring the protocol can validate and process data correctly.
+
+**When value types matter:**
+- Defining Guard table columns: each Identifier in a Guard's `table` block requires a `value_type`
+- Submitting data to Guards: `GuardSubmission` entries must match their declared `value_type`
+- Reading Guard exports: `guard2file` output shows `value_type` for every Identifier
+- Designing query instructions: both parameters and return values carry `value_type` annotations
+
+- **String format is recommended** (e.g., `"U64"`, `"Address"`, `"VecString"`) for readability in Guard tables and submissions.
+- Numeric codes (0–18) are accepted but obscure — prefer string names in all user-facing contexts.
+- `Value` (19) is a protocol-internal type for dynamic value handling. It must **never** be used directly in user-defined Guards or submissions.
+**Available value types** (queried via `wowok_buildin_info` with `info: "value types"`)
 
 2. **Export & Review**: Before publishing, use `guard2file` and `machineNode2file` to export and review definitions
 
@@ -272,6 +287,9 @@ For complex objects with many fields (Service, Machine), use **incremental build
 | Guard export | `guard2file` |
 | Machine export | `machineNode2file` |
 | Build-in info | `wowok_buildin_info` |
+| Built-in permissions | `wowok_buildin_info` with `info: "permissions"` |
+| Guard instructions | `wowok_buildin_info` with `info: "guard_instructions"` |
+| Value types | `wowok_buildin_info` with `info: "value types"` |
 
 **Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
 

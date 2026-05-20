@@ -41,11 +41,11 @@ End-to-end encrypted messaging for secure off-chain business communication with 
 
 The messenger operates on a **triple-trust model**. For detailed architecture and communication mechanisms, see the [Messenger Deep Dive Documentation](https://github.com/wowok-ai/docs/blob/main/docs/stage-03b-messenger.md).
 
-| Trust Layer | Mechanism | What It Guarantees |
-|-------------|-----------|--------------------|
-| **Identity Trust** | Falcon512 signatures (pq-safe, post-quantum) | The sender is who they claim to be |
-| **Encryption Trust** | Signal Protocol double-ratchet (X25519 + ML-KEM-768) | Only the intended recipient can decrypt |
-| **Sequence Trust** | Merkle Tree + server Falcon512 signature | Messages form a deterministic, tamper-proof sequence |
+**Key Design Decisions**:
+- Messages are **NOT on-chain**. Communication is off-chain for privacy and cost efficiency.
+- The server **cannot read** messages. Ciphertext is opaque; only endpoints hold decryption keys.
+- The server **proves message order**. Its Falcon512 signature on the Merkle tree is verifiable by anyone.
+- On-chain proof is **optional**. A message's Merkle root can be anchored to the blockchain via `proof_message`.
 
 ### Evidence Closure Principle
 
