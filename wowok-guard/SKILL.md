@@ -35,8 +35,8 @@ when_to_use:
 > **Prerequisites**: Understand CREATE vs MODIFY pattern — Guards are CREATE-only; once deployed on-chain their logic is frozen forever
 > **Machine Integration**: See [wowok-machine](../wowok-machine/SKILL.md) for how Guards attach to workflow node forwards
 > **Service Provider**: See [wowok-provider](../wowok-provider/SKILL.md) for buy_guard, allocator guards, and reward guard configuration
-> **Order Operations**: See [wowok-order](../wowok-order/SKILL.md) for Guard submissions during Progress advancement and the arbitration dispute process
-> **Arbitration**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for voting_guard and usage_guard configuration and the full Arb case lifecycle
+> **Customer Order Operations**: See [wowok-order](../wowok-order/SKILL.md) for Guard submissions during Progress advancement and the arbitration dispute process from the customer's perspective
+> **Arbitrator Operations**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for voting_guard and usage_guard configuration, vote organization, and the full Arb case lifecycle from the arbitrator's perspective
 > **Messenger**: See [wowok-messenger](../wowok-messenger/SKILL.md) for encrypted evidence exchange
 > **Tools**: See [wowok-tools](../wowok-tools/SKILL.md)
 
@@ -75,52 +75,127 @@ Every Guard is built from three layers, each with a distinct role:
 
 **The root is the question**: It must return Bool. Intermediate nodes return numbers, strings, addresses, or vectors. The type system is enforced at creation time — a comparison node expecting numbers cannot receive strings.
 
-**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass. When true, any dependency passing is sufficient. This lets you build complex validation from simple, tested components.
+**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass. When true, any dependency passing is sufficient. This lets you build complex validation from simple, tested components. A Guard can only depend on Guards that are themselves standalone (`immutable: true` and `rep: true`) — no circular or transitive dependency chains.
 
 ### 4. Where Guards Attach in the Ecosystem
 
 Guards are not standalone — they plug into other WoWok objects as validation rules. Understanding these integration points is essential because the **context** of the Guard determines what data is available to it and what happens when it fails.
 
-| Host Object | Guard Field | What It Controls | Operator | Arb State Relevance |
-|-------------|-------------|-----------------|----------|---------------------|
-| **Service** | `buy_guard` | Who can purchase from this service | Customer | — |
-| **Service** | `order_allocators[].guard` | Which fund distribution strategy executes | System (auto-evaluated) | — |
-| **Machine** | Forward `guard` | Who can advance to the next workflow node | Customer or Provider | — |
-| **Progress** | Submission guard | Whether submitted data satisfies conditions during forward execution | Customer or Provider | — |
-| **Reward** | `guard` | Who can claim from the reward pool | Claimant | — |
-| **Repository** | Write/quote guard | Who can write to or read from on-chain storage | Writer/Reader | — |
-| **Arbitration** | `usage_guard` | Who can file a dispute against this arbitration | Customer | Checked during `dispute`, which creates Arb in **Arbitrator_confirming (1)** |
-| **Arbitration** | `voting_guard[]` | Who can vote on arbitration proposals and with what weight | Voters | Active during **Voting (2)** state |
-| **Gen Passport** | Guard verification | Generating verified credentials after successful validation | Passport holder | Required before guard-based voting |
+| Host Object | Guard Field | What It Controls | Operator | Who Provides Submission Data |
+|-------------|-------------|-----------------|----------|------------------------------|
+| **Service** | `buy_guard` | Who can purchase from this service | Customer | Customer (signer, credentials) |
+| **Service** | `order_allocators[].guard` | Which fund distribution strategy executes | System (auto-evaluated) | System derives from Progress state |
+| **Machine** | Forward `guard` | Who can advance to the next workflow node | Customer or Provider | The party executing the forward |
+| **Progress** | Submission guard | Whether submitted data satisfies conditions during forward execution | Customer or Provider | The party submitting data |
+| **Reward** | `guard` | Who can claim from the reward pool | Claimant | Claimant (address, credentials) |
+| **Repository** | Write/quote guard | Who can write to or read from on-chain storage | Writer/Reader | Writer/Reader |
+| **Arbitration** | `usage_guard` | Who can file a dispute against this arbitration | Customer | Customer (Passport credential) |
+| **Arbitration** | `voting_guard[]` | Who can vote on arbitration proposals and with what weight | Voters (authenticated via Arbitrator) | Voter (Passport credential with weight data) |
+| **Gen Passport** | Guard verification | Generating verified credentials after successful validation | Passport holder | Passport applicant |
 
-The two arbitration-specific guards deserve special attention because they bridge the customer-arbitrator relationship during dispute resolution.
+---
 
-#### usage_guard — Gating Dispute Access
+## Guard and the Arb State Machine
 
-The `usage_guard` on an Arbitration object controls **who can initiate a dispute**. When set, a customer calling `dispute` (or more precisely, `dispute_with_passport`) must present a Passport proving they satisfy this guard before the Arb is created.
+Understanding how Guards intersect with the Arb lifecycle is critical for designing arbitration-related Guards. The two guard roles fire at specific, well-defined moments in the state machine.
 
-**When this guard is checked**: At the moment of dispute creation, which transitions directly into **Arbitrator_confirming (1)** state. If the customer's Passport fails, the entire dispute transaction is rejected — no Arb is created, no fee is charged.
+### The Complete Arb State Machine with Guard Trigger Points
 
-**Business scenarios for usage_guard**:
-- Private arbitration services requiring membership or invitation
-- Industry-specific arbitration requiring professional credentials
-- KYC-verified dispute resolution
-- Any scenario where only authorized parties should access the arbitration
+```
+                         ┌─────────────────────────────────────────────┐
+                         │  usage_guard CHECKED HERE                   │
+                         │  (before Arb exists — pre-condition)        │
+                         │  Customer presents Passport proving         │
+                         │  eligibility to file dispute                │
+                         └──────────────────┬──────────────────────────┘
+                                            │
+                          Customer files dispute (arbitration.dispute)
+                                            │
+                                            ▼
+ ┌────────────────────┐
+ │  Arbitrator_       │  ◄── Arb is born here (dispute creates it directly in this state)
+ │  confirming (1)    │      Customer provided: order reference, description, propositions, fee
+ └────────┬───────────┘
+          │
+          ├──── arbitrator confirms (confirm) ──── sets voting_deadline ────┐
+          │                                                                  │
+          │    arbitrator resets (reset) ── back to Principal_confirming     │
+          │    for proposition/description revision by customer              │
+          │                                                                  ▼
+          │                                                         ┌─────────────────┐
+          │                                                         │  Voting (2)     │
+          │                                                         │                 │
+          │                                            ┌────────────│ voting_guard[]   │◄── Guards checked
+          │                                            │            │ EACH VOTE casts  │    per vote
+          │                                            │            │ with Passport    │
+          │                                            │            └────────┬────────┘
+          │                                            │                     │
+          │                                            │       arbitrator finalizes (arbitration)
+          │                                            │       sets feedback + indemnity
+          │                                            │       checks voting_deadline passed
+          │                                            │                     │
+          │                                            │                     ▼
+          │                                            │            ┌─────────────────┐
+          │                                            │            │  Arbitrated (3) │  ◄── Result published
+          │                                            │            └───┬─────────┬───┘
+          │                                            │                │         │
+          │                                            │           customer    customer
+          │                                            │           finish()    objection()
+          │                                            │           (claim      (contest
+          │                                            │            comp)       result)
+          │                                            │                │         ▼
+          │                                            │                │  ┌──────────────┐
+          │                                            │                │  │ Objectionable │
+          │                                            │                │  │ (4)           │
+          │                                            │                │  └──────┬────────┘
+          │                                            │                │         │
+          │                                            │                │   arbitrator reset()
+          │                                            │                │   ──────────────────┐
+          │                                            │                │                     │
+          │                                            │                ▼                     ▼
+          │                                            │         ┌────────────┐    ┌────────────────────┐
+          │                                            │         │ Finished   │    │ Principal_         │
+          │                                            │         │ (5)        │    │ confirming (0)     │
+          │                                            │         └─────┬──────┘    └────────┬───────────┘
+          │                                            │               │                    │
+          │                                            │          arbitrator           customer
+          │                                            │          withdraw()           principal_confirm()
+          │                                            │               │                    │
+          │                                            │               │                    └── back to
+          │                                            │               │                 Arbitrator_confirming
+          │                                            ▼               ▼
+          │                                     ┌──────────────────────────────────────────────┐
+          │                                     │               Withdrawn (6)                  │  ◄── Terminal
+          │                                     │          Arb fee joins Arbitration.balance    │
+          │                                     └──────────────────────────────────────────────┘
+          │
+          └──── arbitrator reset() ──── back to Principal_confirming (0) for pre-voting revision
+```
 
-When no usage_guard is set, the Arbitration is **public** — anyone can file a dispute, paying only the standard fee.
+### When Each Guard Role Activates
 
-#### voting_guard — Weighted Voter Eligibility
+| Guard Role | Arb State | Who Triggers | What Happens If Guard Fails |
+|------------|-----------|-------------|----------------------------|
+| **usage_guard** | Pre-state (before Arb exists) | Customer calling `arbitration.dispute` | Transaction reverts — no Arb created, no fee charged, no state change |
+| **voting_guard** | **Voting (2)** — each `vote` call | Voter (via arbitrator's vote operation) | Vote transaction reverts — vote is not recorded; voter must obtain valid Passport first |
 
-The `voting_guard` vector on an Arbitration defines **who can vote and how much influence they carry**. This is the mechanism that transforms arbitration from a centralized decision into a decentralized, credential-weighted voting process.
+**The critical distinction**: `usage_guard` gates **entry into the system** — it is a binary gate before any Arb exists. `voting_guard` gates **participation in a running process** — it fires once per vote within the Voting state. The former is a one-time check per dispute; the latter is a per-vote check that can involve dozens or hundreds of voters.
 
-**When voting guards are active**: During the **Voting (2)** state of an Arb case. Voters must first obtain a Passport by satisfying a specific voting guard (via `gen_passport`), then call the vote operation referencing that guard. Each voting guard entry specifies:
+### Customer vs Arbitrator: Different Guard Interactions
 
-- **Which Guard** validates the voter's eligibility
-- **How weight is determined** — either `FixedValue(u32)` for equal-weight pools or `GuardIdentifier(u8)` for dynamic weighting extracted from the voter's Passport submission
+The two parties interact with Guards in fundamentally different ways at different stages:
 
-**The connection to Arb state transitions**: Voting only happens in the **Voting (2)** state. The arbitrator controls when voting begins (`confirm` from **Arbitrator_confirming (1)** to **Voting (2)**) and when it ends (`arbitration` from **Voting (2)** to **Arbitrated (3)**, which checks the voting deadline). Voting guards determine **who participates** during this window.
+| Aspect | Customer (via Order) | Arbitrator (via Arbitration) |
+|--------|---------------------|------------------------------|
+| **Guard they confront** | `usage_guard` (pre-dispute) | `voting_guard[]` (during Voting) |
+| **How they satisfy it** | Generate Passport via `gen_passport` before calling `dispute` | Configure voting_guard list; voters generate their own Passports |
+| **What happens on failure** | Dispute rejected; must obtain proper credentials | Individual vote rejected; voter must retry with correct Passport |
+| **Relevant skill guide** | [wowok-order](../wowok-order/SKILL.md) Phase 5 — Arbitration | [wowok-arbitrator](../wowok-arbitrator/SKILL.md) Phase 2–3 |
+| **Guard design responsibility** | Arbitrator designs the usage_guard; customer must satisfy it | Arbitrator designs voting_guards and manages the voting guard list |
 
-When the `voting_guard` vector is empty, the Arbitration operates in **open voting mode**: any vote called by the arbitrator carries weight 1, and the transaction signer is recorded as the voter. This is the centralized model — the arbitrator (or a small trusted panel) controls all votes directly.
+**From the customer's perspective** (wowok-order Phase 5): Before filing a dispute, the customer should query the Arbitration object to check whether `usage_guard` is set. If it is, they must obtain a Passport via `gen_passport` for that guard before their `dispute` transaction can succeed. This is the **only** guard the customer directly confronts in the arbitration process. All other arbitration state transitions (principal_confirm, objection) do not involve Guard checks from the customer side.
+
+**From the arbitrator's perspective** (wowok-arbitrator Phase 2–3): The arbitrator designs and configures both `usage_guard` and `voting_guard[]`. They manage the voting guard list (add, set, remove, clear) and coordinate voters to obtain Passports for their respective voting guards. The arbitrator is the **guard designer and voting coordinator**, not the guard submitter — they configure the rules, while voters and customers provide the submissions.
 
 ---
 
@@ -152,6 +227,7 @@ Every Guard answers these questions:
 | "User can only claim reward once" | Reward record count check: no prior claims exist | `query_reward_record_count` with recipient filter; check count equals zero |
 | "Only KYC-registered entities can vote" | EntityRegistrar query: entity registration exists | `query` on ENTITY_REGISTRAR_ADDRESS with entity lookup parameters |
 | "Vote weight equals reputation score" | Dynamic weight via GuardIdentifier | `VoteValue::GuardIdentifier(index)` extracts numeric value from voter's Passport |
+| "Only premium members can file disputes" | usage_guard: membership verification query | `query` on EntityRegistrar or Repository checking membership status |
 
 ### Design Before Building
 
@@ -174,7 +250,7 @@ The Guard table is the **complete declaration of information** the Guard consume
 |-------|---------|---------------|
 | `identifier` | Unique index (0–255). The computation tree uses this number to reference the entry. | Always |
 | `b_submission` | Whether the **caller** must provide this value at runtime. `true` = runtime submission; `false` = pre-set constant. | Always |
-| `value_type` | The type of the value: Bool, Address, String, U8–U256, or vector types. Uses numeric type codes. | Always |
+| `value_type` | The type of the value: Bool, Address, String, U8–U256, or vector types. Uses numeric type codes (use `wowok_buildin_info` with query `"value types"` for the complete mapping). | Always |
 | `value` | The constant value when `b_submission` is false; a placeholder when `b_submission` is true. | When `b_submission` is false |
 | `name` | Human-readable label describing what this entry represents. | Always |
 
@@ -190,30 +266,39 @@ The Guard table is the **complete declaration of information** the Guard consume
 
 ### The convert_witness Mechanism
 
-When a query needs to access an object that is **related to** but not the same as a submitted identifier, the `convert_witness` field on the query node transforms the submitted address into its associated object. This is essential for common patterns.
+When a query needs to access an object that is **related to** but not the same as a submitted identifier, the `convert_witness` field on the query node transforms the submitted address into its associated object. This is essential for common patterns where the caller naturally has one object ID but the Guard needs data from a related object.
 
-**Example — Querying Progress from an Order**: A customer submits an Order ID, but the Guard needs to query the associated Progress object. The table has an Order address entry (submitted at runtime). The query node for Progress data uses `convert_witness: 100` (TypeOrderProgress), which tells the runtime: "Take the submitted Order address, find its Progress, and query that instead."
+**How it works**: The `convert_witness` value is a witness type number that encodes a source-to-target transformation. For example, witness type `100` means "take the submitted Order address and find its associated Progress." The runtime performs this lookup automatically, so the query node's target becomes the Progress rather than the Order.
 
-Without this mechanism, the caller would need to submit both the Order ID and the Progress ID — redundant and error-prone. The witness conversion maintains the principle that the caller provides only what they naturally have, and the system derives related objects automatically.
+**Common witness types**: Order→Progress (100) and other transformations documented in the guard instructions query via `wowok_buildin_info`. The system validates at creation time that the witness source type matches the table entry's object type and the witness target type matches the query instruction's object type — mismatches cause creation to fail.
 
-### Table Entry Example — Time-Lock Guard
+**Why this matters**: Without `convert_witness`, callers would need to submit multiple redundant IDs for the same conceptual entity — for example, both an Order ID and its Progress ID. The witness conversion maintains the principle that the caller provides only what they naturally have, and the system derives related objects automatically.
 
-A Guard that verifies the clock exceeds progress entry time plus a lock duration:
+**Table setup for convert_witness**: The table entry serving as the query object must be an Address type with a `b_submission` value appropriate to the use case. If the caller submits the Order ID at runtime, the entry is `b_submission: true`. If the Order address is a constant baked into the Guard, the entry is `b_submission: false`. The `object_type` on the table entry should match the witness source type (e.g., Order) — this is validated at creation time.
+
+### Table Entry Examples
+
+**Time-Lock Guard**: Verifies that the clock exceeds progress entry time plus a lock duration.
 
 - **Identifier 0**: The Order ID — submitted at runtime (`b_submission: true`, type: Address). A query node referencing this with `convert_witness: 100` will reach the associated Progress.
 - **Identifier 1**: The lock duration in milliseconds — pre-set constant (`b_submission: false`, type: U64, value: the duration).
 
 This minimal table (two entries) is sufficient because the system derives the Progress object from the submitted Order.
 
-### Table Entry Example — Arbitration Voting Guard with Dynamic Weight
+**Arbitration Voting Guard with Dynamic Weight**: Verifies a voter's KYC registration and extracts their reputation score as voting weight.
 
-A Guard that verifies a voter's reputation and extracts their voting weight:
-
-- **Identifier 0**: The voter's entity registration — submitted at runtime (`b_submission: true`, type: Address). Used to query KYC status.
+- **Identifier 0**: The voter's entity address — submitted at runtime (`b_submission: true`, type: Address). Used to query KYC status from EntityRegistrar.
 - **Identifier 1**: Minimum reputation threshold — pre-set constant (`b_submission: false`, type: U64, value: 100).
-- **Identifier 2**: The voter's reputation score — submitted at runtime (`b_submission: true`, type: U64). Used by the Arbitration's `GuardIdentifier` VoteValue to determine voting weight.
+- **Identifier 2**: The voter's reputation score — submitted at runtime (`b_submission: true`, type: U64). Used by the Arbitration's `GuardIdentifier(2)` VoteValue to determine voting weight.
 
-The computation tree verifies the entity is registered AND the reputation score exceeds the threshold. If both checks pass, the voter's weight is extracted from identifier 2 via `GuardIdentifier(2)`.
+The computation tree verifies the entity is registered AND the reputation score exceeds the threshold. If both checks pass, the voter's weight equals the value at identifier 2.
+
+**usage_guard for Membership-Gated Disputes**: Verifies the customer is a registered premium member before allowing dispute filing.
+
+- **Identifier 0**: The customer's address — submitted at runtime (`b_submission: true`, type: Address). Used to query membership status.
+- **Identifier 1**: The membership tier name — pre-set constant (`b_submission: false`, type: String, value: "premium").
+
+The computation tree queries the EntityRegistrar or a Repository to verify the customer's membership tier matches the required tier.
 
 ---
 
@@ -237,10 +322,10 @@ These nodes produce values from the Guard's environment. They are typically the 
 | Node Type | Input | Output | Purpose |
 |-----------|-------|--------|---------|
 | `identifier` | An index number from the table | The entry's declared type | Reads a constant (non-submission) or the caller's submitted value (submission) |
-| `context` | `"Clock"`, `"Signer"`, or `"Guard"` | U64 (Clock), Address (Signer/Guard) | Accesses transaction environment: current timestamp, transaction signer, or the Guard's own ID |
-| `query` | A target object identifier (from table, must be Address), a query instruction ID or name, and typed parameters | Varies by query instruction | Fetches live on-chain data from a WoWok object. May use `convert_witness` to access related objects |
+| `context` | `"Clock"`, `"Signer"`, or `"Guard"` | U64 (Clock), Address (Signer/Guard) | Accesses transaction environment: current timestamp in milliseconds, transaction signer's address, or the Guard's own object ID |
+| `query` | A target object identifier (from table, must be Address type), a query instruction ID or name, and typed parameters | Varies by query instruction | Fetches live on-chain data from a WoWok object. May use `convert_witness` to access related objects |
 
-**Query notes**: Discover available query instructions and their return types via the `wowok_buildin_info` tool with query `"guard instructions"`. Each instruction has a numeric ID, declares its parameter types, and specifies its return type. The query node's parameters must match the instruction's parameter types in count and type.
+**Query notes**: Discover available query instructions, their numeric IDs, parameter types, return types, and target object types via the `wowok_buildin_info` tool with query `"guard instructions"`. Each instruction has a unique numeric ID, declares its parameter types in order, and specifies its return type. The query node's `parameters` array must match the instruction's parameter types in count, order, and type — mismatches cause creation failure. Query instruction IDs span across all WoWok object types: Permission (1001+), Allocation (1050+), Payment (1100+), Repository (1150+), Service (1200+), Machine (1220+), Progress (1250+), Order (1275+), Reward (1297+), and others.
 
 #### Logic & Comparison — Making Decisions
 
@@ -341,7 +426,7 @@ These specialized query nodes search and aggregate on-chain records using BCS-se
 | `query_progress_history_session_forward_count` | Count of forwards in a session | U64 |
 | `query_progress_history_session_forward_retained_submission_count` | Count of retained submissions in a forward | U64 |
 
-These record query nodes enable sophisticated validation like "has the customer successfully completed delivery confirmation?" or "has this reward been claimed before by this address?" without requiring the caller to submit historical data — it's all queried on-chain.
+These record query nodes enable sophisticated validation like "has the customer successfully completed delivery confirmation?" or "has this reward been claimed before by this address?" without requiring the caller to submit historical data — it is all queried on-chain.
 
 ---
 
@@ -365,10 +450,10 @@ Use `onchain_operations` with `operation_type: "guard"`.
 
 **`root`** — The computational tree that defines the validation logic. Two modes:
 
-- **`type: "node"`**: Provide the GuardNode tree directly in the operation. Suitable for programmatic Guard creation and simpler Guards.
-- **`type: "file"`**: Load the Guard definition from a local JSON or Markdown file. The file defines `namedNew`, `description`, `table`, `root`, and `rely`. Fields specified directly in the schema parameters **override** the file's corresponding fields — useful for templating where the file provides the structure and the operation provides specific values.
+- **`type: "node"`**: Provide the GuardNode tree directly in the operation. Suitable for programmatic Guard creation and simpler Guards where the full tree is constructed inline.
+- **`type: "file"`**: Load the Guard definition from a local JSON or Markdown file previously exported via `guard2file`. The file defines `namedNew`, `description`, `table`, `root`, and `rely`. Fields specified directly in the schema parameters **override** the file's corresponding fields — useful for templating where the file provides the structure and the operation provides specific values like constants or names.
 
-**`rely`** — Optional dependency list (maximum 4). An array of existing Guard names or addresses. When `logic_or` is false (default), the current Guard passes only if **all** dependencies also pass (logical AND). When `logic_or` is true, the current Guard passes if **any** dependency passes (logical OR).
+**`rely`** — Optional dependency list (maximum 4). An array of existing Guard names or addresses. When `logic_or` is false (default), the current Guard passes only if **all** dependencies also pass (logical AND). When `logic_or` is true, the current Guard passes if **any** dependency passes (logical OR). This enables modular composition: build simple, independently-testable Guards and combine them into complex validations.
 
 **Dependency constraint**: A Guard can only depend on other Guards that have `immutable: true` and `rep: true` (meaning they are fully standalone — no dependencies of their own, and their query validation passed). This prevents circular dependency chains and ensures the composition is well-founded.
 
@@ -378,9 +463,9 @@ The creation process performs these validations on-chain:
 
 1. **Table serialization**: The table is BCS-serialized and checked against the 40000-byte size limit.
 2. **Input serialization**: The computation tree is BCS-serialized and checked against the 1024-byte size limit.
-3. **Data validation**: A native `validate_guard_data` function checks that every identifier in the computation tree maps to a table entry, that types are consistent, and that the root returns Bool.
-4. **Affiliation registration**: Every Address-type constant in the table that points to another on-chain object is registered in the system's affiliation graph, enabling reverse lookups ("which Guards reference this object?")
-5. **Freeze**: The Guard is frozen (`immutable: true`). After this point, no field can be modified.
+3. **Data validation**: A native `validate_guard_data` function checks that every identifier in the computation tree maps to a table entry, that types are consistent, and that the root returns Bool. It also sets the `rep` flag — if any query node's validation fails (e.g., the queried object does not exist or does not satisfy the query conditions), `rep` is set to false.
+4. **Affiliation registration**: Every Address-type constant in the table that points to another on-chain object is registered in the system's affiliation graph, enabling reverse lookups ("which Guards reference this object?").
+5. **Freeze**: The Guard is frozen (`immutable: true`). After this point, no field can be modified. The Guard's address is returned and should be recorded in your local mark.
 
 ### Discovery: Query Available Instructions
 
@@ -388,7 +473,7 @@ Before designing a Guard that queries on-chain state, discover what query instru
 
 **Tool**: `wowok_buildin_info` with query `"guard instructions"`.
 
-This returns the complete catalog: instruction IDs, parameter types, return types, and the target object type each instruction queries. Understanding this catalog is essential before constructing query nodes.
+This returns the complete catalog: instruction IDs, parameter types, return types, and the target object type each instruction queries. Understanding this catalog is essential before constructing query nodes — you must know exactly which instruction ID to use, how many parameters it expects, and what type each parameter must be.
 
 ### Discovery: Understand Value Types
 
@@ -411,6 +496,12 @@ When designing Guards that query entity registrations or social graphs, use thes
 
 These are pre-set Address entries in your table with `b_submission: false`. The query node references the table identifier containing this address as its target object.
 
+### Discovery: Query Built-in Permissions
+
+**Tool**: `wowok_buildin_info` with query `"built-in permissions"`.
+
+When designing Guards that check permission indices (e.g., via `permission.entity.perm has`), you need to know the numeric permission index codes. This query returns the complete mapping of permission names to their index values. Custom permissions start at index 1000.
+
 ---
 
 ## Phase 5: Test, Export, and Query
@@ -428,9 +519,9 @@ This tool verifies one or more Guards and, on success, generates an immutable Pa
 - **Verify correctness**: Does the Guard produce the expected boolean result with your test data?
 - **Test edge cases**: What happens with empty submissions, boundary values, or unusual addresses?
 - **Debug failures**: If the Guard rejects valid data, the error helps identify type mismatches or missing table entries.
-- **Pre-generate Passports for voters**: In guard-based arbitration voting, voters need Passports before they can vote. Generate these ahead of time.
+- **Pre-generate Passports for voters**: In guard-based arbitration voting, voters need Passports before they can vote. Generate these ahead of time so voting can proceed smoothly during the Voting state.
 
-The Passport itself is useful beyond testing — it serves as a reusable on-chain credential for offline verification, transaction condition checking, and multi-guard validation.
+The Passport itself is useful beyond testing — it serves as a reusable on-chain credential for offline verification, transaction condition checking, and multi-guard validation. A single Passport can satisfy multiple Guards in a single transaction.
 
 ### Export for Audit and Templating
 
@@ -440,15 +531,15 @@ The Passport itself is useful beyond testing — it serves as a reusable on-chai
 
 Export an existing Guard from the blockchain to a local JSON or Markdown file. This is essential for:
 
-- **Auditing**: Review the exact on-chain logic of any Guard — your own or a counterparty's.
-- **Templating**: Export a proven Guard, edit the file, and use `root.type: "file"` to create a new variant. Override specific fields in the operation to customize the template.
-- **Documentation**: Generate human-readable Guard definitions for sharing and review.
+- **Auditing**: Review the exact on-chain logic of any Guard — your own or a counterparty's. Before entering a Service agreement, export and inspect the provider's Guards.
+- **Templating**: Export a proven Guard, edit the file, and use `root.type: "file"` to create a new variant. Override specific fields in the operation to customize the template (e.g., change a duration constant or an address).
+- **Documentation**: Generate human-readable Guard definitions for sharing and review. The exported file preserves the complete structure — table, root tree, and dependencies — in a format that can be version-controlled and diffed.
 
 ### Query On-Chain Guards
 
 **Tool**: `query_toolkit` with `query_type: "onchain_objects"` and the Guard's name or address.
 
-Retrieve the Guard's complete on-chain state: description, table (all entries with their types and values), root tree structure, and dependencies. This is how counterparties inspect your Guards, and how you inspect theirs.
+Retrieve the Guard's complete on-chain state: description, table (all entries with their types and values), root tree structure, and dependencies. This is how counterparties inspect your Guards, and how you inspect theirs. For arbitration-related Guards, query the Arbitration object's `usage_guard` and `voting_guard` fields to find the Guard addresses, then query each Guard individually.
 
 ---
 
@@ -471,58 +562,127 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 
 ### usage_guard — The Gate Before Dispute Creation
 
-**When it fires**: At the moment a customer calls the `dispute` operation. This is the **entry point** to the entire arbitration process — before any Arb object exists.
+**When it fires**: At the moment a customer calls the `dispute` operation. This is the **entry point** to the entire arbitration process — before any Arb object exists. The check occurs in the `dispute_imp` function of the Arbitration module.
 
-**What happens**: If `usage_guard` is set, the on-chain `dispute_with_passport` function calls `passport::result_for_guard`, which verifies the customer's Passport against the guard. If the Passport is missing or the guard validation fails, the transaction reverts — no Arb is created, no fee is charged, no state changes occur.
+**What happens**: If `usage_guard` is set, the on-chain dispute function requires a Passport from the customer. The system calls `passport::result_for_guard`, which verifies the customer's Passport against the guard. If the Passport is missing or the guard validation fails, the entire transaction reverts — no Arb is created, no fee is charged, no state changes occur. The Arbitration's `bPaused` flag is also checked — if paused, the dispute is rejected regardless of the usage_guard.
 
-**The connection to Arb state**: The very first Arb state is **Arbitrator_confirming (1)** — the Arb is born in this state. The usage_guard check happens **before** state (1) is reached. Think of it as a pre-condition for the Arb's existence.
+**The connection to Arb state**: The very first Arb state is **Arbitrator_confirming (1)** — the Arb is born in this state. The usage_guard check happens **before** state (1) is reached. Think of it as a pre-condition for the Arb's existence: the customer must pass the gate before the case is even created.
 
 **Designing an effective usage_guard**: The guard should validate whatever constitutes "authorized to access this arbitration." Common patterns:
 - Identity check: Signer address equals a registered participant list (queried from a Repository or EntityRegistrar)
-- Membership verification: Signer's entity registration exists and has active status
-- Geographic or jurisdictional check: Signer's registered jurisdiction matches the arbitration's jurisdiction
+- Membership verification: Signer's entity registration exists and has active status with a specific tier
+- Geographic or jurisdictional check: Signer's registered jurisdiction matches the arbitration's jurisdiction (queried from on-chain registration data)
+- Token-gated access: Signer holds a minimum balance of a specific token
 
-**From wowok-order's perspective**: The customer initiates arbitration through the `arbitration.dispute` operation in their order workflow. If a usage_guard blocks them, they cannot proceed — the dispute transaction fails. The AI assisting the customer should query the Arbitration's `usage_guard` field first, check if it exists, and help the customer understand what credentials they need before attempting the dispute. See [wowok-order](../wowok-order/SKILL.md) Phase 5 for the complete customer arbitration workflow.
+**From the customer's workflow** ([wowok-order](../wowok-order/SKILL.md) Phase 5): The customer initiates arbitration through the `arbitration.dispute` operation. Before attempting the dispute, the AI assisting the customer should:
+1. Query the Arbitration object to check whether `usage_guard` is set
+2. If set, query the guard to understand what credentials are needed
+3. Help the customer obtain a Passport via `gen_passport` if they are eligible
+4. Only then proceed with the dispute operation
+
+If a usage_guard blocks the customer, the dispute transaction fails. The customer must either obtain the required credentials or choose a different Arbitration from the Service's approved list.
 
 ### voting_guard — The Weight Engine During Voting
 
-**When it fires**: During the **Voting (2)** state of an Arb. Each individual vote transaction using `vote_with_voting_guard` triggers the guard check.
+**When it fires**: During the **Voting (2)** state of an Arb. Each individual vote transaction using the voting_guard path triggers the guard check. The check occurs in the `vote_imp_` function.
 
 **What happens**: The voter provides a Passport (generated earlier via `gen_passport`) for a specific voting guard. The system:
-1. Verifies the Passport satisfies the specified guard
-2. Looks up the matching VotingGuard entry in the Arbitration's `voting_guard` vector
-3. Extracts the vote weight based on the VoteValue rule
+1. Verifies the Passport satisfies the specified guard via `passport::result_for_guard`
+2. Looks up the matching VotingGuard entry in the Arbitration's `voting_guard` vector by guard address
+3. Extracts the vote weight based on the VoteValue rule associated with that guard
 4. Records the vote with the calculated weight on the Arb's propositions
 
-**If no voting_guard is configured** (vector is empty): The arbitrator uses the simpler `vote` function, which records the transaction signer as the voter with weight 1. No Passport is needed. This is the **open voting** model — centralized control by the arbitrator.
+If the voter votes again later, their **old votes are removed** and replaced — voters can change their minds during the Voting state. Each re-vote re-triggers the guard check with the current Passport.
+
+**If no voting_guard is configured** (vector is empty): The arbitrator uses the simpler `vote` function, which records the transaction signer as the voter with weight 1. No Passport is needed. This is the **open voting** model — centralized control by the arbitrator, who can call vote on behalf of any address they control.
+
+**GuardIdentifier validation**: When using `GuardIdentifier(index)`, the system validates at configuration time that the referenced identifier exists in the guard's table and that its value type is numeric. This prevents runtime errors during voting — if the guard's table does not have a numeric submission at the specified index, the VotingGuard entry is rejected at add/set time.
 
 **The two VoteValue types and their Guard design implications**:
 
-**FixedValue(u32)** — Equal-weight voting. The Guard's role is purely **eligibility**: pass or fail. If the voter passes, they vote with the fixed weight. The Guard's submission values are not used for weight calculation.
+**FixedValue(u32)** — Equal-weight voting. The Guard's role is purely **eligibility**: pass or fail. If the voter passes, they vote with the fixed weight. The Guard's submission values are not used for weight calculation. This is the simpler model — suitable for jury-style voting where all qualified voters carry equal influence.
 
-**GuardIdentifier(u8)** — Dynamic weighted voting. The Guard serves double duty: eligibility AND weight determination. The value at the specified identifier index in the voter's Passport submission is extracted as a number and used as the vote weight. This requires the Guard's table to include a submission entry at that identifier with a numeric type.
+**GuardIdentifier(u8)** — Dynamic weighted voting. The Guard serves double duty: eligibility AND weight determination. The value at the specified identifier index in the voter's Passport submission is extracted as a number and used as the vote weight. This requires the Guard's table to include a submission entry at that identifier with a numeric type (U8 through U256). The system automatically casts to u32 for the weight.
 
 **Designing a voting_guard for dynamic weight**: The Guard must:
 1. Include at least one submission entry with a numeric type at the identifier referenced by GuardIdentifier
-2. Validate the voter's eligibility (identity, credentials, registration)
+2. Validate the voter's eligibility (identity, credentials, registration) through the computational tree
 3. Include the weight-determining value as a submission — the voter provides it when generating their Passport
+4. Optionally validate that the weight value itself is reasonable (e.g., within a valid range) to prevent inflated scores
 
 **Example — Reputation-weighted voting**:
-- Guard table has identifier 0: entity address (submitted, Address type) for KYC lookup
-- Guard table has identifier 1: reputation score (submitted, U64 type) for weight
-- The computational tree verifies the entity exists in the EntityRegistrar AND the reputation score exceeds a minimum threshold
+- Guard table has identifier 0: entity address (submitted, Address type) for KYC lookup from EntityRegistrar
+- Guard table has identifier 1: reputation score (submitted, U64 type) for weight — voter provides this when generating Passport
+- The computational tree uses `logic_and` to combine: (a) entity exists in EntityRegistrar, (b) reputation score exceeds minimum threshold via `logic_as_u256_greater_or_equal`
 - The Arbitration's VotingGuard entry uses `GuardIdentifier(1)` — the voter's weight equals their reputation score
-- A voter with reputation 500 gets 5x the voting power of a voter with reputation 100
+- A voter with reputation 500 gets 5× the voting power of a voter with reputation 100
 
 **The connection to Arb state machine**:
 - Voting guards are only relevant during **Voting (2)** state
-- The arbitrator transitions the Arb to Voting via `confirm` (from **Arbitrator_confirming (1)**)
-- Votes can be changed — if a voter votes again, their old weight is removed and replaced
-- Maximum 520 voters per Arb
-- The voting deadline, if set, blocks votes submitted after it passes
-- The `arbitration` operation (transition to **Arbitrated (3)**) checks the deadline before allowing finalization
+- The arbitrator transitions the Arb to Voting via `confirm` (from **Arbitrator_confirming (1)**), optionally setting a voting deadline
+- The voting deadline, if set, blocks votes submitted after it passes — the `vote` function asserts `clock::timestamp_ms(clock) <= voting_deadline`
+- Maximum 520 voters per Arb (`MAX_VOTOR_COUNT`)
+- The `arbitration` operation (transition to **Arbitrated (3)**) checks the deadline before allowing finalization: `clock::timestamp_ms(clock) > voting_deadline`
+- If no deadline is set (`null`), voting can continue indefinitely
 
-**From wowok-arbitrator's perspective**: The voting_guard configuration is set during arbitration service setup (Phase 2). The arbitrator manages the voting guard list (add, remove, clear) and coordinates the voting process (Phase 3.3). See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for the complete arbitrator workflow.
+**From the arbitrator's workflow** ([wowok-arbitrator](../wowok-arbitrator/SKILL.md) Phase 2–3): The arbitrator configures voting_guards during Arbitration service setup (Phase 2) using add/set/remove/clear operations. During a case (Phase 3), the arbitrator manages the voting process — notifying qualified voters, coordinating Passport generation, collecting votes, and monitoring the voting deadline. The arbitrator does not vote via voting_guard themselves unless they also hold a Passport for one of the configured guards.
+
+### End-to-End Guard Flow in an Arbitration Case
+
+```
+TIME ──────────────────────────────────────────────────────────────────────────►
+
+CUSTOMER SIDE                              ARBITRATOR SIDE
+─────────────                              ────────────────
+                                           1. DESIGN: Create usage_guard
+                                              and voting_guard[] Guards
+                                              (Phase 1–4 of this document)
+
+                                           2. CONFIGURE: Set usage_guard
+                                              and voting_guard[] on
+                                              Arbitration object
+                                              (wowok-arbitrator Phase 2)
+
+3. CHECK: Query Arbitration.
+   Is usage_guard set?
+   ├── NO  → Proceed to dispute
+   └── YES → Obtain Passport via
+              gen_passport for usage_guard
+
+4. DISPUTE: Call arbitration.dispute
+   with Passport (if required)
+   → usage_guard FIRES here
+   → Arb created in Arbitrator_confirming(1)
+                                           5. REVIEW: Examine propositions,
+                                              evidence. Reset for revision
+                                              or confirm to proceed.
+
+                                           6. CONFIRM: Call confirm with
+                                              optional voting_deadline
+                                              → Arb enters Voting(2)
+
+                                           7. COORDINATE VOTING:
+                                              Voters generate Passports
+                                              via gen_passport for their
+                                              respective voting_guards
+                                              → voting_guard FIRES per vote
+
+                                           8. FINALIZE: Call arbitration
+                                              with feedback + indemnity
+                                              → Arb enters Arbitrated(3)
+
+9. DECIDE: Accept result (finish/claim
+   compensation) or Object (objection)
+   → No Guard checks on customer side
+                                             10. HANDLE OBJECTION (if any):
+                                                 Reset back to
+                                                 Principal_confirming(0)
+                                                 for revision cycle
+
+                                             11. WITHDRAW FEES: After case
+                                                 concludes, arb_withdraw
+                                                 → No Guard checks
+```
 
 ---
 
@@ -539,7 +699,7 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 - Children: `context(Signer)` and `identifier(stored authorized address)`
 - Table: One pre-set Address entry with the authorized address.
 
-**Variation — Allowlist**: Use `vec_contains_address` with the signer and a vector of authorized addresses. The vector can be a pre-set constant in the table.
+**Variation — Allowlist**: Use `vec_contains_address` with the signer and a vector of authorized addresses. The vector can be a pre-set constant in the table (VecAddress type, `b_submission: false`) or a submitted value.
 
 ### Pattern 2: Time-Lock — "Must wait before completing"
 
@@ -549,9 +709,9 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 
 **Structure**:
 - Root: `logic_as_u256_greater`
-- First child: `context(Clock)` — the current timestamp
+- First child: `context(Clock)` — the current timestamp in milliseconds
 - Second child: `calc_number_add` of a Progress `query` (current node entry time) plus `identifier(lock duration)`
-- The query uses `convert_witness` (e.g., `100` for Order→Progress) to reach the Progress from a submitted Order ID
+- The Progress query uses `convert_witness` (e.g., `100` for Order→Progress) to reach the Progress from a submitted Order ID
 
 **Key insight**: The caller submits only the Order ID (which they naturally have). The system converts it to the Progress object and queries the entry time. The Guard adds the lock duration constant and compares against the clock.
 
@@ -574,9 +734,10 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 **Where used**: Insurance withdrawal guard (verify order reached "Complete" node), reward claim guard (verify customer completed a review step), allocator guards (verify delivery confirmation).
 
 **Structure**:
-- Use `query_progress_history_session_forward_find` to search for an accomplished forward matching specific criteria (node name, operator address, time range)
-- Combine with `logic_equal` to check the forward's `accomplished` flag
-- Use `query_progress_history_find` first to locate the relevant history entry, then drill into sessions and forwards
+- Use `query_progress_history_find` first to locate the relevant history entry by node and next node filters
+- Then use `query_progress_history_session_forward_find` to search for an accomplished forward matching specific criteria (who, operation, accomplished status, time range)
+- Combine with `logic_equal` to check the forward's `accomplished` flag or to verify the returned index is not the sentinel value
+- Chain with `logic_and` to combine multiple conditions (e.g., specific node reached AND forward accomplished by a specific party)
 
 ### Pattern 5: Reward Claim Gating — "Can only claim once"
 
@@ -596,9 +757,23 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 **Where used**: Arbitration voting_guard with GuardIdentifier VoteValue.
 
 **Structure**:
-- Two submission entries: entity address (for eligibility check) and credential value (for weight)
-- Computational tree: `logic_and` combining an entity registration check with a minimum threshold check
+- Two submission entries: entity address (for eligibility check via EntityRegistrar query) and credential value (for weight extraction)
+- Computational tree: `logic_and` combining an entity registration check (`query` on ENTITY_REGISTRAR_ADDRESS) with a minimum threshold check (`logic_as_u256_greater_or_equal` comparing the credential value against a constant minimum)
 - The Arbitration's VotingGuard entry uses `GuardIdentifier(index_of_weight_entry)` to extract the weight
+- The weight-determining entry must be numeric — the system validates this when the VotingGuard is added to the Arbitration
+
+### Pattern 7: Multi-Signature Consensus — "Multiple parties must agree"
+
+**Intent**: Require multiple independent parties to confirm before an action proceeds.
+
+**Where used**: High-value order completion, multi-party escrow release, governance decisions.
+
+**Structure**:
+- Root: `logic_and`
+- Children: Multiple `logic_equal` nodes, each comparing `context(Signer)` against a different authorized address
+- Each signer calls the operation separately; all must have called before the final condition is met
+- Alternative: Use Progress history queries to check that specific forwards have been accomplished by each required party
+- Can be combined with `query_progress_history_session_forward_find` to verify past signatures
 
 ---
 
@@ -609,13 +784,14 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 | Do | Don't |
 |----|-------|
 | Design Guards for exactly one clear validation purpose | Create monolithic Guards that check unrelated conditions in a single tree |
-| Name Guards descriptively with their business purpose and version | Use cryptic or generic names that don't convey intent |
+| Name Guards descriptively with their business purpose and version (`"_v1"`, `"_v2"`) | Use cryptic or generic names that do not convey intent |
 | Test Guards independently with `gen_passport` before integrating into any workflow | Deploy Guards into live Services or Machines without standalone verification |
 | Export and review Guards with `guard2file` before recreating them with changes | Assume you remember the exact logic of a Guard deployed weeks ago |
 | Use `rely` for Guard composition when validation naturally decomposes into independent checks | Duplicate identical validation logic across multiple Guards |
 | Query available instructions via `wowok_buildin_info` before designing query nodes | Guess query instruction IDs, parameter counts, or return types |
-| Keep the table concise with well-named entries that match the caller's natural data | Dump unnecessary data into the table — every entry is a contract |
+| Keep the table concise with well-named entries that match the caller's natural data | Dump unnecessary data into the table — every entry is a contract with the caller |
 | Use `convert_witness` to derive related objects from what the caller naturally has | Require callers to submit multiple redundant IDs for the same conceptual entity |
+| For voting_guard with GuardIdentifier: validate the weight value range in the Guard tree | Trust that voters will submit reasonable weight values without validation |
 
 ### Common Pitfalls
 
@@ -623,17 +799,21 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 
 2. **Type mismatches in comparison nodes**: A `logic_equal` comparing a String to a U64 fails validation. Use explicit conversion nodes (`convert_string_number`, `convert_number_string`) when types differ. Numeric comparisons use `logic_as_u256_*` variants which auto-widen to U256.
 
-3. **Wrong query instruction IDs or parameter counts**: Query instructions are system-defined. Always discover them through `wowok_buildin_info` with `"guard instructions"`. The parameter count and types in your query node must match the instruction exactly.
+3. **Wrong query instruction IDs or parameter counts**: Query instructions are system-defined. Always discover them through `wowok_buildin_info` with `"guard instructions"`. The parameter count and types in your query node must match the instruction exactly — off-by-one parameter counts are a common failure.
 
-4. **Missing convert_witness**: When accessing Progress data from an Order ID in the table, the query node needs `convert_witness` with the appropriate witness type. Without it, the runtime looks for a Progress at the Order's address — which does not exist. Common witness types include Order→Progress (100), and others documented in the guard instructions query.
+4. **Missing convert_witness**: When accessing Progress data from an Order ID in the table, the query node needs `convert_witness` with the appropriate witness type. Without it, the runtime looks for a Progress at the Order's address — which does not exist as a Progress object. The creation-time validation catches this mismatch.
 
-5. **Testing with production durations**: Set time-lock durations to small values (e.g., 1000 milliseconds) during testing. Increase to production values only after verifying the logic works correctly.
+5. **Testing with production durations**: Set time-lock durations to small values (e.g., 1000 milliseconds) during testing. Increase to production values only after verifying the logic works correctly. A Guard with a 30-day lock tested with real durations cannot produce results for a month.
 
-6. **Forgetting to export before recreating**: Guards are immutable. If you need to change one, export it first with `guard2file` so you have the exact on-chain definition as a reference. Then create a new Guard with a versioned name.
+6. **Forgetting to export before recreating**: Guards are immutable. If you need to change one, export it first with `guard2file` so you have the exact on-chain definition as a reference. Then create a new Guard with a versioned name and update all references.
 
-7. **Root not returning Bool**: The outermost node of the tree must produce Bool. Logic and comparison nodes return Bool; arithmetic, conversion, and string operation nodes do not. Ensure your tree terminates at a logic or comparison node.
+7. **Root not returning Bool**: The outermost node of the tree must produce Bool. Logic and comparison nodes return Bool; arithmetic, conversion, and string operation nodes do not. Ensure your tree terminates at a logic or comparison node — the creation validation will reject non-Bool roots.
 
-8. **Dependency on non-standalone Guards**: A Guard's `rely` entries must reference Guards that are themselves standalone (`immutable: true` and `rep: true`). Guards with their own dependencies cannot be used as dependencies for others.
+8. **Dependency on non-standalone Guards**: A Guard's `rely` entries must reference Guards that are themselves standalone (`immutable: true` and `rep: true`). Guards with their own dependencies cannot be used as dependencies for others — this is a strict no-transitive-dependency rule.
+
+9. **Forgetting voting_guard weight type validation**: When using `GuardIdentifier`, the referenced identifier must exist in the guard's table and its value type must be numeric. The system checks this when the VotingGuard is added to the Arbitration — if the identifier does not exist or is non-numeric, the operation reverts with `E_GUARD_IDENTIFIER_NOT_NUMBER`.
+
+10. **Not checking Arbitration pause state**: Even with a valid usage_guard Passport, the dispute fails if the Arbitration is paused (`bPaused: true`). The pause check happens before the guard check — advise customers to verify the Arbitration is active before generating Passports.
 
 ### Naming Conventions
 
@@ -650,6 +830,7 @@ Guards play two distinct and critical roles in the arbitration system. Understan
 | `onchain_operations` (`operation_type: "guard"`) | Create a new immutable Guard on-chain with its table, computational tree, and optional dependencies |
 | `wowok_buildin_info` (`query: "guard instructions"`) | Discover all available query instructions — their IDs, parameter types, return types, and target object types |
 | `wowok_buildin_info` (`query: "value types"`) | Discover the numeric codes for all supported value types used in table entries |
+| `wowok_buildin_info` (`query: "built-in permissions"`) | Discover all built-in permission index codes for use with `permission.entity.perm has` queries |
 | `gen_passport` | Test Guard validation with runtime submissions and generate a verified on-chain credential on success |
 | `guard2file` | Export an existing Guard's complete definition (description, table, root tree, dependencies) to a local JSON or Markdown file |
 | `query_toolkit` (`query_type: "onchain_objects"`) | Query any Guard object on-chain by name or address to inspect its full definition |

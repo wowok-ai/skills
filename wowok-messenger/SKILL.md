@@ -26,11 +26,7 @@ End-to-end encrypted messaging for secure off-chain business communication with 
 
 > **Role**: Any WoWok participant (customer, service provider, arbitrator)  
 > **Prerequisites**: Understand the tool pattern — use `schema_query({ action: "get", name: "messenger_operation" })`  
-> **Customer Perspective**: See [wowok-order](../wowok-order/SKILL.md) for buyer communication flows  
-> **Provider Perspective**: See [wowok-provider](../wowok-provider/SKILL.md) for seller customer service  
-> **Arbitration Perspective**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for evidence handling  
 > **Guard Design**: See [wowok-guard](../wowok-guard/SKILL.md) if configuring guard-based spam protection  
-> **Safety Rules**: See [wowok-safety](../wowok-safety/SKILL.md) for operation confirmation protocol  
 > **Tool Reference**: See [wowok-tools](../wowok-tools/SKILL.md) for MCP tool schemas
 
 ---
@@ -62,61 +58,29 @@ One-sided claims are not evidence. The system enforces this through cryptographi
 
 ## 1. Message Delivery Mechanism
 
-### 1.1 Normal Message Flow
+### 1.1 Message Delivery & Stranger Rules
+Messages from **strangers** (addresses not in the recipient's friends list) are subject to additional restrictions:
 
-When a sender dispatches a message without guard parameters, it follows the **immediate confirmation** path:
+- **One-message limit**: A stranger may send exactly one message. Until the recipient replies, any further messages from the same stranger are rejected.
+- **Reply unlocks**: When the recipient replies, the stranger is automatically added to the recipient's friends list, and both parties can message freely thereafter.
+- **Cool-down window**: The one-message restriction persists for a configurable duration. If the recipient does not reply within this window, the stranger may retry one message.
+- **Recipient opt-out**: A recipient can disable stranger messages entirely. When blocked, the sender receives the recipient's guard list as an alternative contact path.
 
-1. **Client-side encryption**: The sender's Messenger SDK encrypts the plaintext using the Signal Protocol session established with the recipient. The output is ciphertext (base64), a plaintext hash (SHA256 of plaintext + client timestamp + guard params), and a `lastReceivedLeafIndex` indicating the sender's most recently received message in this conversation.
-2. **Signed request**: The entire request is signed with the sender's Falcon512 private key to prove identity.
-3. **Spam protection check**: The server evaluates the message against the recipient's configured spam rules (see Section 2).
-4. **Merkle tree insertion**: If the check passes, the server:
-   - Computes a `leaf_hash = SHA256(plaintext_hash + server_timestamp)`
-   - Inserts the leaf into the conversation's Merkle tree
-   - Signs the new state `(prev_root, new_root, server_timestamp)` with its Falcon512 key
-   - Returns the Merkle proof (leaf_index, prev_root, new_root, server_signature) to the sender
-5. **Inbox delivery**: The message ID is pushed to the recipient's Redis inbox (RPUSH, FIFO order).
-6. **Recipient polling**: The recipient's Messenger SDK periodically polls the server, decrypts new messages, and updates their session state.
+**Rationale**: This design prevents unsolicited spam while allowing legitimate first contact. The one-message limit forces the stranger to make their opening message count, and auto-friend-on-reply ensures smooth continuation once the recipient engages.
 
-**Automatic friend-adding on reply**: When a recipient replies to a sender who was previously a stranger (i.e., the sender had sent a stranger message with a TTL key), the server automatically adds the sender to the recipient's friends list. This is a one-way operation — the recipient who replies gains the sender as a friend, not vice versa. This mechanism ensures that once communication is established, future messages bypass stranger restrictions.
+### 1.2 Guard Message Flow (Spam-Bypass Path)
 
-### 1.2 Stranger Message Mechanism
+When a sender provides both `guardAddress` and `passportAddress`, the server verifies the guard and passport are valid. On success the message is delivered; on failure the sender is notified.
 
-A **stranger** is any address not in the recipient's friends list. The system enforces a strict one-message limit on strangers:
+**When to use**: When the recipient has disabled stranger messages and you are not in their friends list, the rejection response includes the recipient's guard list. Obtain a valid passport from one of those guards and resend with both `guardAddress` and `passportAddress`.
 
-- **First contact**: A stranger may send exactly **one** message to a recipient. The server sets a Redis key `stranger_message:{recipient}:{sender}` with a configurable TTL (default: 10 days).
-- **Cool-down period**: Until the TTL expires or the recipient replies, the stranger **cannot** send another message. Attempting to do so returns a rejection with the message: "You can only send one stranger message, wait for recipient to reply."
-- **Recipient reply breaks the barrier**: When the recipient sends a message back to the stranger:
-  - The Redis stranger key is detected and consumed
-  - The stranger is automatically added to the recipient's friends list
-  - Both parties can now message freely (no stranger restrictions)
-- **Recipient opt-out**: A recipient can set `allow_stranger_messages: false` via `settings` to block all stranger messages entirely. The sender receives a rejection with the recipient's guard list (if any), enabling them to retry via the guard mechanism.
+### 1.3 Session and Message Sequence
 
-**Business rationale**: This design prevents unsolicited spam while allowing legitimate first contact. The one-message limit forces the stranger to make their opening message count, and the auto-friend-on-reply ensures smooth continuation once the recipient engages.
+Every conversation between two addresses has a deterministic session, ensuring both parties share the same session context.
 
-### 1.3 Guard Message Flow (Spam-Bypass Path)
-
-When a sender provides both `guardAddress` and `passportAddress`, the message follows the **pending verification** path:
-
-1. **Validation**: The server validates both addresses are well-formed WoWok addresses.
-2. **Queue check**: The server checks if the sender already has a pending message in this conversation. Only **one pending message per sender per conversation** is allowed.
-3. **Global pending cap**: If the total pending queue exceeds the server's `pending_max_queue_size`, the request is rejected with a "queue is busy, try later" error.
-4. **Pending storage**: The message is stored in Redis as `pending` status with a TTL (configurable). The plaintext hash and guard metadata are preserved for later verification.
-5. **Asynchronous verification**: A background worker periodically batches pending messages and verifies their linked passports against the specified guard rules via the WoWok on-chain query API.
-6. **Outcome notification**: When verification completes:
-   - **Confirmed**: The message is signed into the Merkle tree, delivered to the recipient's inbox, and the sender receives the Merkle proof via SSE push.
-   - **Rejected**: The message status is updated to `rejected` and the sender is notified via SSE.
-
-**When to use guard messages**: When the recipient has `allow_stranger_messages: false` and you are not in their friends list, the server's rejection response includes the recipient's `guard_list`. You can then obtain a valid passport from one of those guards and resend with `guardAddress` + `passportAddress`.
-
-### 1.4 Session and Message Sequence
-
-Every conversation between two addresses has a deterministic session identified by `sorted(addrA, addrB)` — ensuring both parties share the same session ID.
-
-- **Merkle tree state** is per-session: `(leaf_index, prev_root, new_root)`.
-- **leaf_index** is monotonically increasing, starting from 0. It represents the absolute message position in the conversation.
-- **lastReceivedLeafIndex**: Each message includes the leaf index of the last message the sender received from the recipient. This enables both parties to track what the other has seen and detect gaps.
-- **Concurrent message handling**: The session uses a per-session mutex to ensure Merkle tree updates are serialized, preventing concurrent inserts from producing inconsistent roots.
-- **Sequence verification**: Anyone can verify that a sequence of messages is complete and untampered by checking that each `prev_root` matches the previous `new_root` and that leaf indices are consecutive.
+- Messages are ordered by a monotonically increasing index starting from zero, establishing their absolute position in the conversation.
+- Each message includes the index of the last message the sender received, enabling both parties to track what the other has seen and detect gaps.
+- The sequence is verifiable: anyone can confirm a chain of messages is complete and untampered by checking that successive entries chain correctly and indices are consecutive.
 
 ---
 
@@ -191,29 +155,14 @@ Each user can configure two spam-protection parameters:
 - **`maxInboxSize`**: Maximum number of messages retained in your server inbox. Must be within server-defined bounds (typically 10–1000). Older messages beyond this limit are dropped (FIFO eviction).
 
 **Server defaults**: The server also has global defaults for `allow_stranger_messages` and message TTLs, configurable by the server operator.
-
-### 2.4 Rate Limiting and Abuse Prevention
-
-- **IP-based rate limiting**: The `auth_middleware` enforces per-IP request rate limits.
-- **Nonce deduplication**: Every signed request includes a unique nonce. Nonces are cached in Redis to prevent replay attacks.
-- **User-tiered limits**: Authenticated users (with valid signatures) may have higher rate limits than unauthenticated requests.
-- **Inbox protection**: The `maxInboxSize` setting prevents attackers from flooding a recipient's inbox indefinitely.
-
 ---
 
-## 3. WTS (Witness Transaction Statement) Mechanism
+## 3. WTS (Witness Timestamped Sequence) Mechanism
 
 ### 3.1 What WTS Is
 
-A WTS file is a **tamper-proof, self-verifying export** of a conversation between two parties. It bundles:
+A WTS file is a **tamper-proof, self-verifying export** of a **continuous** conversation message sequence between two parties. Every message in the chain is cryptographically linked to its predecessor; any gap or modification breaks the entire chain, making tampering immediately detectable. Participant signatures can be added for non-repudiation. Anyone can use a WTS file to verify the authenticity, continuity, and integrity of the conversation content.
 
-- **All messages** in the conversation (or a selected range), each with its Merkle proof
-- **Merkle chain continuity** — every message's `prev_root` matches the previous message's `merkle_root`
-- **Server signatures** on every Merkle root — proving the server attests to the message sequence
-- **A content hash** covering the entire payload — any modification is detectable
-- **Optional participant signatures** — adding your cryptographic endorsement
-
-**Format**: A structured file containing `meta` (version, hash, creator, time range, message count, final merkle root) and `payload` (session info, all messages with their proofs).
 
 ### 3.2 The Reciprocity Principle
 

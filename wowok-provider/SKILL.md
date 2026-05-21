@@ -86,7 +86,7 @@ Design your service offering before building. This phase defines what customers 
 
 ### 1.1 Product Promise (WIP Files)
 
-WIP (Witness Information Promise) files are **immutable product commitments** — your on-chain promise to customers.
+WIP (Witness Immutable Promise) files are **immutable product commitments** — your on-chain promise to customers.
 
 **Creating WIP Files**:
 
