@@ -1,748 +1,225 @@
 ---
 name: wowok-tools
 description: |
-  Definitive WoWok MCP tool usage reference — the authoritative fallback when
-  MCP tool schemas are unavailable. Covers ALL 13 tools with complete parameter
-  structures, operation types, query types, discriminated unions, and nested
-  sub-field schemas. Prevents the most common AI failures: wrong tool selection,
-  incorrect parameter formats, missing required fields, wrong discriminated
-  union branches, and stale cache issues.
-
-  Use this skill when:
-  - AI needs to select or invoke any WoWok MCP tool
-  - AI is unsure which tool fits a task
-  - AI needs exact parameter format for a specific operation_type
-  - AI encounters a tool error and needs troubleshooting
-  - MCP tool schemas are not auto-available in the current environment
-  - User asks "how do I..." for any WoWok operation
-  - AI needs to verify parameter types before calling
+  WoWok MCP tool reference — the fallback when schemas are unavailable.
+  Covers 13 tools with usage patterns, common pitfalls, and troubleshooting.
+  
+  Core value: prevent common AI failures (wrong tool selection, incorrect
+  parameter formats, missing required fields, wrong discriminated unions).
 when_to_use:
-  - AI is about to call any WoWok MCP tool
-  - AI is unsure which tool to use for a task
-  - AI encounters a tool error and needs to debug
+  - AI needs to select or invoke any WoWok MCP tool
+  - AI encounters tool errors and needs debugging
+  - MCP tool schemas are not auto-available
   - User asks "how do I..." for any WoWok operation
-  - AI needs exact schema for a specific operation_type or query_type
 always: true
 ---
 
-# WoWok MCP Tool Usage Reference
+# WoWok MCP Tool Reference
 
-## Quick Template (Copy This)
+Quick reference for WoWok MCP tools — patterns, pitfalls, and troubleshooting.
 
-When calling `onchain_operations`, always use this structure:
+> **Domain Skills**: [wowok-guard](../wowok-guard/SKILL.md) (validation logic), [wowok-messenger](../wowok-messenger/SKILL.md) (encrypted messaging), [wowok-machine](../wowok-machine/SKILL.md) (workflows)
+> **Business Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-provider](../wowok-provider/SKILL.md) (merchant), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (dispute resolution)
 
-```
+---
+
+## Core Patterns
+
+### Standard Structure
+
+```json
 {
-  "operation_type": "<select from 16 types below>",
-  "data": { /* see specific operation_type for details */ },
+  "operation_type": "<one of 16 types>",
+  "data": { /* type-specific */ },
   "env": { "account": "", "network": "testnet" },
-  "submission": { /* only when Guard requires user submission */ }
+  "submission": { /* Guard submission if needed */ }
 }
 ```
 
-**Critical Rules:**
-1. `operation_type` MUST be one of the 16 types listed below
-2. `data` structure changes based on `operation_type` — see each operation's details
-3. `submission` is ONLY needed when Guard validation requires user-provided data
-4. Most operations return directly; only Guard-triggered flows need a second call with `submission`
+**Exceptions** (no `data` wrapper):
+- `gen_passport`: `{ guard, info?, env? }`
+- `guard`, `payment`, `personal`: flat structure
 
----
-
-## Top-Level Structure
-
-Every `onchain_operations` call uses this standard wrapper:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `operation_type` | string | Yes | One of 16 types |
-| `data` | object | Yes | Type-specific data |
-| `env` | object | No | Environment (account, network, etc.) |
-| `submission` | object | No | Guard submission data (see Submission Flow) |
-
-### Structure Exceptions — No `data` Field
-
-These four operations use a **flat structure** — the `data` wrapper does NOT exist, and the schema fields sit directly alongside the top-level fields:
-
-| Operation | Structure | Notes |
-|-----------|-----------|-------|
-| `gen_passport` | `{ guard, info?, env? }` | Also has no `submission` field |
-| `guard` | `{ data, env? }` | No `submission` field |
-| `payment` | `{ data, env? }` | No `submission` field |
-| `personal` | `{ data, env? }` | No `submission` field |
-
-### Structure Exceptions — No `submission` Field
-
-In addition to the four above, `arbitration`, `contact`, `permission`, and `allocation` typically complete without Guard submission, but the `submission` field exists in their schemas and may be used depending on configuration.
-
----
-
-## CREATE vs MODIFY Pattern
-
-All on-chain object operations use a **unified discriminated pattern** for CREATE vs MODIFY:
+### CREATE vs MODIFY Pattern
 
 | Format | Meaning | Example |
 |--------|---------|---------|
-| **String** | Reference EXISTING object | `object: "my-service"` or `object: "0x1234..."` |
-| **Object** | CREATE NEW object | `object: { name: "my-service", permission: "..." }` |
+| **String** | Reference EXISTING | `"my-service"` or `"0x1234..."` |
+| **Object** | CREATE NEW | `{ name: "my-service", permission: "..." }` |
 
-### Type Mapping
-
-| Object Type | Used By | CREATE Shape | MODIFY Shape |
-|-------------|---------|--------------|--------------|
-| `TypedPermissionObject` | `service`, `arbitration`, `treasury`, `reward` | `{ name?, tags?, onChain?, replaceExistName?, type_parameter, permission? }` | `string` |
-| `WithPermissionObject` | `machine`, `repository`, `demand`, `contact` | `{ name?, tags?, onChain?, replaceExistName?, permission? }` | `string` |
-| `TypedDescriptionObject` | *(not directly used by operations)* | `{ name?, tags?, onChain?, replaceExistName?, type_parameter }` | `string` |
-| `TypeNamedObject` | `allocation` (CREATE), `payment` | `{ name?, tags?, onChain?, replaceExistName?, type_parameter? }` | N/A |
-| `DescriptionObject` | `permission` field of other types | `{ name?, tags?, onChain?, replaceExistName?, description? }` | `string` |
-| `NormalObject` | `permission` | `{ name?, tags?, onChain?, replaceExistName? }` | `string` |
-| `NamedObject` | `namedNew*`, `guard.namedNew` | `{ name?, tags?, onChain?, replaceExistName? }` | N/A |
-
-### Common CREATE Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Human-readable name |
-| `tags` | string[] | Filter/manage via tags |
-| `onChain` | boolean | Register name on-chain (public) |
-| `replaceExistName` | boolean | Force claim an in-use name |
-| `description` | string | Human-readable description |
-| `permission` | DescriptionObject | Access control reference |
-| `type_parameter` | string | Token type (e.g., `"0x2::wow::WOW"`) |
-
-### Guard Exception
-
-`guard` operation is **CREATE-only** and immutable. Guards cannot be modified after creation. Create a new Guard when you need to update validation logic.
+**Key Rule**: `publish: true` LOCKS immutable fields (machine, order_allocators, guard logic).
 
 ---
 
 ## The 13 Tools
 
-| # | Tool | Type | Description |
-|---|------|------|-------------|
-| 1 | `onchain_operations` | Write | All on-chain state changes (16 operation_types) |
-| 2 | `query_toolkit` | Read | Local + on-chain data query (8 query_types) |
-| 3 | `onchain_table_data` | Read | Dynamic field/table sub-item queries (12 query_types) |
-| 4 | `account_operation` | Local | Wallet management — 100% local |
-| 5 | `local_mark_operation` | Local | Name→address mappings — 100% local |
-| 6 | `local_info_operation` | Local | Private data store — 100% local |
-| 7 | `messenger_operation` | Hybrid | Encrypted messaging (local + on-chain) |
-| 8 | `wip_file` | Hybrid | Witness promise files (generate/verify/sign) |
-| 9 | `guard2file` | Read | Export Guard definition to local file |
-| 10 | `machineNode2file` | Read | Export Machine nodes to local file |
-| 11 | `onchain_events` | Read | Watch on-chain events (paginated) |
-| 12 | `wowok_buildin_info` | Read | Protocol reference (constants/instructions) |
-| 13 | `documents_and_learn` | Read | Documentation URLs |
+| Tool | Purpose | Key Pattern |
+|------|---------|-------------|
+| `onchain_operations` | Write state (16 types) | Discriminated by `operation_type` |
+| `query_toolkit` | Read on-chain data | 8 query types |
+| `onchain_table_data` | Query sub-items | Dynamic field access |
+| `account_operation` | Wallet management | 100% local |
+| `local_mark_operation` | Name→address mappings | 100% local |
+| `local_info_operation` | Private data store | 100% local |
+| `messenger_operation` | Encrypted messaging | Hybrid (see messenger skill) |
+| `wip_file` | Witness promise files | Generate/verify/sign |
+| `guard2file` | Export Guard definition | Read-only |
+| `machineNode2file` | Export Machine nodes | Read-only |
+| `onchain_events` | Watch events | Paginated |
+| `wowok_buildin_info` | Protocol constants | Reference data |
+| `documents_and_learn` | Documentation URLs | Learning resources |
 
 ---
 
-## 1. onchain_operations — On-Chain State Changes
-
-**MCP Input**: `{ operation_type: string, data: object, submission?: object, env?: object }`
-
-### operation_type Discriminated Union (16 types)
-
-The `operation_type` field determines WHICH `data` schema applies. Each type has a COMPLETELY different `data` structure.
-
-#### service — Service Listing
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_service" })`
-
-**Key Fields**:
-- `object`: TypedPermissionObject — STRING for existing, OBJECT for new
-- `description`: Service description
-- `location`: Service location
-- `sales`: Sales configuration with operations (add/set/remove/clear)
-- `repositories`: Repository objects
-- `rewards`: Reward objects
-- `arbitrations`: Arbitration objects
-- `machine`: Machine object ID or null
-- `discount`: Discount configuration
-- `discount_destroy`: Array of discount names to destroy
-- `customer_required`: Required customer info fields
-- `order_allocators`: Fund distribution rules
-- `buy_guard`: Guard ID for purchase validation
-- `change_guard`: Guard ID for order changes
-- `pause`: Pause service flag
-- `publish`: Publish service flag (LOCKS machine and order_allocators)
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID for Messenger
-
-**Key Rules**:
-- `publish: true` LOCKS `machine` reference and `order_allocators` — unchangeable after publish
-- `rewards` and `arbitrations` can be ADDED after publish, not removed
-- `sales`, `discount`, `description`, `location` remain mutable after publish
-
-#### machine — Workflow Template
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_machine" })`
-
-**Key Fields**:
-- `object`: WithPermissionObject — STRING for existing, OBJECT for new
-- `progress_new`: Progress new schema
-- `description`: Machine description
-- `repository`: Repository objects
-- `node`: Node field schema with operations (add/set/remove/clear/exchange/rename) OR file path
-- `pause`: Pause flag
-- `publish`: Publish flag (makes nodes IMMUTABLE)
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
-
-**Key Rules**:
-- `publish: true` makes node definitions IMMUTABLE
-- Machine must be created BEFORE Service references it
-
-#### progress — Workflow Advancement
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_progress" })`
-
-**Key Fields**:
-- `object`: Progress object ID
-- `order`: Order ID
-- `node`: Single node advancement
-- `nodes`: Multi-step advancement array
-- `admin_hold`: Admin hold flag
-- `admin_unhold`: Admin unhold flag
-- `admin_unhold_node`: Admin unhold node index
-- `accept`: Accept flag
-- `recipient_accept`: Recipient for acceptance
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
-
-#### repository — Consensus Data
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_repository" })`
-
-**Key Fields**:
-- `object`: WithPermissionObject
-- `description`: Repository description
-- `entity`: Entity reference
-- `submit`: Submit records operation
-- `submit_and_sign`: Submit and sign records
-- `verify`: Verify records
-- `vote`: Vote on records
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
-
-#### arbitration — Dispute Resolution
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_arbitration" })`
-
-**Key Fields**:
-- `object`: WithPermissionObject
-- `description`: Arbitration description
-- `entity`: Entity reference
-- `arbitrators`: Arbitrators configuration
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
-
-#### contact — IM Contact Profile
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_contact" })`
+## Critical Patterns by Operation
 
-**Key Fields**:
-- `object`: WithPermissionObject
-- `my_status`: Status message
-- `description`: Contact description
-- `location`: Location
-- `ims`: IM addresses with operations (add/set/remove/clear)
-- `owner_receive`: Owner fund extraction
+### service — Business Listing
 
-#### treasury — Team Fund
+**Immutable After Publish**: `machine`, `order_allocators`
+**Mutable Always**: `sales`, `discount`, `description`, `location`
+**Add-Only After Publish**: `rewards`, `arbitrations`
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_treasury" })`
+**Common Pitfall**: Forgetting `publish: true` leaves machine/allocators changeable — risky for production.
 
-**Key Fields**:
-- `object`: TypedPermissionObject
-- `description`: Treasury description
-- `receive`: Received balance
-- `deposit`: Deposit configuration
-- `withdraw`: Withdraw configuration
-- `external_deposit_guard`: External deposit guards
-- `external_withdraw_guard`: External withdraw guards
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
+### machine — Workflow Template
 
-#### reward — Incentive Pool
+**Key Insight**: Machine defines WHO can advance (via `namedOperator`). Empty string = Order-operable; non-empty = requires Permission.
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_reward" })`
+**Publish Effect**: Makes nodes immutable. Essential before Service references it.
 
-**Key Fields**:
-- `object`: TypedPermissionObject
-- `claim`: Guard ID for claim verification
-- `description`: Reward description
-- `coin_add`: Coin to add
-- `receive`: Received balance
-- `guard_add`: Guards for reward distribution
-- `guard_remove_expired`: Remove expired guards flag
-- `guard_expiration_time`: Guard expiration time
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
-
-#### allocation — Auto-Distribution
+### progress — Advancement
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_allocation" })`
+**Dual Paths**:
+- `node`: Single step
+- `nodes`: Multi-step array
 
-**Two Modes**:
+**Guard Integration**: Forward transitions may require Guard validation — see [wowok-machine](../wowok-machine/SKILL.md).
 
-**MODE 1: CREATE new Allocation**
-- `object`: Object with name, tags, onChain, replaceExistName, type_parameter
-- `allocators`: Allocator configuration
-- `coin`: Coin parameter
-- `payment_info`: Payment info
+### guard — Immutable Validation
 
-**MODE 2: OPERATE existing Allocation**
-- `object`: Allocation ID or name (STRING)
-- `received_coins`: Received balance
-- `alloc_by_guard`: Guard for allocation
+**CRITICAL**: Guards are CREATE-ONLY. No modification after deployment.
 
-#### permission — Access Control
+**Update Strategy**: `guard2file` → modify locally → create new Guard → update all references.
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_permission" })`
+See [wowok-guard](../wowok-guard/SKILL.md) for complete GuardNode reference and design patterns.
 
-**Key Fields**:
-- `object`: WithPermissionObject
-- `description`: Permission description
-- `policy_add`: Add policies
-- `policy_remove`: Remove policies
-- `policy_clear`: Clear all policies
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
+### order — Customer Operations
 
-#### guard — Programmable Validation
+**Key Distinction**: Order is builder-owned; agents can operate but **CANNOT withdraw**.
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_guard" })`
+**Arbitration Flow**: `arb_confirm` → `arb_objection` → `arb_claim_compensation` (all via Order)
 
-**Key Fields**:
-- `namedNew`: Named object options
-- `description`: Guard description
-- `table`: Data table array with identifier, b_submission, value_type, value, name
-- `root`: Computational tree — either inline node or file reference
-  - `type: "node"`: Inline GuardNode
-  - `type: "file"`: Load from file
-- `rely`: Dependencies on other Guards
+See [wowok-order](../wowok-order/SKILL.md) for customer-side arbitration operations.
 
-See [wowok-guard](../wowok-guard/SKILL.md) skill for complete GuardNode reference.
+### gen_passport — Credential Generation
 
-#### personal — On-Chain Public Identity
+**Single or Multiple**: One Guard (string) or multiple Guards (array)
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_personal" })`
-
-**Key Fields**:
-- `description`: Personal description
-- `referrer`: Referrer reference
-- `information`: Information operations (add/remove/clear)
-- `mark`: Mark operations (add/remove/clear/transfer/replace/destroy)
-
-⚠️ CRITICAL: Everything in `personal` is PERMANENTLY PUBLIC on-chain.
-
-#### payment — Irreversible Coin Transfer
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_payment" })`
-
-**Key Fields**:
-- `object`: Named object options
-- `revenue`: Revenue recipients array
-- `info`: Payment info (remark, index)
-
-⚠️ CRITICAL: Payment is IRREVERSIBLE. Always confirm recipient, amount, and token type before executing.
-
-#### demand — Service Request
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_demand" })`
-
-**Key Fields**:
-- `object`: WithPermissionObject
-- `present`: Present configuration
-- `description`: Demand description
-- `location`: Location
-- `rewards`: Reward objects
-- `guards`: Guards configuration
-- `feedback`: Feedback entries
-- `owner_receive`: Owner fund extraction
-- `um`: Contact object ID
-
-#### order — Order Lifecycle
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_order" })`
-
-**Key Fields**:
-- `object`: Order ID or name
-- `agents`: Agent addresses
-- `required_info`: Required info field
-- `progress`: Progress advancement
-- `arb_confirm`: Arbitration confirmation
-- `arb_objection`: Arbitration objection
-- `arb_claim_compensation`: Claim compensation
-- `receive`: Receive funds
-- `transfer_to`: Transfer order to new owner
-
-#### gen_passport — Immutable Credential
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_gen_passport" })`
-
-**Key Fields**:
-- `guard`: Guard ID(s) — single string or array of strings
-- `info`: Submission call info
-
-**Features:**
-- **Single Guard**: Pass a single guard ID or name as a string
-- **Multiple Guards**: Pass an array of guard IDs or names to verify multiple guards at once
-- **Name Resolution**: Supports both guard addresses and LocalMark names
-
-### Common Sub-Types
-
-**TypedPermissionObject**: STRING (existing) or OBJECT `{ name, permission, tags?, onChain?, replaceExistName?, type_parameter? }`
-
-**WithPermissionObject**: Same as TypedPermissionObject but WITHOUT `type_parameter`
-
-**SubmissionCall** (for execution):
-- `sender`: string
-- `gas_budget`: string
-- Additional network/execution params
-
-**CoinParam**: `number` (raw) or `string` (e.g., "2WOW", "100USDT")
-
-**NamedObject**: `{ name: string; tags?: string[]; onChain?: boolean; replaceExistName?: boolean }`
+**Use Case**: Off-chain permission verification, voting eligibility, access control.
 
 ---
 
-## 2. query_toolkit — Data Query
+## Common Pitfalls
 
-**MCP Input**: `{ query_type: string, ... }` — discriminated union
+### 1. Wrong Discriminated Union Branch
 
-**Schema Reference**: `schema_query({ action: "get", name: "query_toolkit" })`
+**Symptom**: "Invalid data structure" errors
+**Cause**: Using `service` schema for `order` operation
+**Fix**: Match `operation_type` exactly to schema
 
-### 8 query_types
+### 2. CREATE vs MODIFY Confusion
 
-#### local_mark_list
-- `query_type`: "local_mark_list"
-- `network`: Optional network
-- Returns: list of local name→address mappings
+**Symptom**: Creates duplicate objects instead of modifying
+**Cause**: Passing object shape when string reference intended
+**Fix**: String = existing, Object = new
 
-#### account_list
-- `query_type`: "account_list"
-- Returns: list of local accounts
+### 3. Missing submission Field
 
-#### local_info_list
-- `query_type`: "local_info_list"
-- `network`: Optional network
-- Returns: local private data entries
+**Symptom**: Guard validation fails with "missing submission"
+**Cause**: Guard requires user data but `submission` omitted
+**Fix**: Add `submission: { sender, info }` after first call fails
 
-#### token_list
-- `query_type`: "token_list"
-- `network`: Optional network
-- Returns: available token types with precision info
+### 4. Immutable Field After Publish
 
-#### account_balance
-- `query_type`: "account_balance"
-- `address`: Account address
-- `token_type`: Optional token type
-- `network`: Optional network
-- Returns: account token balance
+**Symptom**: "Cannot modify published field" error
+**Cause**: Attempting to change `machine` or `order_allocators` after `publish: true`
+**Fix**: Create new Service with corrected fields
 
-#### onchain_personal_profile
-- `query_type`: "onchain_personal_profile"
-- `address`: Account address
-- `network`: Optional network
-- `no_cache`: Optional flag
-- Returns: on-chain public profile
+### 5. Wrong Tool Selection
 
-#### onchain_objects
-- `query_type`: "onchain_objects"
-- `address`: Optional address
-- `name_or_address`: Optional name or address
-- `network`: Optional network
-- `no_cache`: Optional flag
-- Returns: on-chain objects owned by address
-
-#### onchain_received
-- `query_type`: "onchain_received"
-- `name_or_address`: Name or address
-- `all_type`: Optional boolean
-- `cursor`: Optional cursor
-- `limit`: Optional limit
-- `no_cache`: Optional flag
-- `network`: Optional network
-- Returns: received CoinWrapper objects
+| Task | Wrong Tool | Correct Tool |
+|------|-----------|--------------|
+| Query object state | `onchain_operations` | `query_toolkit` |
+| Send message | `onchain_operations` | `messenger_operation` |
+| Check name availability | `query_toolkit` | `local_mark_operation` |
+| Export Guard logic | `query_toolkit` | `guard2file` |
 
 ---
 
-## 3. onchain_table_data — Table Sub-Items
+## Troubleshooting Guide
 
-**MCP Input**: `{ query_type: string, parent: string, ... }` — 12 query_types
+### "Schema not found"
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_table_data" })`
+**Action**: `schema_query({ action: "get", name: "<tool_name>" })`
 
-| query_type | Parent | Key | Returns |
-|------------|--------|-----|---------|
-| `onchain_table` | any object | — (paginated cursor) | TableAnswer |
-| `onchain_table_item_repository_data` | Repository | name + entity | entry record |
-| `onchain_table_item_permission_perm` | Permission | address | perm entry |
-| `onchain_table_item_entity_registrar` | Registrar | address | registrar record |
-| `onchain_table_item_entity_linker` | Linker | entity + who | linker entry |
-| `onchain_table_item_reward_record` | Reward | address | claim record |
-| `onchain_table_item_demand_presenter` | Demand | address | presenter info |
-| `onchain_table_item_treasury_history` | Treasury | address (payment) | history entry |
-| `onchain_table_item_machine_node` | Machine | u64 (index) | node definition |
-| `onchain_table_item_progress_history` | Progress | u64 (index) | history entry |
-| `onchain_table_item_address_mark` | AddressMark | address | public mark |
-| `onchain_table_item_generic` | any object | key_type + key_value | ObjectBase |
+### "Invalid parameter format"
 
-All support: `no_cache?: boolean`, `network?: "localnet" | "testnet"`
+**Checklist**:
+1. Correct `operation_type`?
+2. CREATE vs MODIFY format correct?
+3. Required fields present?
+4. `submission` needed for Guard?
 
----
+### "Permission denied"
 
-## 4. account_operation — LOCAL Wallet
+**Causes**:
+- Not object owner
+- Missing Permission reference
+- Guard validation failed
 
-**MCP Input**: `{ operation_type: string, data: object }`
+### Tool-Specific Errors
 
-**Schema Reference**: `schema_query({ action: "get", name: "account_operation" })`
-
-Operations: `generate`, `suspend`, `resume`, `faucet`, `sign`, `signData`, `query`
-
-100% LOCAL — never touches blockchain.
+| Error | Likely Cause | Solution |
+|-------|-------------|----------|
+| "Object not found" | Wrong address or not created | Verify with `query_toolkit` |
+| "Name already exists" | `replaceExistName: false` | Set `replaceExistName: true` or choose new name |
+| "Guard validation failed" | Missing/incorrect `submission` | Add proper `submission` field |
+| "Insufficient balance" | Account lacks funds | Check with `account_operation` |
+| "Deadline passed" | Timestamp in past | Use future timestamp |
 
 ---
 
-## 5. local_mark_operation — LOCAL Address Book
+## Schema Access
 
-**MCP Input**: `{ operation_type: string, data: object }`
-
-**Schema Reference**: `schema_query({ action: "get", name: "local_mark_operation" })`
-
-Operations:
-- `add`: Add marks with `{ marks: { name, address, tags? }[], network? }`
-- `remove`: Remove marks with `{ marks: { name }[], network? }`
-- `clear`: Clear all with `{ network? }`
-
----
-
-## 6. local_info_operation — LOCAL Private Data
-
-**MCP Input**: `{ operation_type: string, data: object }`
-
-**Schema Reference**: `schema_query({ action: "get", name: "local_info_operation" })`
-
-Store sensitive info (phone, address, contacts) locally.
-
----
-
-## 7. messenger_operation — Encrypted Messaging
-
-**MCP Input**: varies by operation
-
-**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
-
-Operations: `watch_conversations`, `send_message`, `send_file`, `watch_messages`, `extract_zip_messages`, `generate_wts`, `verify_wts`, `sign_wts`, `wts2html`, `proof_message`, `mark_messages_as_viewed`, `mark_conversation_as_viewed`, `blacklist`, `friendslist`, `guardlist`, `settings`
-
-See [wowok-messenger](../wowok-messenger/SKILL.md) skill for detailed usage.
-
----
-
-## 8-13 Quick Reference
-
-### wip_file
-
-**Schema Reference**: `schema_query({ action: "get", name: "wip_file" })`
-
-Operations: `generate`, `verify`, `sign`, `wip2html`
-
-### guard2file
-
-**Schema Reference**: `schema_query({ action: "get", name: "guard2file" })`
-
-- `guard`: Guard ID or name
-- `file_path`: Output file path
-- `format`: "json" or "markdown"
-
-### machineNode2file
-
-**Schema Reference**: `schema_query({ action: "get", name: "machineNode2file" })`
-
-- `machine`: Machine ID or name
-- `file_path`: Output file path
-- `format`: "json" or "markdown"
-
-### onchain_events
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_events" })`
-
-- `type`: Event type
-- `cursor`: Optional cursor
-- `limit`: Optional limit
-
-### wowok_buildin_info
-
-**Schema Reference**: `schema_query({ action: "get", name: "wowok_buildin_info" })`
-
-- `info_type`: "constants", "permissions", "guard_instructions", "network", "value_types"
-
-### documents_and_learn
-
-**Schema Reference**: `schema_query({ action: "get", name: "documents_and_learn" })`
-
-- `document_type`: Optional document type
-
----
-
-## Tool Selection Decision Tree
-
-```
-User wants to...
-├─ CREATE/MODIFY on-chain object → onchain_operations
-│  ├─ operation_type = service | machine | permission | guard | ...
-│  └─ data = { op: "create"|"update"|..., ... }
-│
-├─ QUERY data
-│  ├─ Local accounts/marks/info/tokens → query_toolkit
-│  ├─ On-chain objects/profile → query_toolkit (onchain_objects / onchain_personal_profile)
-│  ├─ Account balance → query_toolkit (account_balance)
-│  ├─ Table sub-items → onchain_table_data
-│  ├─ Received payments → query_toolkit (onchain_received)
-│  └─ On-chain events → onchain_events
-│
-├─ MANAGE local data
-│  ├─ Accounts → account_operation
-│  ├─ Address book → local_mark_operation
-│  └─ Private info → local_info_operation
-│
-├─ COMMUNICATE → messenger_operation
-├─ PROMISES (WIP) → wip_file
-├─ EXPORT definitions → guard2file / machineNode2file
-├─ LEARN protocol → wowok_buildin_info
-└─ DOCUMENTATION → documents_and_learn
-```
-
----
-
-## Mandatory Patterns
-
-### Query-First Pattern (ALWAYS before writes)
-
-```
-1. query_toolkit (account_list)      → Which accounts exist?
-2. query_toolkit (local_mark_list)   → What named addresses exist?
-3. query_toolkit (onchain_objects)   → What's already on-chain?
-4. wowok_buildin_info                → Protocol constants/permissions
-```
-
-### Dry-Run Pattern (ALWAYS for writes)
-
-```
-1. Call onchain_operations WITHOUT submission → Validate + Preview
-2. Show preview to user → Get explicit confirmation
-3. Call onchain_operations WITH submission → Execute
-```
-
-### Guard Submission Flow — Two-Step Pattern
-
-When an `onchain_operations` call triggers a Guard whose table contains entries with **`b_submission: true`**, the tool returns a response with **`type: "submission"`** instead of a transaction result. This is the **only scenario** where a second call is needed.
-
-**Step 1 — Initial Call:**
-```
-onchain_operations({ operation_type: "<type>", data: { ... } })
-→ Response: { type: "submission", ... }
-  ├── guard: [{ object, impack }] — Guards requiring verification
-  └── submission: [{ guard, submission: [{ identifier, value_type, value?, name }] }]
-```
-
-The response contains a **pre-filled template**. Each entry has `identifier`, `value_type`, and optionally `name` already set. **You ONLY fill the `value` field.**
-
-**Step 2 — Re-submit with Completed Data:**
-```
-Same operation_type and data as Step 1 (unchanged)
-Add top-level submission:
-{
-  "type": "submission",
-  "guard": [{ "object": "guard_name", "impack": true }],
-  "submission": [{
-    "guard": "guard_name",
-    "submission": [
-      { "identifier": 0, "value_type": "String", "value": "your_data_here" }
-    ]
-  }]
-}
-```
-
-**Critical Rules:**
-- **Only fill `value`**: Never modify `identifier`, `value_type`, or `name` — they are pre-filled by the server
-- **Value type matching**: The `value` must match the declared `value_type` exactly (e.g., `"Address"` expects a hex address, `"U64"` expects a number)
-- **All fields required**: Fill every entry in the `submission` array; incomplete data causes a validation error
-- **Data and env unchanged**: The `data` and `env` portions of the original call must remain identical
-- **Impack flag**: `impack: true` means this Guard's result affects the final outcome. All `impack: true` Guards must pass for the operation to proceed
-
-**Common Submission Scenarios:**
-- **Merkle Root proof**: `value_type: "String"`, value = hex string proving data inclusion
-- **Progress/Order address**: `value_type: "Address"`, value = object name or on-chain ID
-- **Signature verification**: `value_type: "String"`, value = signed challenge response
-
-**When NOT to submit:**
-- If the response returns a transaction result directly (no `type: "submission"`), the operation is complete
-- `guard`, `payment`, `personal`, and `gen_passport` do not use the submission flow
-
-### Field Execution Order
-
-Schema field order determines execution order — the order of fields in the JSON Schema definition controls which operation happens first, **regardless of the order of keys in the submitted JSON object**.
-
-**AI Guidelines:**
-1. **Check schema field order** against the user's intended operation sequence before calling
-2. **Split into multiple calls** when schema order conflicts with the desired sequence — do not rely on a single call to enforce ordering that contradicts the schema
-3. **Prefer incremental steps** over single batch operations when uncertain
-4. **Verify between steps**: After each modification, confirm it landed on-chain before proceeding to the next:
-   ```
-   query_toolkit({ query_type: "onchain_objects", objects: ["<name>"], no_cache: true })
-   ```
-
-**Example**: If a Service schema lists `sales` before `machine`, the sales configuration is applied before the machine binding — regardless of how you order the keys in JSON. If you need the machine bound first, make two separate calls: one with `machine` set, then a second with `sales`.
-
----
-
-## Common Errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| "object not found" | Cache stale | Add `no_cache: true` |
-| "permission denied" | Wrong sender | Verify sender has permission |
-| "unknown query_type" | Wrong tool | Check if table query → use `onchain_table_data` |
-| "table field required" | Missing Guard table | Guards MUST have `table` array |
-| "dependency not found" | Build order | Build dependencies before dependents |
-| "invalid parameter" | Wrong format | Check discriminated union branch |
-| submission parameter errors | Didn't check schema | Verify all submission fields |
-
----
-
-## Schema Query Tool — Authoritative Schema Source
-
-Use the `schema_query` MCP tool to retrieve complete JSON schemas for any WoWok tool or operation. This is the **authoritative source** — returns schemas directly from the MCP server with all properties, types, and descriptions.
-
-### Usage Examples
-
-**List all available schemas:**
-```
-schema_query({ action: "list" })
-```
-
-**Get a specific tool schema:**
-```
+```javascript
+// Get any tool schema
 schema_query({ action: "get", name: "onchain_operations" })
-schema_query({ action: "get", name: "onchain_operations_service" })
 schema_query({ action: "get", name: "query_toolkit" })
+schema_query({ action: "get", name: "messenger_operation" })
+// ... etc for all 13 tools
 ```
 
-**Search schemas by keyword:**
+---
+
+## Design Principles
+
+1. **Immutability First**: Guards, published Machines — design carefully, no updates
+2. **Explicit Over Implicit**: Always specify `operation_type`, never rely on defaults
+3. **Validate Before Execute**: Use `query_toolkit` to check state before operations
+4. **Local for Private**: Sensitive data → `local_info_operation`, never on-chain
+5. **Schema as Source**: When in doubt, query schema — don't guess parameter formats
+
+---
+
+## Quick Decision Tree
+
 ```
-schema_query({ action: "search", query: "guard" })
+Need to change on-chain state?
+├── YES → onchain_operations
+│   └── Which type? (service, machine, order, guard, etc.)
+├── NO, just query → query_toolkit
+│   └── Object state or table data?
+├── NO, communicate → messenger_operation
+├── NO, manage wallet → account_operation
+└── NO, export definition → guard2file / machineNode2file
 ```
-
-**List all on-chain operation types:**
-```
-schema_query({ action: "list_operations" })
-```
-
-### Available Schema Names
-
-**Main Tools:** `onchain_operations`, `query_toolkit`, `onchain_table_data`, `onchain_events`, `account_operation`, `local_mark_operation`, `local_info_operation`, `messenger_operation`, `wip_file`, `guard2file`, `machineNode2file`, `wowok_buildin_info`, `schema_query`
-
-**Individual Operations:** `onchain_operations_service`, `onchain_operations_machine`, `onchain_operations_order`, `onchain_operations_progress`, `onchain_operations_guard`, `onchain_operations_permission`, `onchain_operations_arbitration`, `onchain_operations_repository`, `onchain_operations_contact`, `onchain_operations_treasury`, `onchain_operations_reward`, `onchain_operations_allocation`, `onchain_operations_personal`, `onchain_operations_payment`, `onchain_operations_demand`, `onchain_operations_gen_passport`
-
-**When to use**: Always call `schema_query` before using complex tools like `onchain_operations` — the discriminated unions have 16 branches with 5-6 levels of nesting, and one wrong field name causes immediate failure. Use `action: "get"` with the specific operation name (e.g., `onchain_operations_service`) when you need the complete structure for a single operation type.
