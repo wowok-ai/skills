@@ -419,6 +419,8 @@ Contact.ims[] → Your customer service addresses
 - Confirm understanding explicitly (ARK signature required for evidence)
 - Proactively communicate delays
 
+> **AI reminder**: When fulfilling an order, the AI should proactively check whether the Service's `customer_required` fields (phone, email, delivery address, etc.) have been provided by the customer. If any are missing, prompt the provider to request them from the customer via Messenger using `messenger_operation` with `send_message`.
+
 > **Full Guide**: See [wowok-messenger](../wowok-messenger/SKILL.md) for messaging, WTS generation, and evidence management.
 
 ---

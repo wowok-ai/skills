@@ -76,53 +76,15 @@ When a sender provides both `guardAddress` and `passportAddress`, the server ver
 
 ### 1.3 Session and Message Sequence
 
-Every conversation between two addresses has a deterministic session, ensuring both parties share the same session context.
-
-- Messages are ordered by a monotonically increasing index starting from zero, establishing their absolute position in the conversation.
-- Each message includes the index of the last message the sender received, enabling both parties to track what the other has seen and detect gaps.
-- The sequence is verifiable: anyone can confirm a chain of messages is complete and untampered by checking that successive entries chain correctly and indices are consecutive.
+Every conversation between two addresses has a deterministic session, ensuring both parties share the same session context. Messages are ordered by a monotonically increasing index starting from zero, establishing their absolute position in the conversation.
 
 ---
 
 ## 2. Anti-Spam Mechanism
 
-### 2.1 Three-Tier Protection Model
+### 2.1 Protection Model
 
-The server evaluates every incoming message against the recipient's configuration in this exact order:
-
-```
-Incoming Message
-       │
-       ▼
-┌─ Blacklist Check ─────────────────────────────────────────────┐
-│  Is sender in recipient's blacklist?                          │
-│  YES → Reject immediately ("You are in the blacklist")        │
-│  NO  → Continue                                               │
-└───────────────────────────────────────────────────────────────┘
-       │
-       ▼
-┌─ Friends List Check ──────────────────────────────────────────┐
-│  Is sender in recipient's friends list?                       │
-│  YES → Accept immediately (bypass all further checks)         │
-│  NO  → Continue                                               │
-└───────────────────────────────────────────────────────────────┘
-       │
-       ▼
-┌─ Guard Message Check ─────────────────────────────────────────┐
-│  Did sender provide guardAddress + passportAddress?           │
-│  YES → Route to guard verification queue (pending path)       │
-│  NO  → Continue                                               │
-└───────────────────────────────────────────────────────────────┘
-       │
-       ▼
-┌─ Stranger Message Check ──────────────────────────────────────┐
-│  Is allow_stranger_messages enabled for recipient?            │
-│  NO  → Reject with guard_list (enables guard retry)           │
-│  YES → Has sender already sent a stranger message?            │
-│        YES → Reject ("one stranger message only")             │
-│        NO  → Accept, set stranger key with TTL                │
-└───────────────────────────────────────────────────────────────┘
-```
+Messages are evaluated in four sequential layers: **Blacklist** → **Friends List** → **Guard Verification** → **Stranger Rules**. See the [technical documentation](https://github.com/wowok-ai/docs/blob/main/docs/stage-03b-messenger.md) for implementation details.
 
 ### 2.2 List Management
 
@@ -136,11 +98,11 @@ Three independently managed lists control who can reach you:
 
 **Tool**: `messenger_operation` with `blacklist`, `friendslist`, or `guardlist` operation.
 
-**Guard List Configuration**: Each guard entry requires:
-- `guard`: The on-chain Guard object ID or name. This Guard defines the validation rules a stranger must satisfy (e.g., "holds a verified identity passport", "has staked above X tokens").
-- `passportValiditySeconds`: Duration in seconds that a passport from this guard remains valid for messaging. Must be within server-defined bounds (typically 60s to 7 days). A shorter TTL means more frequent re-verification but tighter security.
+**Guard List Configuration**: Each entry requires:
+- `guard`: The on-chain Guard object ID or name (see [wowok-guard](../wowok-guard/SKILL.md) for Guard design)
+- `passportValiditySeconds`: How long a passport from this guard remains valid for messaging (typically 60s to 7 days)
 
-**How guards work for messaging**: A guard is an on-chain programmable validation rule (see [wowok-guard](../wowok-guard/SKILL.md)). When added to your guard list, it becomes a filter: strangers who hold a valid passport from that guard can message you. The passport is generated on-chain via `onchain_operations` with `gen_passport` and serves as a cryptographic proof that the holder satisfies the guard's conditions.
+Strangers with a valid passport from any guard in your list can message you. Passports are generated via `onchain_operations` with `gen_passport`.
 
 ### 2.3 Settings Control
 
@@ -152,9 +114,10 @@ Each user can configure two spam-protection parameters:
   - `true` (default): Strangers can send one message each (subject to the one-message limit).
   - `false`: All stranger messages are rejected. The rejection response includes your `guard_list` so the sender can obtain a passport and retry.
   
-- **`maxInboxSize`**: Maximum number of messages retained in your server inbox. Must be within server-defined bounds (typically 10–1000). Older messages beyond this limit are dropped (FIFO eviction).
+- **`maxInboxSize`**: Maximum messages retained in your inbox (typically 10–1000). Older messages are removed when the limit is reached.
 
-**Server defaults**: The server also has global defaults for `allow_stranger_messages` and message TTLs, configurable by the server operator.
+**Note**: The server also has global defaults for these settings.
+
 ---
 
 ## 3. WTS (Witness Timestamped Sequence) Mechanism
@@ -168,27 +131,11 @@ A WTS file is a **tamper-proof, self-verifying export** of a **continuous** conv
 
 > **Only messages that the other party has replied to have evidentiary value.**
 
-This principle is fundamental to WTS:
-
-- A message that was sent but never acknowledged proves nothing about the recipient.
-- When the **recipient replies**, their reply's `lastReceivedLeafIndex` references the message they are responding to. This creates cryptographic proof of receipt.
-- A WTS file shows the full conversation, including which messages were acknowledged (via `lastReceivedLeafIndex` tracking) and which were not.
-- The WTS HTML view highlights the sender's `lastReceivedLeafIndex` to clearly show what each party had seen at each point.
+A message alone proves nothing about the recipient's awareness. When the **recipient replies**, their reply references the last message they received, creating cryptographic proof of receipt. A WTS file shows the full conversation — which messages were acknowledged and which were not.
 
 **In practice**: When generating WTS for arbitration, include the full conversation so the arbitrator can see who said what, who acknowledged what, and the exact sequence of events.
 
-### 3.3 Message Sequence is Deterministic
-
-Every message in a conversation has a **deterministic, verifiable position**:
-
-- **leaf_index** is strictly sequential (0, 1, 2, ...) within each conversation session
-- The Merkle tree links all messages: `Merkle(message[N]) = SHA256(message[N-1].merkleRoot, SHA256(message[N].plaintextHash, serverTimestamp))`
-- **No gaps are possible**: If leaf indices are 0, 1, 3, then message 2 is missing — the WTS verifier detects this as a chain discontinuity.
-- **No tampering is possible**: Changing any message changes its hash, which changes all subsequent merkle roots, which breaks the chain and the final hash.
-
-**This means**: A WTS file is a complete, untampered record. Either all messages are present and intact, or the verification fails.
-
-### 3.4 WTS Workflow
+### 3.3 WTS Workflow
 
 **Step 1 — Generate WTS**:
 
@@ -196,276 +143,85 @@ Every message in a conversation has a **deterministic, verifiable position**:
 
 Key decisions:
 - **Range selection**: Choose which messages to include by time range, message ID range, or sequence index (leafIndex) range.
-- **Plaintext inclusion**: By default, plaintext is included. Set `excludePlaintext: true` if you want the file to contain only hashes (smaller, more privacy-preserving, but less human-readable).
 - **Output**: One or more `.wts` files are written to the specified output directory (files are split if the total exceeds file size limits).
 
-**Step 2 — Verify WTS**:
-
-**Tool**: `messenger_operation` with `verify_wts` operation.
-
-Verification checks performed:
-1. File structure integrity (required fields present)
-2. Merkle chain continuity (each `prev_root` matches previous `merkle_root`, leaf indices are consecutive)
-3. Plaintext hash validation (computed hash matches stored hash for each message)
-4. Server signature validation (Falcon512 signature on each `(prev_root, merkle_root, timestamp, server_public_key)`)
-5. Content hash validation (SHA256 of the entire payload matches `meta.hash`)
-
-**Step 3 — Sign WTS**:
+**Step 2 — Sign WTS**:
 
 **Tool**: `messenger_operation` with `sign_wts` operation.
 
-Adds your Falcon512 signature to the WTS metadata. This proves you endorse the conversation record as accurate. Multiple signatures are supported — both parties can sign the same WTS for mutual agreement.
+Adds your Falcon512 (post-quantum) signature to the WTS metadata, proving you endorse the conversation record as accurate. Multiple signatures from any party are supported — participants, arbitrators, or other third parties can all sign to attest to the content.
+
+**Step 3 — Verify WTS**:
+
+**Tool**: `messenger_operation` with `verify_wts` operation.
+
+Verification validates each message's authenticity, the sequence's continuity, the payload's integrity, and all signatures added in Step 2. When all pass, the WTS is **proven authentic, complete, and untampered** — admissible as cryptographic evidence.
 
 **Step 4 — Convert to HTML (optional)**:
 
-**Tool**: `messenger_operation` with `wts2html` operation.
+**Tool**: `messenger_operation` with `wts2html` operation. Produces a human-readable HTML document.
 
-Produces a human-readable HTML document with:
-- Conversation transcript with timestamps
-- Visual indicators for acknowledged messages (via `lastReceivedLeafIndex`)
-- Verification status summary
-- Themed output (light or dark)
-- Ready for sharing with arbitrators or other third parties
 
 **Step 5 — Submit as evidence**:
 
 Use `send_file` to send the signed WTS file to an arbitrator's messenger address. The arbitrator can then independently verify the WTS using their own `verify_wts` call.
 
-### 3.5 On-Chain Proof (Optional)
+### 3.4 On-Chain Proof (Optional)
 
 **Tool**: `messenger_operation` with `proof_message` operation.
 
-Anchors a single message's Merkle root to the WoWok blockchain, creating an **immutable timestamp** for that message. This is useful when:
-- You need to prove a message existed before a certain time
-- You want the strongest possible evidence for arbitration
-- The conversation involves high-value commitments
-
-The proof creates an on-chain object that stores the Merkle root and timestamp. Anyone can verify the message against this on-chain record.
+Anchors a message to the WoWok blockchain, creating an **immutable on-chain timestamp** that proves the message existed before that point in time. Anyone can verify the message against this on-chain record independently.
 
 ---
 
-## 4. All Features and Usage
+## 4. Role-Specific Patterns
 
-### 4.1 Unified Tool: `messenger_operation`
+### 4.1 Customer → Service Provider
 
-All messenger functionality is accessed through a single MCP tool with sub-operations:
-
-**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
-
-| Operation | Category | Description |
-|-----------|----------|-------------|
-| `send_message` | Messaging | Send encrypted text to a recipient |
-| `send_file` | Messaging | Send a file (ZIP-compressed) to a recipient |
-| `watch_conversations` | Query | List all conversations with unread counts and previews |
-| `watch_messages` | Query | List messages with extensive filtering |
-| `extract_zip_messages` | Utility | Decrypt and extract ZIP files from messages |
-| `generate_wts` | Evidence | Export conversation as WTS evidence file |
-| `verify_wts` | Evidence | Verify WTS file integrity and authenticity |
-| `sign_wts` | Evidence | Add your signature to a WTS file |
-| `wts2html` | Evidence | Convert WTS to human-readable HTML |
-| `proof_message` | Evidence | Anchor a message's Merkle root on-chain |
-| `blacklist` | Spam | Manage your blacklist (add, remove, clear, get, exist) |
-| `friendslist` | Contacts | Manage your friends list (add, remove, clear, get, exist) |
-| `guardlist` | Spam | Manage your guard verification list (add, remove, get) |
-| `settings` | Spam | Configure spam protection settings (get, set) |
-| `mark_messages_as_viewed` | Read Status | Mark specific messages as viewed |
-| `mark_conversation_as_viewed` | Read Status | Mark entire conversation as viewed |
-
-### 4.2 Sending Messages
-
-**Tool**: `messenger_operation` with `send_message`.
-
-**Key parameters**:
-- `from`: Sender account (optional, uses default if omitted)
-- `to`: Recipient address, account name, or local mark
-- `content`: Plaintext message body
-- `options.guardAddress` and `options.passportAddress`: Required for guard-mediated messages (when the recipient blocks strangers)
-- `options.force`: Force-send to override a pending guard message and send immediately
-
-**What happens on success**:
-- Returns the `messageId`, `status` (confirmed or pending), and `merkleData` (leaf_index, prev_root, new_root, server_signature)
-- For guard messages, also receives `pendingMerkleData` — Merkle proofs for other verified messages in the same conversation that the sender may have missed
-
-**Message size limit**: Plaintext is limited to approximately 10KB for normal text messages.
-
-### 4.3 Sending Files
-
-**Tool**: `messenger_operation` with `send_file`.
-
-Files are ZIP-compressed before encryption. The file metadata (name, size, SHA256 hash, content type) is embedded in the message for integrity verification on the recipient side.
-
-**Key parameters**:
-- `filePath`: Absolute path to the local file
-- `options.fileName`: Custom display name for the recipient
-- `options.contentType`: Semantic type — `"wts"` for WTS evidence files, `"wip"` for product promises, `"zip"` for generic files
-- Also supports guard parameters for spam bypass
-
-**File extraction**: The recipient uses `extract_zip_messages` to decrypt and extract received ZIP files to a local directory. The file hash is verified against the embedded metadata.
-
-### 4.4 Querying Conversations and Messages
-
-#### watch_conversations
-
-Lists all conversations for the current (or specified) account. Each conversation entry includes:
-- `peerAddress`: The other party's address
-- `lastMessageAt`: Timestamp of the most recent message
-- `messageCount`: Total messages exchanged
-- `unreadCount`: Messages received but not yet viewed (based on `viewedAt` field)
-- `previewMessages`: Latest N messages with full content (configurable, default 2)
-
-**Filter parameters**:
-- `unreadOnly`: Show only conversations with unread messages
-- `startTime` / `endTime`: Filter by last message time (milliseconds)
-- `previewMessageCount`: How many recent messages to include (0 = no preview, just stats)
-- `sortBy`: `"lastMessageAt"` (default), `"unreadCount"`, or `"messageCount"`
-- `sortOrder`: `"desc"` (default) or `"asc"`
-- `skipAutoMarkViewed`: If `true`, does not automatically mark preview messages as viewed
-
-**Auto-mark-viewed behavior**: By default, when you query conversations with preview messages, the returned messages are automatically marked as viewed (viewedAt timestamp set). Set `skipAutoMarkViewed: true` for background queries that should not affect read status.
-
-#### watch_messages
-
-Lists individual messages with comprehensive filtering. All filter fields are optional and can be combined.
-
-**Identity and direction filters**:
-- `account`: Which account's messages to query
-- `peerAddress`: Filter to a specific conversation partner
-- `direction`: `"sent"` or `"received"`
-- `status`: Filter by message status (pending, confirmed, decrypted, etc.)
-
-**Content filters**:
-- `contentType`: `"text"`, `"zip"`, `"wts"`, or `"wip"` — filter by message content type
-- `msgType`: Underlying Signal Protocol type (PREKEY_MESSAGE = 3 for session establishment, NORMAL_MESSAGE = 1)
-- `keyword`: Search within decrypted plaintext
-- `decryptedOnly`: Only messages successfully decrypted
-- `confirmedOnly`: Only messages with Merkle tree confirmation
-
-**Time filters**:
-- `timeField`: Which timestamp to filter on — `"createdAt"` (client send time), `"receivedAt"` (local receive time), or `"serverTimestamp"` (server confirmation time). Defaults to `"createdAt"`.
-- `startTime` / `endTime`: Generic range applied to the selected `timeField`
-- Specific field ranges: `createdAtStart`/`createdAtEnd`, `receivedAtStart`/`receivedAtEnd`, `serverTimestampStart`/`serverTimestampEnd`
-
-**Evidence-related filters**:
-- `arkConfirmedOnly`: Messages that have recipient ARK confirmation
-- `arkTimestampStart` / `arkTimestampEnd`: Filter by ARK confirmation time
-- `proofedOnly`: Messages with on-chain proof
-- `hasLastReceivedIndexOnly`: Messages where the sender included a `lastReceivedLeafIndex`
-
-**View status filters**:
-- `viewed`: `true` (only viewed), `false` (only unviewed), or omitted (all)
-- `viewedAtStart` / `viewedAtEnd`: Filter by view timestamp range
-- `skipAutoMarkViewed`: Do not auto-mark returned messages as viewed
-
-**List-based filters** (for spam-aware queries):
-- `listFilterMode`: `"friends"` (only friends), `"guard"` (only guard-verified), `"stranger"` (only strangers), `"any"` (all)
-- `customListFilter`: Advanced combination with `includeAddresses`, `excludeAddresses`, and `relation` (`"union"` or `"intersection"`)
-
-**Pagination**: `limit` (result count) and `offset` (starting position). `sortOrder`: `"asc"` (oldest first) or `"desc"` (newest first, default).
-
-### 4.5 Read Status Management
-
-**Tool**: `messenger_operation` with `mark_messages_as_viewed` or `mark_conversation_as_viewed`.
-
-- `mark_messages_as_viewed`: Sets `viewedAt` timestamp on specific message IDs. Used when the user explicitly reads messages.
-- `mark_conversation_as_viewed`: Marks all unviewed received messages in a conversation with a given peer as viewed. Used when entering a chat screen.
-
-The `viewedAt` timestamp is local metadata (stored on the device, not synced to the server). It drives unread counts in `watch_conversations`.
-
-### 4.6 File Extraction
-
-**Tool**: `messenger_operation` with `extract_zip_messages`.
-
-Decrypts and extracts ZIP-compressed files from received messages. Accepts either message objects (from `watch_messages`) or message ID strings. Extracted files are written to the specified output directory, and the message's `zipMetadata` is updated with the local cache path.
-
-### 4.7 Proof on Chain
-
-**Tool**: `messenger_operation` with `proof_message`.
-
-Anchors a confirmed message's Merkle root to the blockchain. The message must have:
-- Server signature (proving server attestation)
-- Complete Merkle proof data (leaf_index, prev_root, new_root, server_timestamp)
-- Decrypted plaintext (for hash verification)
-
-Returns the on-chain proof object address, which can be queried via `query_toolkit`.
-
----
-
-## 5. Role-Specific Patterns
-
-### 5.1 Customer → Service Provider
-
-**Pre-purchase negotiation**:
+**Order creation and information delivery**:
 
 1. **Discover the service's messenger contact**:
    - Query the Service object via `query_toolkit` with `query_type: "onchain_objects"` to extract `service.um` (Contact object ID)
    - Query the Contact object to get `ims[].at` (list of messenger addresses the provider accepts messages at)
 
-2. **Send initial inquiry**:
-   - Use `messenger_operation` with `send_message`
-   - Be specific: what do you want to know about the product, delivery, refund policy, etc.
+2. **Send required customer information** (post-order):
+   - After order creation, check the Service's `customer_required` field (phone, email, delivery address, etc.)
+   - **AI should prompt**: Ask if the user wants to save this information to `local_info` for future use, or retrieve existing info from `local_info_list` to avoid re-entry
+   - Retrieve matching private information from local storage using `query_toolkit` → `local_info_list`
+   - Send via `messenger_operation` with `send_message` to the provider's customer service address
+   - **Request explicit confirmation** — unconfirmed delivery may stall order progress
    - If this is first contact, you have exactly one message — make it count
 
-3. **Wait for explicit confirmation**:
-   - The provider's reply confirms they received and read your message
-   - Their reply's `lastReceivedLeafIndex` proves they saw your specific message
+3. **WTS is for disputes only**: Generate WTS only when a disagreement escalates and arbitration evidence is required. Normal conversations are already preserved.
 
-4. **Generate WTS for key commitments**:
-   - Use `generate_wts` after important agreements (price, timeline, deliverables)
-   - Keep WTS files as evidence in case of disputes
-
-**AI should proactively suggest clarifying**:
-- Exact deliverables and acceptance criteria
-- Timeline and milestones
-- Refund and cancellation terms
-- Shipping and delivery specifics
-- Any custom requirements not in the service listing
-
-### 5.2 Service Provider → Customer
+### 4.2 Service Provider → Customer
 
 **Customer service response**:
 
 1. **Check conversations**: Use `watch_conversations` to see pending inquiries.
 2. **Respond promptly**: Use `send_message` to reply. Your reply automatically adds the customer to your friends list if they were a stranger.
 3. **Document agreements**: For any commitments (pricing, timeline changes, custom work), confirm them in messages. These become evidence if disputes arise.
-4. **Generate WTS for important commitments**: Export and sign WTS for significant agreements. This demonstrates professionalism and builds trust.
+4. **WTS for disputes**: If a disagreement escalates, the provider may generate and sign WTS to demonstrate good faith and support their position.
 
 **Best practices for providers**:
 - Respond promptly to maintain trust
 - Document all agreements and changes in messages
 - Confirm understanding before proceeding with orders
-- Generate WTS for commitments that affect order fulfillment
 - Use guard list to allow verified strangers to reach you without opening to all strangers
-
-### 5.3 Arbitration Evidence Submission
-
-**Process**:
-
-1. **Generate WTS**: Use `generate_wts` to export the relevant conversation. Set the range to cover the negotiation period for the disputed order.
-
-2. **Verify integrity**: Use `verify_wts` to confirm the WTS is valid before submitting.
-
-3. **Sign the WTS**: Use `sign_wts` to add your cryptographic endorsement.
-
-4. **Submit to arbitrator**: Use `send_file` to send the signed WTS to the arbitrator's messenger address (obtained from the Arbitration object's contact info).
-
-5. **Optional — Convert to HTML**: Use `wts2html` for a human-readable version to accompany the submission.
 
 ---
 
-## 6. Operation Order and Dependencies
+## 5. Operation Order and Dependencies
 
-### 6.1 Account Setup Prerequisites
+### 5.1 Account Setup Prerequisites
 
 Before using the messenger, the account must be properly initialized:
 
 1. **Account must exist**: Created via `account_operation` (LOCAL operation).
-2. **Messenger must be enabled**: The account must have a messenger name set (`m` field in account data).
-3. **Device registration**: On first use, the Messenger SDK automatically registers the device with the server (uploads identity key, signed prekey, one-time prekeys, PQ prekey).
-4. **Prekey replenishment**: The SDK monitors one-time prekey counts and automatically refills when below threshold.
+2. **Messenger must be enabled**: Set a messenger name on the account via `account_operation` to enable Messenger functionality; clear it to disable.
 
-The SDK handles initialization automatically — AI does not need to manually trigger these steps.
 
-### 6.2 List and Settings Order
+### 5.2 List and Settings Order
 
 When configuring spam protection:
 1. **Get current state**: Use `settings` (`get`) and list operations (`get`) to see the current configuration.
@@ -474,55 +230,9 @@ When configuring spam protection:
 4. **Set stranger policy**: Use `settings` (`set`) with `allowStrangerMessages` to toggle stranger access.
 5. **Block unwanted**: Use `blacklist` (`add`) for addresses you never want to hear from.
 
-### 6.3 WTS and Evidence Order
-
-For evidence submission:
-1. **Collect messages**: Use `watch_messages` with appropriate filters to confirm you have all messages.
-2. **Generate WTS**: Creates the evidence file from local message storage.
-3. **Verify WTS**: Confirms the file is internally consistent before submission.
-4. **Sign WTS**: Adds your endorsement.
-5. **Submit**: Send file to arbitrator.
-6. **Optionally, prove on-chain**: Use `proof_message` on key messages for immutable timestamps.
-
 ---
 
-## 7. Security Model
-
-### 7.1 End-to-End Encryption
-
-- **Algorithm**: Signal Protocol (X25519 + ML-KEM-768 double ratchet)
-- **Forward secrecy**: Compromising a session key does not reveal past messages (ratchet steps forward only)
-- **Post-compromise security**: Compromising a session key reveals only a window of future messages before the next ratchet step
-- **Key establishment**: First message uses one-time prekeys (X25519) and PQ prekeys (ML-KEM-768) for hybrid post-quantum security
-
-### 7.2 Identity Verification
-
-- Every API request is signed with the user's Falcon512 private key
-- The server derives the user's address from their public key using WoWok's address scheme
-- The server validates the signature against the derived address before processing
-- Different request types use different signature messages to prevent cross-context replay
-
-### 7.3 Server Trust Model
-
-The server is **trusted for availability and ordering**, but **not trusted for confidentiality**:
-
-| What the server CAN do | What the server CANNOT do |
-|------------------------|---------------------------|
-| Store encrypted messages | Read message plaintext |
-| Order messages in Merkle tree | Tamper with message sequence (detectable via Merkle verification) |
-| Verify spam protection rules | Impersonate users (Falcon512 signatures are client-side) |
-| Reject messages (spam rules) | Create fake messages with valid signatures |
-| Provide Merkle proofs | Forge Merkle proofs (its signature is verifiable against its public key) |
-
-### 7.4 Key Rotation
-
-- **Server keys**: The messenger server uses Falcon512 key pairs with automatic rotation. Old public keys are retained for signature verification of historical messages.
-- **WTS server keys**: WTS files include a `serverPublicKeys` array in metadata with validity periods, enabling verification of messages signed under different server keys.
-- **Client keys**: Signal Protocol sessions periodically ratchet, and one-time prekeys are consumed and replenished.
-
----
-
-## 8. Schema Reference
+## 6. Schema Reference
 
 All messenger operations and their parameters are defined in a single schema:
 
@@ -539,10 +249,12 @@ Related schemas for cross-workflow operations:
 | On-chain operations (gen_passport for guard) | `onchain_operations` |
 | Local account management | `account_operation` |
 | Local address book (marks) | `local_mark_operation` |
-
+| Local private info storage | `local_info_operation` |
 ---
 
-## 9. Quick Reference
+## 7. Quick Reference
+
+### Messaging
 
 | Goal | Operation | Key Parameters |
 |------|-----------|----------------|
@@ -550,34 +262,32 @@ Related schemas for cross-workflow operations:
 | Send file | `send_file` | `from`, `to`, `filePath`, `options.contentType?` |
 | View conversations | `watch_conversations` | `filter.unreadOnly?`, `filter.previewMessageCount?`, `filter.sortBy?` |
 | View messages | `watch_messages` | `filter.peerAddress?`, `filter.direction?`, `filter.contentType?`, `filter.keyword?` |
-| Export evidence | `generate_wts` | `params.myAccount`, `params.peerAccount`, `params.range?`, `params.outputDir` |
-| Verify evidence | `verify_wts` | `wtsFilePath` |
-| Sign evidence | `sign_wts` | `wtsFilePath`, `account`, `outputPath?` |
-| View as HTML | `wts2html` | `wtsPath`, `options.title?`, `options.theme?` |
+| Mark as read | `mark_messages_as_viewed` | `messageIds`, `account?` |
+| Mark convo read | `mark_conversation_as_viewed` | `peerAddress`, `account?` |
+
+### Evidence (WTS)
+
+| Goal | Operation | Key Parameters |
+|------|-----------|----------------|
+| Export | `generate_wts` | `params.myAccount`, `params.peerAccount`, `params.range?`, `params.outputDir` |
+| Sign | `sign_wts` | `wtsFilePath`, `account`, `outputPath?` |
+| Verify | `verify_wts` | `wtsFilePath` |
+| View HTML | `wts2html` | `wtsPath`, `options.title?`, `options.theme?` |
 | Prove on-chain | `proof_message` | `account`, `messageId`, `network` |
-| Extract ZIP files | `extract_zip_messages` | `account`, `messages`, `outputDir` |
+| Extract ZIP | `extract_zip_messages` | `account`, `messages`, `outputDir` |
+
+### List Management
+
+| Goal | Operation | Key Parameters |
+|------|-----------|----------------|
 | Add friend | `friendslist` (`add`) | `account`, `users` (addresses/names) |
 | Block user | `blacklist` (`add`) | `account`, `users` (addresses/names) |
 | Add guard | `guardlist` (`add`) | `account`, `guards[].guard`, `guards[].passportValiditySeconds` |
 | Toggle strangers | `settings` (`set`) | `account`, `allowStrangerMessages` |
-| Mark as read | `mark_messages_as_viewed` | `messageIds`, `account?` |
-| Mark convo read | `mark_conversation_as_viewed` | `peerAddress`, `account?` |
 
----
+### Local Storage
 
-## 10. Safety Checklist
-
-**Before sending critical messages**:
-- [ ] Recipient address is correct (double-check via `local_mark_operation` if using marks)
-- [ ] Message content is clear and unambiguous
-- [ ] Important terms (prices, deadlines, deliverables) are explicitly stated
-- [ ] Request explicit confirmation for binding agreements
-- [ ] Consider guard parameters if the recipient blocks strangers
-
-**Before using messages as evidence**:
-- [ ] Messages have server confirmation (status is `confirmed`)
-- [ ] Recipient has replied or acknowledged (ARK confirmation, or their reply references your message via `lastReceivedLeafIndex`)
-- [ ] WTS file has been generated and verified (`verify_wts` returns valid)
-- [ ] WTS file has been signed with your key (`sign_wts`)
-- [ ] Submit within any applicable arbitration deadline
-- [ ] File size is within limits (WTS max 5MB total, 500 messages per file)
+| Goal | Tool | Key Parameters |
+|------|------|----------------|
+| Write private info | `local_info_operation` (add) | `data`: array of `{ name, default, contents }` |
+| Read private info | `query_toolkit` → `local_info_list` | `filter.name?` |

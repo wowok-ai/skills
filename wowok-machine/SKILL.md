@@ -22,15 +22,11 @@ when_to_use:
 
 # WoWok Machine Workflow Design
 
-Design, build, and operate automated workflow templates that define how orders are processed on WoWok.
+Design, build, and operate automated workflow templates.
 
-> **Role**: Service Provider (Merchant/Seller) or Workflow Designer  
-> **Prerequisites**: Understand CREATE vs MODIFY pattern — use `schema_query({ action: "get", name: "onchain_operations" })`  
-> **Machine Operations Tool**: `onchain_operations` with `operation_type: "machine"`  
-> **Progress Operations**: See [wowok-provider](../wowok-provider/SKILL.md) for order fulfillment via Progress  
-> **Guard Design**: See [wowok-guard](../wowok-guard/SKILL.md) for creating validation rules  
-> **Service Integration**: See [wowok-provider](../wowok-provider/SKILL.md) for binding Machines to Services  
-> **Tools**: See [wowok-tools](../wowok-tools/SKILL.md)
+> **Role**: Service Provider or Workflow Designer  
+> **Key Tools**: `onchain_operations` with `operation_type: "machine"`  
+> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (Guards), [wowok-provider](../wowok-provider/SKILL.md) (Service binding), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-tools](../wowok-tools/SKILL.md) (schema reference)
 
 ---
 
@@ -38,27 +34,9 @@ Design, build, and operate automated workflow templates that define how orders a
 
 ### What is a Machine?
 
-A Machine is a **workflow template** — a directed graph that defines how orders progress from creation to completion. Each Machine belongs to a Service and is instantiated as a **Progress** object when an order is created on that Service. The Machine defines the rules; the Progress tracks the live execution.
+A Machine is a **workflow template** — a directed graph that defines how orders progress from creation to completion. Machines can be bound to Services (one-to-many) or operate standalone for collaborative workflows. When bound to a Service, the Machine is instantiated as a **Progress** object when an order is created. The Machine defines the rules; the Progress tracks the live execution.
 
 **Key Analogy**: Machine = workflow blueprint, Progress = live workflow instance.
-
-### Machine's Role in the Ecosystem
-
-```
-Service (merchant storefront)
-├── machine → Machine (workflow definition)
-├── order_allocators → Allocators (fund distribution rules)
-├── sales → SalesItem[] (products)
-├── arbitrations → Arbitration[] (dispute resolution)
-└── ...
-
-Order (created per purchase on a Service)
-├── builder → Customer (order owner)
-├── progress → Progress (instantiated from Machine, tracks live workflow state)
-└── allocation → Allocation (fund distribution engine)
-```
-
-A Machine bridges the Service's commercial promise with the Order's operational reality. It is the executable specification of how a service delivers value.
 
 ### Immutability Rules
 
@@ -96,7 +74,7 @@ Machine
 
 A Node represents a **stage or state** in the workflow. Each node has a unique name and contains one or more Pairs defining how to reach it and what Forwards are available from it.
 
-Node names must be unique within a Machine. The empty string (`""`) is reserved and represents the initial state — the first Pair in the entry node must use `prev_node: ""` with `threshold: 0` to allow anyone to start the workflow.
+Node names must be unique within a Machine. The empty string (`""`) represents the initial state — any Pair with `prev_node: ""` is an entry point. A Machine can have multiple entry nodes, each with its own threshold configuration.
 
 ### Pair (NodePair)
 
@@ -114,19 +92,20 @@ A Forward is a **named operation** that users execute to advance the workflow. E
 
 - **`name`**: A descriptive operation identifier (e.g., "Confirm Order", "Ship Goods", "Complete Signature").
 - **`weight`**: A 16-bit unsigned integer (0-65535) representing this Forward's contribution toward the threshold. When the sum of completed Forward weights in the current session meets or exceeds the Pair's threshold, the node transition triggers.
-- **`permissionIndex`** or **`namedOperator`**: Exactly one must be specified — this controls who can execute the Forward.
+- **`permissionIndex`** and/or **`namedOperator`**: At least one must be specified — both can be set simultaneously, in which case the executor needs EITHER permission to execute the Forward. 
 
 **Permission Model**:
 
 | Field | Scope | Typical Use |
 |-------|-------|-------------|
-| `permissionIndex` | Shared across ALL Progress instances from this Machine | Internal roles (merchant operators, admins) — same personnel handle all orders |
-| `namedOperator` | Per-Progress namespace | External roles that differ per order instance |
+| `permissionIndex` | Shared across ALL Progress instances from this Machine | Internal roles (merchant operators, admins) — same personnel handle all workflow instances |
+| `namedOperator` | Per-Progress namespace | External roles that differ per workflow instance |
 
 - Use `namedOperator: ""` (empty string) to grant order owner and their agents the right to execute the Forward. This is the standard way to let customers operate on their own orders.
 - Use `namedOperator: "<role_name>"` for role-based operators managed per Progress instance — ideal when different orders have different delivery personnel or reviewers.
+- **Both set**: When `permissionIndex` AND `namedOperator` are both specified, the executor needs EITHER permission to execute the Forward — the permissions act as alternatives. This is useful when the same operation should be executable by either internal staff (via `permissionIndex`) or external roles (via `namedOperator`).
 
-**Schema Reference**: The Permission object's index grants specific accounts the ability to execute Forwards with matching `permissionIndex` values. See `schema_query({ action: "get", name: "onchain_operations_permission" })`.
+**Best Practice**: Forwards should use **custom permissions** rather than built-in indices to avoid management chaos. Either create a dedicated Permission object via `onchain_operations` with `operation_type: "permission"`, or add custom indices to an existing Permission object. Define workflow-specific roles, then reference those indices in your Forwards. Query the Permission schema via `schema_query({ action: "get", name: "onchain_operations_permission" })`.
 
 ### Guard on Forwards
 
@@ -134,12 +113,9 @@ A Forward can optionally include a Guard — an on-chain validation rule that mu
 
 **Guard use cases on Forwards**:
 - **Time-lock**: Require a minimum duration to pass since entering a node (e.g., Insurance claim cooling-off period)
-- **Merkle Root verification**: Prove that private off-chain communication occurred via Messenger (e.g., shipping tracking number shared)
 - **External condition check**: Validate state from a Repository or other on-chain data (e.g., weather conditions for outdoor activities)
 - **Supply chain commitment**: Confirm a sub-order was created on another Service
 - **Penalty payment verification**: Validate that compensation was paid before proceeding
-
-When a Forward has a Guard and the Guard requires runtime data submission, the user must include a `submission` block with the Guard operation. Use `schema_query({ action: "get", name: "onchain_operations" })` to understand the submission structure.
 
 **Guard retained submissions**: A Guard on a Forward can specify `retained_submission` — an array of identifier indices whose submitted values are preserved and carried forward to subsequent nodes. This enables data flow across workflow stages without re-submission.
 
@@ -147,23 +123,14 @@ When a Forward has a Guard and the Guard requires runtime data submission, the u
 
 ### Threshold Mechanics
 
-The threshold is the **trigger value** for node advancement. Here is how it works in practice:
+The threshold is the **trigger value** for node advancement. Users execute Forwards from the current node, accumulating weight. When the **sum of completed Forward weights ≥ threshold**, the session finalizes: completed Forwards move to history, and the workflow advances to the next node.
 
-1. A Progress session starts when entering a node.
-2. Users execute Forwards from the current node, each with its own weight.
-3. When the **sum of completed Forward weights ≥ threshold**, the session finalizes:
-   - The session (all completed Forwards) moves to Progress history
-   - The next node becomes the current node
-   - A new session begins at the new node
+**Competing Transitions**: If a node has multiple Pairs leading to different next nodes, the first Pair to meet its threshold wins — subsequent completions go to the newly active node. This enables competitive workflows where different paths race to completion.
 
-**Common threshold patterns**:
-
-| Threshold | Weight Pattern | Meaning |
-|-----------|---------------|---------|
-| 0 | Any (typically weight: 1) | Entry point — no conditions, anyone enters freely |
-| 1 | Single forward, weight: 1 | One party must execute the forward to advance |
-| 2 | Two forwards, each weight: 1 | Both parties must execute their respective forwards (dual-signature) |
-| N (multiple) | Multiple forwards, weights sum to N | Complex multi-party consensus |
+**Parallel vs Sequential Execution**: By configuring thresholds and weights, you control task coordination:
+- **Sequential**: `threshold = 1`, single Forward with `weight = 1` — one completion triggers advancement
+- **Parallel (AND)**: `threshold = N`, N Forwards each with `weight = 1` — all must complete before advancing
+- **Parallel (OR)**: Multiple Pairs from same node, each with `threshold = 1` — first completion wins, enabling branching paths like `A→B→C` vs `A→C` where B is optional
 
 ---
 
@@ -174,61 +141,15 @@ The threshold is the **trigger value** for node advancement. Here is how it work
 A Machine depends on a **Permission** object. Build in this order:
 
 ```
-1. Permission (CREATE) → provides access control foundation
-2. Machine (CREATE, unpublished) → define structure and nodes
+1. Permission (CREATE or MODIFY to add indices) → provides access control foundation; add custom indices anytime for Forwards
+2. Machine (CREATE, unpublished) → define structure and ALL nodes
 3. Guards (CREATE) → build conditions needed by Forwards
 4. Bind Guards to Forwards (MODIFY Machine) → add guard references to specific forwards
 5. Publish Machine → nodes become IMMUTABLE
 6. Bind Machine to Service (MODIFY Service) → machine field
 ```
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_machine" })`
-
-### CREATE vs MODIFY Pattern
-
-The unified pattern across all WoWok operations:
-
-- **Object shape** (`{ name: "...", permission: "...", ... }`) = **CREATE** a new Machine
-- **String value** (`"machine_name"`) = **MODIFY** an existing Machine
-
-When creating, the `object` field must include:
-- `name`: Machine name (unique identifier for local mark tracking)
-- `permission`: Permission object name or address (can reference an existing Permission, or define a new one)
-- `replaceExistName`: Strongly recommended — set to `true` to replace any existing object with the same name
-
-### Configuration Operations on an Existing Machine
-
-Once created (but before publishing), you can perform these operations on a Machine by referencing it as a string value in the `object` field:
-
-**Description management**:
-- Set or update the Machine's `description` — a human-readable explanation of the workflow's purpose.
-
-**Repository binding** (`repository`):
-- Attach Repository objects to the Machine for consensus data management.
-- Operations: `add` (append), `set` (replace all), `remove` (delete specific), `clear` (remove all).
-- Maximum 200 consensus repositories per Machine.
-
-**Pause control** (`pause`):
-- Set `pause: true` to prevent new Progress objects from being created from this Machine.
-- Set `pause: false` to re-enable Progress creation.
-- Useful for maintenance windows or service suspension.
-
-**Publish** (`publish: true`):
-- Finalizes the Machine. After publishing, nodes can no longer be modified.
-- Only published Machines can have Progress objects created from them.
-
-**Owner receive** (`owner_receive`):
-- Unwrap and transfer any CoinWrapper objects received by the Machine to the owner of its Permission object.
-
-**Contact binding** (`um`):
-- Attach a Contact object to the Machine for customer communication.
-- Set to `null` to remove the contact.
-
-**Progress creation** (`progress_new`):
-- Create a new Progress object directly from the Machine in a single operation.
-- The Machine must already exist (be published) for this to work.
-- Can optionally set: `task` (bind a task object), `repository` (bind consensus repositories to the Progress), and `progress_namedOperator` (set per-Progress operators).
-- Can optionally name the new Progress via `namedNew` for local mark tracking.
+**Schema Reference**: Query all Machine operations via `schema_query({ action: "get", name: "onchain_operations_machine" })`. This includes configuration (description, repository binding, pause control, publish, owner receive, contact binding, progress creation, etc.) and node manipulation operations.
 
 ### Node Operations (Pre-Publish Only)
 
@@ -253,30 +174,25 @@ All node operations use the `node` field with a discriminated `op` value. These 
 | Add forwards | `"add forward"` | Add Forwards to specific node pairs. Each entry specifies `prior_node_name`, `node_name`, an array of `forward` definitions, and optionally a new `threshold`. |
 | Remove forwards | `"remove forward"` | Delete specific Forwards from node pairs by their forward names. |
 
-**File-based node definition**:
+**File-based Workflow**:
 
-Instead of inline node definitions, you can load nodes from a JSON or Markdown file using the `json_or_markdown_file` field within `node`. The file must contain a JSON array of node objects (not an operation wrapper). This completely replaces all existing nodes.
-
-Use `machineNode2file` to export an existing Machine's nodes, edit the file, then re-import.
+Use `machineNode2file` to export a Machine's nodes to a JSON/Markdown file, edit, then import via `node.json_or_markdown_file` field. The file must contain a JSON array of node objects — this replaces all existing nodes.
 
 ---
 
 ## Progress: The Live Workflow Instance
 
-### The Machine-Progress Relationship
+### Progress Creation
 
-| Object | Purpose | Lifecycle |
-|--------|---------|-----------|
-| **Machine** | Workflow template (blueprint) | Created → Configured → Published → Immutable |
-| **Progress** | Live workflow instance (execution) | Created per Order → Advances through nodes → Reaches terminal |
-
-When an Order is created on a Service that has a published Machine bound to it, a Progress object is automatically created. This Progress tracks the Order's journey through the Machine's workflow.
+Progress objects are created in two ways:
+- **Service Order**: When an Order is created on a Service with a bound Machine, Progress is automatically instantiated
+- **Direct Creation**: Via `progress_new` operation with appropriate permissions
 
 ### Progress Operations
 
-Progress operations use `onchain_operations` with `operation_type: "progress"`.
+**Order-associated Progress** (when Forward with `namedOperator: ""`): Must advance via `order` operations.
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_progress" })`
+**All other cases**: Advance via direct `progress` operations.
 
 **Advancing Progress**:
 
@@ -302,110 +218,16 @@ Use the `operate` field to advance the Progress. The operation specifies:
 **Tools**:
 
 - `query_toolkit` with `query_type: "onchain_objects"` — query the Progress object to see its current node, sessions, and metadata.
-- `query_toolkit` with `query_type: "onchain_table_data"` and type `"ProgressHistory"` — query completed history records. Each record contains the previous node, next node, completed session details, and timestamp.
+- `query_toolkit` with `query_type: "onchain_table"` — query all history records from Progress table (paginated)
+- `query_toolkit` with `query_type: "onchain_table_item_progress_history"` — query single history record by sequence number
 
-**Schema Reference**: `schema_query({ action: "get", name: "query_toolkit" })`
-
----
-
-## Export & Import Workflows
-
-### Exporting Machine Nodes (machineNode2file)
-
-The `machineNode2file` tool exports an existing Machine's node definitions to a local file for review, editing, or reuse.
-
-**Tool**: `machineNode2file`
-
-**Key Parameters**:
-- `machine`: Machine object name or address to export
-- `file_path`: Output file path (absolute or relative)
-- `format`: `"json"` (default) or `"markdown"` — Markdown format includes a human-readable table of nodes, pairs, and forwards plus the raw JSON at the bottom
-
-**Schema Reference**: `schema_query({ action: "get", name: "machineNode2file" })`
-
-**Use Cases**:
-- Export a proven workflow from an existing Service as a template for a new Service
-- Review the full node structure before making changes
-- Version control Machine definitions in source control
-- Share workflow designs with team members
-
-### Importing Nodes from File
-
-Use the `node.json_or_markdown_file` field within a Machine operation to load node definitions from a local file. The file must contain a JSON array of node objects. This completely replaces all existing nodes — equivalent to a `"set"` operation with `bReplace: true`.
-
-**Workflow**:
-1. Export from an existing Machine: `machineNode2file`
-2. Edit the file to modify nodes, add new nodes, or adjust thresholds/guards
-3. Import into a new or existing Machine: `node.json_or_markdown_file`
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_table_data" })`
 
 ---
 
 ## Workflow Design Patterns
 
 Business-driven patterns extracted from real WoWok deployments. Each pattern represents a specific commercial intent.
-
-### Pattern 1: Simple Linear Pipeline
-
-**Business Intent**: A straightforward service with sequential stages and no branching.
-
-```
-Start → Processing → Review → Completed
-```
-
-**Key Characteristics**:
-- Every node has exactly one Pair from the previous node
-- Each Pair has exactly one Forward
-- Threshold: 1, Weight: 1 — single party advances at each step
-- No Guards needed
-
-**Entry Node Setup**: The first node has a Pair with `prev_node: ""` and `threshold: 0` — this is the entry point that allows anyone to begin the workflow.
-
-**Real Example — ThreeBody Signature** (2-node linear):
-```
-Book Delivered → Signature Completed
-```
-- Node "Book Delivered": Pair from `""` (initial), threshold 0, Forward "Confirm Delivery", permissionIndex for author
-- Node "Signature Completed": Pair from "Book Delivered", threshold 1, Forward "Complete Signature", permissionIndex for author
-
-### Pattern 2: Entry + Cancel
-
-**Business Intent**: Allow the customer to cancel an order early, but only from the initial stage.
-
-```
-                 → Cancel Order (customer)
-Order Confirmation
-                 → Confirm Order (merchant) → Shipping → In Transit → Completed
-```
-
-**Key Characteristics**:
-- The first node has TWO Pairs: one for the initial entry (threshold 0), one for cancellation (also from the same node)
-- The customer uses `namedOperator: ""` to cancel (order owner permission)
-- The merchant uses `permissionIndex` to confirm
-- After leaving the first node, cancellation is no longer possible
-
-**Real Example — MyShop** (4-node with cancel):
-```
-Order Confirmation → Shipping → In Transit → Completed
-              ↘ Order End (Cancel Order)
-```
-- Node "Order Confirmation": Pair from `""` (threshold 0) with Forward "Confirm Order" (permissionIndex 1000, merchant) AND Forward "Cancel Order" (namedOperator "", customer)
-- Once the merchant executes "Confirm Order" and moves to "Shipping", the customer can no longer cancel
-
-### Pattern 3: Multi-Path with Guards
-
-**Business Intent**: Branching workflow where the path taken depends on Guard conditions — different outcomes lead to different fund allocations.
-
-```
-           → Normal Completion (guard: delivery_confirmed)
-Shipping →
-           → Lost Package (guard: package_lost, threshold: 2)
-```
-
-**Key Characteristics**:
-- Multiple Forwards from the same Pair, each with different Guards
-- Guards determine which path is valid based on on-chain or submitted evidence
-- Different paths lead to different terminal nodes with different Allocator strategies
-- Dual-signature paths use `threshold: 2` — both customer and merchant must confirm
 
 **Real Example — MyShop Advanced** (11-node multi-path):
 ```
@@ -419,25 +241,7 @@ Shipping → Delivery Complete → Order Complete
                                                    └──→ Return Complete (threshold: 2)
 ```
 
-### Pattern 4: Time-Lock
-
-**Business Intent**: Require a minimum waiting period before advancing — prevents premature completion.
-
-```
-Start → Complete (guard: clock > progress.current_time + lock_duration)
-```
-
-**Key Characteristics**:
-- The Forward includes a Guard that compares the on-chain Clock with the Progress's `current_time` plus a lock duration
-- The Guard uses `convert_witness` to transform the submitted Order ID into its Progress object, then queries `progress.current_time`
-- Prevents the workflow from completing before the lock period expires
-
-**Real Example — Insurance** (time-lock claim):
-- Guard `insurance_complete_guard` uses `convert_witness: 100` (TypeOrderProgress) to access Progress data
-- Validates: `clock > progress.current_time + lock_duration`
-- Lock duration: 1000ms for testing, should be reasonable duration (e.g., 8 hours) in production
-
-### Pattern 5: Sub-Order Creation (Supply Chain)
+### Sub-Order Creation (Supply Chain)
 
 **Business Intent**: When advancing a Forward, automatically create a sub-order on another Service — committing to use a trusted supplier.
 
@@ -455,7 +259,7 @@ Start → Buy Insurance (creates sub-order on Insurance Service) → Main Activi
 - The Insurance sub-order follows its own Machine workflow independently
 - Both workflows (Travel and Insurance) progress in parallel
 
-### Pattern 6: Dual-Signature Consensus
+### Dual-Signature Consensus
 
 **Business Intent**: Require both parties (customer and merchant) to confirm before advancing — used for sensitive operations like returns, lost packages, and completion.
 
@@ -526,52 +330,6 @@ When multiple Services collaborate (e.g., Travel + Insurance + Courier), any par
 
 ---
 
-## Build Checklist
-
-Use this checklist when designing a Machine workflow:
-
-```
-Designing a Machine workflow?
-
-├── Scope: How many nodes?
-│   ├── 2 nodes → Linear: Start → Complete (Insurance, ThreeBody)
-│   ├── 4 nodes → Linear with cancel: Order → Ship → Transit → Complete (MyShop)
-│   ├── 5+ nodes → Multi-path with branches (Travel)
-│   └── 11+ nodes → Enterprise: dual-sig + time + rewards (MyShop Advanced)
-
-├── Entry point design:
-│   └── First node MUST have a Pair with prev_node: "" and threshold: 0
-
-├── Who advances at each step?
-│   ├── Merchant/Provider → Use permissionIndex (shared across all orders)
-│   ├── Customer → Use namedOperator: "" (order owner)
-│   └── Role-specific per order → Use namedOperator: "<role>"
-
-├── Need dual-signature (multi-party confirmation)?
-│   └── Set threshold: 2 with two Forwards each weight: 1 → Both parties must execute
-
-├── Need time-based auto-advancement?
-│   └── Add a time Guard on the Forward (compare Clock with progress.current_time + duration)
-
-├── Need conditional branching?
-│   └── Multiple Forwards from the same Pair, each with different Guards
-
-├── Need Guard on Forward?
-│   ├── What condition must pass?
-│   ├── Does the Guard need user-submitted data? (submission block)
-│   └── Does the Guard need retained submissions for subsequent nodes?
-
-├── Need sub-order creation (supply chain)?
-│   └── Use forward_to_order_create on the Forward → Creates sub-order on target Service
-
-├── Fund flow design:
-│   └── Each terminal node should map to an Allocator strategy — design Machine and Allocators together
-
-└── Terminal nodes:
-    └── Nodes with no Forwards are terminal — ensure every path reaches one
-```
-
----
 
 ## Common Pitfalls
 
@@ -589,21 +347,6 @@ Designing a Machine workflow?
 
 ## Quick Reference
 
-### Essential Schemas
-
-| Purpose | Schema Name |
-|---------|-------------|
-| Machine operations | `onchain_operations_machine` |
-| Progress operations | `onchain_operations_progress` |
-| Guard operations | `onchain_operations_guard` |
-| Permission operations | `onchain_operations_permission` |
-| Service operations (Machine binding) | `onchain_operations_service` |
-| Query toolkit | `query_toolkit` |
-| Table data query | `onchain_table_data` |
-| Machine node export | `machineNode2file` |
-
-**Query any schema**: `schema_query({ action: "get", name: "<schema_name>" })`
-
 ### Key Constraints
 
 | Constraint | Limit |
@@ -616,12 +359,3 @@ Designing a Machine workflow?
 | Threshold range | 0–4294967295 (u32) |
 | Node name max length | Configurable, validated by `isValidName` |
 
-### Related Skills
-
-| Skill | Relevance |
-|-------|-----------|
-| [wowok-guard](../wowok-guard/SKILL.md) | Designing Guards for Machine Forwards |
-| [wowok-provider](../wowok-provider/SKILL.md) | Binding Machines to Services, designing Allocators alongside workflows |
-| [wowok-order](../wowok-order/SKILL.md) | Customer perspective on order progression through Machine workflows |
-| [wowok-messenger](../wowok-messenger/SKILL.md) | Off-chain communication patterns with on-chain Merkle Root proofs |
-| [wowok-tools](../wowok-tools/SKILL.md) | MCP tool reference for all schema queries and operations |

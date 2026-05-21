@@ -250,13 +250,13 @@ Include the selected Discount object ID in the `buy.discount` field:
 
 ### 3.2 Private Information Handling
 
-If Service requires private info (`customer_required`):
+After order creation, the AI must check the Service's `customer_required` field to see what information the provider needs (e.g., phone, email, delivery address).
 
-1. **NEVER put on-chain** — send via Messenger
-2. Include order ID in the message
-3. Confirm receipt with seller
-
-**Tool**: `messenger_operation` with `send_message` operation.
+1. **Retrieve from local storage**: Use `query_toolkit` → `local_info_list` to retrieve your saved private information matching the `customer_required` fields. These are sensitive records stored only on your device.
+2. **AI should prompt**: If the required info is not in `local_info`, ask if the user wants to save it there for future use. If it exists, present it for user confirmation before sending.
+3. **Send via Messenger**: Use `messenger_operation` with `send_message` — **NEVER put private information on-chain**.
+4. **Include order ID** in the message for traceability.
+5. **Request explicit confirmation**: Unconfirmed delivery may stall order progress.
 
 ### 3.3 Post-Creation Notification
 

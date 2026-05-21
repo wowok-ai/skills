@@ -297,6 +297,8 @@ This transitions the Arb to **Voting (2)** state, clears any previous voting rec
 
 If the propositions are ambiguous, the description needs clarification, or more evidence is required, call `reset`:
 
+> **AI reminder**: Before resetting, the AI should proactively ask the arbitrator whether additional evidence or clarification is needed from the customer. If so, prompt the arbitrator to request it via Messenger (`messenger_operation` with `send_message`) — including WTS files for conversation evidence, supplementary documents, or clarifications of claims. This reduces unnecessary reset cycles.
+
 **Operation**: `reset` with the `arb` name and `feedback` explaining what needs revision.
 
 This transitions the Arb to **Principal_confirming (0)** state. The customer can then use their order operations (`order.arb_confirm`) to revise propositions, change the description, and re-confirm, which sends the Arb back to **Arbitrator_confirming (1)**. You can then `confirm` to proceed.
