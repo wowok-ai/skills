@@ -47,8 +47,6 @@ Quick reference for WoWok MCP tools — patterns, pitfalls, and troubleshooting.
 | **String** | Reference EXISTING | `"my-service"` or `"0x1234..."` |
 | **Object** | CREATE NEW | `{ name: "my-service", permission: "..." }` |
 
-**Key Rule**: `publish: true` LOCKS immutable fields (machine, order_allocators, guard logic).
-
 ---
 
 ## The 13 Tools
