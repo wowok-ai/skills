@@ -41,7 +41,7 @@ Commercial services MUST be built in strict dependency order. An object cannot r
 
 **Build Sequence**:
 ```
-Permission → Service (unpublished) → Machine (Nodes but unpublished) → Guards → Allocators → Reward/Arbitration → Publish Machine → Bind to Service → Publish Service
+Permission → Service (unpublished) → Machine (Nodes but unpublished) → Guards → Allocators → Reward/Arbitration → Publish Machine → Bind to Service → Publish Service → Description/Location/Sales/CustomerRequired/UM
 ```
 
 **Immutability Rules**:
@@ -200,9 +200,11 @@ This commitment ensures existing orders can still claim compensation during the 
 - Shows merchant has "skin in the game" for fair resolution
 - Customers can claim compensation via arbitration — see [wowok-order](../wowok-order/SKILL.md) for customer arbitration process
 
-### 2.2 Arbitration Configuration
+### 2.2 Arbitration Configuration (Optional)
 
 Configure which arbitration services can resolve disputes for your orders.
+
+> **Note**: Arbitration is **optional**. You can publish a Service without configuring arbitrations. However, without arbitration, customers have no recourse if disputes arise, which may reduce trust in your service.
 
 **Operation**: `onchain_operations` with `operation_type: "service"`.
 
@@ -210,9 +212,15 @@ Configure which arbitration services can resolve disputes for your orders.
 - `arbitrations.op`: Operation type ("add", "set", "remove")
 - `arbitrations.list`: Array of Arbitration object IDs/names
 
-**Why Multiple Arbitrations**:
+**Why Configure Arbitrations**:
+- Provides customers with dispute resolution recourse, increasing trust
 - Customers evaluate on-chain data to choose the most trusted Arbitration from your approved list
 - Different arbitrations may specialize (e.g., product quality vs. service delivery)
+
+**Trade-off Without Arbitration**:
+- Lower setup complexity
+- Customers bear full risk of disputes
+- May limit appeal to risk-averse customers
 
 ---
 
@@ -235,13 +243,20 @@ PHASE 3 — Business Logic
 ├── 5. Machine Node Guards (MODIFY Machine) — bind Guards to Machine node forwards for workflow validation at each operation
 ├── 6. Allocators (MODIFY Service) — fund distribution rules
 ├── 7. Rewards (CREATE/MODIFY Service) — optional incentive pools
-├── 8. Arbitrations (MODIFY Service) — dispute resolution options
-└── 9. Compensation Fund (MODIFY Service) — add funds
+├── 8. Arbitrations (MODIFY Service) — optional dispute resolution options
+└── 9. Compensation Fund (MODIFY Service) — optional, add funds for customer trust
 
 PHASE 4 — Publication
 ├── 10. Publish Machine — nodes become IMMUTABLE
 ├── 11. Bind Machine to Service — MODIFY Service.machine
-└── 12. Publish Service — everything LOCKED
+└── 12. Publish Service — core config LOCKED (machine, order_allocators)
+
+PHASE 5 — Post-Publish Configuration (After Service is Published)
+├── 13. Service Description — MODIFY Service.description
+├── 14. Sales Products (sales) — MODIFY Service.sales with WIP files
+├── 15. Location — MODIFY Service.location (service area)
+├── 16. Customer Required Info — MODIFY Service.customer_required
+└── 17. Customer Service (um) — MODIFY Service.um (REQUIRED if customer_required is set)
 ```
 
 ### 3.2 Pre-Build Discovery
@@ -264,6 +279,76 @@ Export from proven services instead of building from scratch:
 **Schema References**:
 - `schema_query({ action: "get", name: "machineNode2file" })`
 - `schema_query({ action: "get", name: "guard2file" })`
+
+---
+
+## Phase 5: Post-Publish Configuration (Service Published)
+
+After publishing your Service, configure customer-facing information that can be updated dynamically without affecting core workflow logic.
+
+### 5.1 Service Description & Location
+
+Set your service description and geographic coverage area.
+
+**Operation**: `onchain_operations` with `operation_type: "service"`.
+
+**Key Fields**:
+- `description`: Service description (markdown supported)
+- `location`: Service area/region (e.g., "Global", "North America", "China")
+
+### 5.2 Sales Products (WIP Required for Physical Goods)
+
+Configure sellable products/services with WIP (Witness Immutable Promise) files.
+
+> **Important**: For physical goods, WIP files are **mandatory** as they serve as your on-chain product commitment and arbitration evidence.
+
+**Creating WIP Files**:
+
+**Tool**: `wip_file` with `type: "generate"` operation.
+
+**Schema Reference**: `schema_query({ action: "get", name: "wip_file" })`
+
+**Key Parameters**:
+- `options.markdown_text`: Product description in markdown format
+- `options.images`: Array of image sources for product visuals
+- `outputPath`: Output file path for generated WIP file
+
+**Attaching Products to Service**:
+
+**Operation**: `onchain_operations` with `operation_type: "service"`.
+
+**Key Fields**:
+- `sales.op`: Operation type ("add", "set", "remove")
+- `sales.sales`: Array of sales items, each with:
+  - `name`: Product name
+  - `price`: Price in token units
+  - `stock`: Available quantity
+  - `wip`: URL to WIP file
+  - `wip_hash`: SHA256 hash of WIP file for verification
+
+### 5.3 Customer Required Information & Contact (um)
+
+Define what private information customers must provide and set up customer service contact.
+
+**Operation**: `onchain_operations` with `operation_type: "service"`.
+
+**Key Fields**:
+- `customer_required`: Array of required info fields (e.g., ["phone", "email", "delivery_address"])
+- `um`: Contact object ID or name for customer service
+
+> **Critical Rule**: If `customer_required` is set, `um` (Contact) **MUST** also be configured. This ensures customers have a channel to securely provide their private information and receive support.
+
+**Contact Setup Flow**:
+1. Create Contact object with your customer service addresses
+2. Set `um` field to the Contact object ID/name
+3. Customers will use Messenger to communicate and provide required info
+
+**Example**:
+```
+Service Configuration:
+├── customer_required: ["phone", "delivery_address"]
+└── um: "my-customer-service-contact"  ← REQUIRED when customer_required is set
+```
 
 ---
 
@@ -345,11 +430,11 @@ Machine Implementation:
 
 ---
 
-## Phase 5: Order Fulfillment
+## Phase 6: Order Fulfillment
 
 Handle active orders through workflow progression.
 
-### 5.1 Progress Operations
+### 6.1 Progress Operations
 
 Advance orders through your Machine workflow via the Progress object.
 
@@ -373,7 +458,7 @@ Advance orders through your Machine workflow via the Progress object.
 
 **Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_progress" })`
 
-### 5.2 Voluntary Compensation
+### 6.2 Voluntary Compensation
 
 Proactively compensate for service failures to maintain relationships.
 
@@ -403,7 +488,7 @@ Merchant or Participant Wallet
 - Avoids escalation to arbitration
 - Differentiates your service with guarantees
 
-### 5.3 Customer Service
+### 6.3 Customer Service
 
 Handle inquiries and issues via Messenger.
 
@@ -422,20 +507,6 @@ Contact.ims[] → Your customer service addresses
 > **AI reminder**: When fulfilling an order, the AI should proactively check whether the Service's `customer_required` fields (phone, email, delivery address, etc.) have been provided by the customer. If any are missing, prompt the provider to request them from the customer via Messenger using `messenger_operation` with `send_message`.
 
 > **Full Guide**: See [wowok-messenger](../wowok-messenger/SKILL.md) for messaging, WTS generation, and evidence management.
-
----
-
-## Best Practices & Common Pitfalls
-
-### Design Principles
-
-| Do | Don't |
-|----|-------|
-| Design Machine + Allocators together | Design workflow without considering fund flow |
-| Provide generous compensation_fund | Skip compensation fund for high-value services |
-| Use clear, verifiable Guard conditions | Create ambiguous validation logic |
-| Test on testnet first, then mainnet | Publish to mainnet without testing |
-| Document WIP thoroughly | Make vague product promises |
 
 ---
 
