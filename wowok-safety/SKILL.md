@@ -19,7 +19,30 @@ always: true
 
 ## 1. Core Principles
 
-### 1.1 Security & Safety
+### 1.1 Object Reuse Principle (General Best Practice)
+
+**ALWAYS prefer reusing existing objects over creating new ones** — this enables centralized permission control and reduces management overhead.
+
+| Object Type | Reuse Strategy | Why |
+|-------------|----------------|-----|
+| **Permission** | **Strongly recommended** — ask user for existing Permission name/ID | Centralized permission control across all services |
+| Machine | Reuse if workflow fits | Save design time for similar processes |
+| Guards | Reuse if validation logic matches | Avoid redundant rules |
+| Contact | Reuse existing customer service Contact | Single point of management |
+| Arbitration | Always reuse existing Arbitration services | Customers choose from established arbiters |
+
+**How to Reuse**:
+- Ask user: *"Do you have an existing object you'd like to reuse? Provide the name or ID."*
+- Use string value `"<name_or_id>"` to reference existing objects
+- Use object shape `{ name?, ... }` only when creating new
+
+**CREATE vs MODIFY Pattern**:
+| Format | Meaning | Use When |
+|--------|---------|----------|
+| String `"<name>"` or `"<0x...>"` | **REUSE** existing | Object already exists |
+| Object `{ name?, ... }` | **CREATE** new | Need new object |
+
+### 1.2 Security & Safety
 
 - **Hot Wallet Usage**: WoWok never exposes private keys. Treat it as a spending account for transfers, receipts, and commerce. Flag large transactions for explicit user confirmation.
 - **Amount-Sensitive Operations**: Any token transfer, payment, or reward distribution MUST be verbally confirmed with the user before execution. Use `Payment` objects for commercial transfers when possible (they offer Guard validation and purpose tracking).

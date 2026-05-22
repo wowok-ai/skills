@@ -42,9 +42,11 @@ Quick reference for WoWok MCP tools — patterns, pitfalls, and troubleshooting.
 
 ### CREATE vs MODIFY Pattern
 
+See [wowok-safety](../wowok-safety/SKILL.md) for complete object reuse principles.
+
 | Format | Meaning | Example |
 |--------|---------|---------|
-| **String** | Reference EXISTING | `"my-service"` or `"0x1234..."` |
+| **String** | Reference EXISTING (reuse) | `"my-service"` or `"0x1234..."` |
 | **Object** | CREATE NEW | `{ name: "my-service", permission: "..." }` |
 
 ---
