@@ -1,6 +1,18 @@
 # WoWok Skills
 
-WoWok AI Skills for Claude Code — Helping AI assistants use WoWok MCP tools correctly.
+WoWok AI Skills for Claude Code, Trae IDE, CodeBuddy, and other AI assistants — Helping AI use WoWok MCP tools correctly.
+
+## Supported AI Clients
+
+| Client | Skills Directory | Format |
+|--------|-----------------|--------|
+| **Claude Code** | `.claude/skills/` | SKILL.md (native) |
+| **Trae IDE** | `.agents/skills/` | SKILL.md (native) |
+| **CodeBuddy** | `.codebuddy/skills/` | SKILL.md (native) |
+| **Cursor IDE** | `.cursor/rules/` | `.mdc` (frontmatter adapted) |
+| **GitHub Copilot** | `.github/prompts/` | `.prompt.md` (plain markdown) |
+
+> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. All other clients use the native SKILL.md format directly.
 
 ## Overview
 
@@ -12,13 +24,18 @@ WoWok Skills provide structured guidance for AI assistants to effectively use Wo
 
 ## How It Works
 
-Each skill is a `SKILL.md` file with YAML frontmatter. Claude Code discovers them from `~/.claude/skills/` at session start:
+Each skill is a `SKILL.md` file with YAML frontmatter. AI clients discover them from their skills directory at session start:
 
 ```
 npm install -g @wowok/skills
        │
-       └── postinstall ──→ Copies 7 SKILL.md to ~/.claude/skills/wowok-*/
+       └── postinstall ──→ Copies SKILL.md to ~/.claude/skills/wowok-*/
                             AI discovers them on next session ✅
+
+# For other clients, set the WOWOK_SKILLS_TARGETS env var:
+WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
+       │
+       └── postinstall ──→ Copies to ~/.claude/skills/ AND ~/.agents/skills/
 ```
 
 **Two loading modes:**
@@ -50,20 +67,35 @@ See [WoWok Agent](https://github.com/wowok-ai/agent) for more details.
 ### 2. Install (Personal)
 
 ```bash
+# Claude Code (default):
 npm install -g @wowok/skills
+
+# Multiple clients (e.g., Claude + Trae):
+WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
+
+# All supported clients:
+WOWOK_SKILLS_TARGETS=claude,agents,codebuddy npm install -g @wowok/skills
 ```
 
-This automatically installs all 8 skills to `~/.claude/skills/`. They will be available in your next Claude Code session.
+This copies skills to the respective `~/.*/skills/` directories. They will be available in your next session.
 
 ### 3. Install (Project — Team Sharing)
 
 ```bash
 npm install -g @wowok/skills
 cd your-project
+
+# Claude Code (default):
 wowok-skills init
+
+# Trae IDE:
+wowok-skills init --target agents
+
+# All clients:
+wowok-skills init --target all
 ```
 
-This copies skills to `.claude/skills/` in your project. Commit to git for team sharing.
+This copies skills to the project's `.*/skills/` directories. Commit to git for team sharing.
 
 ## Managing Skills
 
@@ -107,8 +139,15 @@ wowok-skills uninit
 |---------|-------|-------------|
 | `wowok-skills list` | — | List all available skills |
 | `wowok-skills get <name>` | — | Show skill details |
-| `wowok-skills init` | Project | Install skills to `.claude/skills/` |
-| `wowok-skills uninit` | Project | Remove skills from `.claude/skills/` |
+| `wowok-skills role <role>` | — | List skills by role |
+| `wowok-skills recommend <intent>` | — | Recommend skills by intent |
+| `wowok-skills init` | Project | Install to `.claude/skills/` (default) |
+| `wowok-skills init --target agents` | Project | Install to `.agents/skills/` (Trae) |
+| `wowok-skills init --target cursor` | Project | Install to `.cursor/rules/` (Cursor) |
+| `wowok-skills init --target copilot` | Project | Install to `.github/prompts/` (Copilot) |
+| `wowok-skills init --target all` | Project | Install to all 5 clients |
+| `wowok-skills uninit` | Project | Remove from `.claude/skills/` (default) |
+| `wowok-skills uninit --target all` | Project | Remove from all clients |
 
 > **Note**: `init` / `uninit` require `@wowok/skills` to be globally installed first.
 

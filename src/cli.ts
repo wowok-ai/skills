@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getSkills, getSkillByName, getRoleSkills, recommendSkills, getSkillsByRole } from './skills';
-import { SkillRole } from './types';
+import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT_TARGETS } from './types';
 
 /**
  * Skill directory names (must match folder names in package)
@@ -71,52 +71,154 @@ function removeDir(dir: string): void {
   fs.rmdirSync(dir);
 }
 
-function cmdInit(): void {
-  const cwd = process.cwd();
-  const targetDir = path.join(cwd, '.claude', 'skills');
-  const pkgRoot = getPackageRoot();
-  let count = 0;
-
-  fs.mkdirSync(targetDir, { recursive: true });
-
-  for (const dir of SKILL_DIRS) {
-    const src = path.join(pkgRoot, dir, 'SKILL.md');
-    const destDir = path.join(targetDir, dir);
-    const dest = path.join(destDir, 'SKILL.md');
-
-    if (!fs.existsSync(src)) {
-      console.warn(`[wowok-skills] WARN: SKILL.md not found for ${dir}`);
-      continue;
+function parseFrontmatter(content: string): { frontmatter: Record<string, any>; body: string } | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!match) return null;
+  const frontmatterStr = match[1];
+  const body = match[2];
+  const frontmatter: Record<string, any> = {};
+  let currentKey: string | null = null;
+  let currentValue: string = '';
+  for (const line of frontmatterStr.split('\n')) {
+    const kvMatch = line.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (kvMatch) {
+      if (currentKey) {
+        frontmatter[currentKey] = currentValue.trim();
+      }
+      currentKey = kvMatch[1];
+      currentValue = kvMatch[2];
+    } else if (currentKey) {
+      currentValue += '\n' + line;
     }
-
-    fs.mkdirSync(destDir, { recursive: true });
-    fs.copyFileSync(src, dest);
-    count++;
-    console.log(`[wowok-skills]   installed: ${destDir}`);
   }
-
-  console.log(`[wowok-skills] Done — ${count} skills installed to ${targetDir}`);
-  console.log('[wowok-skills] Skills will be available in your next Claude Code session.');
+  if (currentKey) {
+    frontmatter[currentKey] = currentValue.trim();
+  }
+  return { frontmatter, body };
 }
 
-function cmdUninit(): void {
-  const cwd = process.cwd();
-  const targetDir = path.join(cwd, '.claude', 'skills');
-  let count = 0;
+function convertToCursor(content: string, skillDir: string): string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
 
-  for (const dir of SKILL_DIRS) {
-    const dirPath = path.join(targetDir, dir);
-    if (fs.existsSync(dirPath)) {
-      removeDir(dirPath);
+  const { frontmatter, body } = parsed;
+  let description = frontmatter.description || frontmatter.name || skillDir;
+  if (typeof description === 'string') {
+    description = description.replace(/\n/g, ' ');
+  }
+  const isAlways = frontmatter.loading === 'always' || frontmatter.always === true || frontmatter.always === 'true';
+  const alwaysApply = isAlways ? 'true' : 'false';
+
+  const newFrontmatter = [
+    '---',
+    `description: "${description}"`,
+    `alwaysApply: ${alwaysApply}`,
+    '---',
+  ].join('\n');
+
+  return newFrontmatter + '\n' + body;
+}
+
+function convertToCopilot(content: string): string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  return parsed.body;
+}
+
+function convertSkillContent(content: string, target: string, skillDir: string): string {
+  if (target === 'cursor') return convertToCursor(content, skillDir);
+  if (target === 'copilot') return convertToCopilot(content);
+  return content;
+}
+
+function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>[] {
+  if (!targetArg || targetArg === 'claude') {
+    return ['claude'];
+  }
+  if (targetArg === 'all') {
+    return [...ALL_CLIENT_TARGETS];
+  }
+  if (ALL_CLIENT_TARGETS.includes(targetArg as any)) {
+    return [targetArg as Exclude<ClientTarget, 'all'>];
+  }
+  console.error(`Invalid target: ${targetArg}`);
+  console.error(`Valid targets: claude, agents, codebuddy, all`);
+  process.exit(1);
+}
+
+function cmdInit(targetArg?: string): void {
+  const cwd = process.cwd();
+  const pkgRoot = getPackageRoot();
+  const targets = getTargets(targetArg);
+  let totalCount = 0;
+
+  for (const target of targets) {
+    const skillsDir = CLIENT_SKILL_DIRS[target];
+    const targetDir = path.join(cwd, skillsDir);
+    const ext = CLIENT_FILE_EXT[target];
+    let count = 0;
+
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    for (const dir of SKILL_DIRS) {
+      const src = path.join(pkgRoot, dir, 'SKILL.md');
+      if (!fs.existsSync(src)) {
+        console.warn(`[wowok-skills] WARN: SKILL.md not found for ${dir}`);
+        continue;
+      }
+
+      const content = fs.readFileSync(src, 'utf-8');
+      const converted = convertSkillContent(content, target, dir);
+      const basename = target === 'cursor' || target === 'copilot'
+        ? `wowok-${dir.replace('wowok-', '')}${ext}`
+        : 'SKILL.md';
+      const destDir = path.join(targetDir, dir);
+      const dest = path.join(destDir, basename);
+
+      fs.mkdirSync(destDir, { recursive: true });
+      fs.writeFileSync(dest, converted, 'utf-8');
       count++;
-      console.log(`[wowok-skills]   removed: ${dirPath}`);
+      console.log(`[wowok-skills]   installed: ${dest}`);
+    }
+
+    totalCount += count;
+    console.log(`[wowok-skills] Done — ${count} skills installed to ${targetDir}`);
+  }
+
+  if (targets.length > 1) {
+    console.log(`[wowok-skills] Total: ${totalCount} skills across ${targets.length} clients.`);
+  }
+}
+
+function cmdUninit(targetArg?: string): void {
+  const cwd = process.cwd();
+  const targets = getTargets(targetArg);
+  let totalCount = 0;
+
+  for (const target of targets) {
+    const skillsDir = CLIENT_SKILL_DIRS[target];
+    const targetDir = path.join(cwd, skillsDir);
+    let count = 0;
+
+    for (const dir of SKILL_DIRS) {
+      const dirPath = path.join(targetDir, dir);
+      if (fs.existsSync(dirPath)) {
+        removeDir(dirPath);
+        count++;
+        console.log(`[wowok-skills]   removed: ${dirPath}`);
+      }
+    }
+
+    totalCount += count;
+    if (count === 0) {
+      console.log(`[wowok-skills] No skills found in ${targetDir}. Nothing to remove.`);
+    } else {
+      console.log(`[wowok-skills] Done — ${count} skills removed from ${targetDir}`);
     }
   }
 
-  if (count === 0) {
-    console.log('[wowok-skills] No skills found in project. Nothing to remove.');
-  } else {
-    console.log(`[wowok-skills] Done — ${count} skills removed from ${targetDir}`);
+  if (targets.length > 1 && totalCount > 0) {
+    console.log(`[wowok-skills] Total: ${totalCount} skills across ${targets.length} clients.`);
   }
 }
 
@@ -198,14 +300,25 @@ function printUsage(): void {
   console.log('  get <name>              Show skill details');
   console.log('  role <role>             List skills for a role (customer|provider|arbitrator|shared)');
   console.log('  recommend <intent>      Recommend skills based on user intent');
-  console.log('  init                    Install skills to current project (.claude/skills/)');
-  console.log('  uninit                  Remove skills from current project');
+  console.log('  init [--target <t>]     Install skills to project (default: .claude/skills/)');
+  console.log('  uninit [--target <t>]   Remove skills from project');
+  console.log('');
+  console.log('Targets:');
+  console.log('  claude       .claude/skills/       (Claude Code, default)');
+  console.log('  agents       .agents/skills/       (Trae IDE)');
+  console.log('  codebuddy    .codebuddy/skills/    (CodeBuddy)');
+  console.log('  cursor       .cursor/rules/        (Cursor IDE)');
+  console.log('  copilot      .github/prompts/      (GitHub Copilot)');
+  console.log('  all          All of the above');
   console.log('');
   console.log('Examples:');
   console.log('  wowok-skills list');
   console.log('  wowok-skills get wowok-provider');
   console.log('  wowok-skills role provider');
   console.log('  wowok-skills recommend "create a service"');
+  console.log('  wowok-skills init');
+  console.log('  wowok-skills init --target agents');
+  console.log('  wowok-skills init --target all');
 }
 
 function main() {
@@ -248,11 +361,11 @@ function main() {
       break;
 
     case 'init':
-      cmdInit();
+      cmdInit(parseTargetArg(args.slice(1)));
       break;
 
     case 'uninit':
-      cmdUninit();
+      cmdUninit(parseTargetArg(args.slice(1)));
       break;
 
     default:
@@ -260,6 +373,14 @@ function main() {
       printUsage();
       process.exit(1);
   }
+}
+
+function parseTargetArg(rest: string[]): string | undefined {
+  const idx = rest.indexOf('--target');
+  if (idx !== -1 && idx + 1 < rest.length) {
+    return rest[idx + 1];
+  }
+  return undefined;
 }
 
 main();

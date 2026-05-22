@@ -136,20 +136,6 @@ Controls name collision behavior:
 - Default to `false` in production to prevent accidental name hijacking
 - Prefer versioned names (`_v1`, `_v2`) over `replaceExistName` for production
 
-### 4.2 Address Display Rules
-
-When displaying an address (0x prefix + 64 hex characters) to the user:
-
-1. **Query local mark first**:
-
-**Tool**: `query_toolkit` with `query_type: "local_mark_list"` and filter by address.
-
-2. **Display format**:
-   - If local mark exists: `{name} ({short_address})`
-   - If no local mark: `{first8}...{last3}` (e.g., `0x3a2f8e1...8c1`)
-
-3. **Short address format**: Include `0x` prefix, take first 8 chars + `...` + last 3 chars
-
 ---
 
 ## 5. Network & Token Defaults
@@ -185,47 +171,7 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 ---
 
-## 7. Name Resolution & Display
-
-### 7.1 Name Resolution Priority
-
-| Priority | Source | Display Format | Example |
-|----------|--------|----------------|---------|
-| 1 (Highest) | `local_mark_operation` | `{local_mark_name} (localmark)` | `my_service (localmark)` |
-| 2 | `account_operation` (account name) | `{account_name}` | `alice_wallet` |
-| 3 (Fallback) | None / Unnamed | `{first6}...{last3}` | `0x3a2f...8c1` |
-
-### 7.2 Address Resolution & Display Format
-
-**Resolve addresses to names** via `query_toolkit`:
-
-**Tool**: `query_toolkit` with `query_type: "local_names"` and `addresses` array parameter.
-
-- Each address must be a valid WOW ID: `0x` prefix + **64 hex characters**.
-- Returns resolved account name and/or local mark name for each address.
-- Name priority follows [7.1](#71-name-resolution-priority): `local_mark` > `account`.
-
-**Address truncation** (for display):
-
-```
-{first_6_chars}...{last_3_chars}
-```
-
-- Include the `0x` prefix in the character count.
-- Use exactly **three dots** (`...`) as the separator.
-- Example: `0x3a2f...8c1`
-
-**Combined display**: human-readable name + truncated address in parentheses.
-
-| Name Source | Display Format | Example |
-|-------------|----------------|---------|
-| local_mark | `{local_mark} ({first6}...{last3})` | `my_service (0x3a2f...8c1)` |
-| account | `{account_name} ({first6}...{last3})` | `alice_wallet (0x3a2f...8c1)` |
-| none (fallback) | `{first6}...{last3}` | `0x3a2f...8c1` |
-
----
-
-## 8. Error Patterns
+## 7. Error Patterns
 
 | Error | Likely Cause |
 |-------|-------------|
@@ -236,7 +182,7 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 ---
 
-## 9. Testing & Validation Workflow
+## 8. Testing & Validation Workflow
 
 1. **Design Phase**: Use `wowok_buildin_info` to discover available permissions, Guard instructions, and value types
 
@@ -267,7 +213,7 @@ WoWok's value type system is the foundation for type-safe data declarations used
 
 ---
 
-## 10. Incremental Object Building
+## 9. Incremental Object Building
 
 For complex objects with many fields (Service, Machine), use **incremental building** instead of creating everything in one call:
 
