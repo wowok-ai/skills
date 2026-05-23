@@ -89,6 +89,14 @@ export const wowokSkills: SkillConfig = {
       related: ['wowok-tools']
     },
     {
+      name: 'wowok-output',
+      description: 'Output processing — post-processes all WoWok tool responses for human-readable presentation. Handles address resolution, name mapping, amount formatting, and data visualization. ALWAYS loaded for all roles.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'always',
+      related: ['wowok-tools']
+    },
+    {
       name: 'wowok-guard',
       description: 'Guard design mastery — programmable trust rules, multi-signature authorization, guard2file export/import. Used by providers and arbitrators for complex validation logic.',
       version: '1.0.0',

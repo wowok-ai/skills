@@ -22,13 +22,8 @@ when_to_use:
 # WoWok Guard Design Reference
 
 > **Role**: Service Provider, Arbitrator, or any builder needing programmable on-chain validation
-> **Prerequisites**: Understand CREATE vs MODIFY pattern — Guards are CREATE-only; once deployed on-chain their logic is frozen forever
-> **Machine Integration**: See [wowok-machine](../wowok-machine/SKILL.md) for how Guards attach to workflow node forwards
-> **Service Provider**: See [wowok-provider](../wowok-provider/SKILL.md) for buy_guard, allocator guards, and reward guard configuration
-> **Customer Order Operations**: See [wowok-order](../wowok-order/SKILL.md) for Guard submissions during Progress advancement and the arbitration dispute process from the customer's perspective
-> **Arbitrator Operations**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for voting_guard and usage_guard configuration, vote organization, and the full Arb case lifecycle from the arbitrator's perspective
-> **Messenger**: See [wowok-messenger](../wowok-messenger/SKILL.md) for encrypted evidence exchange
-> **Tools**: See [wowok-tools](../wowok-tools/SKILL.md)
+> **Prerequisites**: Guards are CREATE-only; frozen on-chain once deployed  
+> **Related Skills**: [wowok-machine](../wowok-machine/SKILL.md) (forward guards), [wowok-provider](../wowok-provider/SKILL.md) (buy_guard, allocator guards), [wowok-order](../wowok-order/SKILL.md) (guard submissions), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (voting_guard, usage_guard), [wowok-messenger](../wowok-messenger/SKILL.md) (encrypted evidence), [wowok-safety](../wowok-safety/SKILL.md) (naming, confirmation), [wowok-tools](../wowok-tools/SKILL.md) (tool reference)
 
 ---
 
@@ -58,9 +53,9 @@ Every Guard is built from three layers, each with a distinct role:
 
 **The root is the question**: It must return Bool. Intermediate nodes return numbers, strings, addresses, or vectors. Guard is **strongly typed** — the type system is strictly enforced at creation time. Type mismatches (e.g., passing a string to a numeric comparison node) will cause validation errors and prevent Guard creation.
 
-**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass. When true, any dependency passing is sufficient. This lets you build complex validation from simple, tested components. A Guard can only depend on Guards that are themselves standalone (`immutable: true` and `rep: true`) — no circular or transitive dependency chains.
+**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass (AND). When true, any passing is sufficient (OR). A Guard can only depend on Guards with `rep: true` — `rep` is the Guard's internal flag indicating it has no external Repository dependency and can serve as a dependency. Guards with `rep: false` cannot appear in `rely` lists. Violations are caught by the contract layer at creation time.
 
-### 4. Where Guards Attach in the Ecosystem
+### Where Guards Attach in the Ecosystem
 
 Guards are not standalone — they plug into other WoWok objects as validation rules. Understanding these integration points is essential because the **context** of the Guard determines what data is available to it and what happens when it fails.
 
@@ -108,9 +103,22 @@ Every Guard answers these questions:
 | "Vote weight equals reputation score" | Dynamic weight | GuardIdentifier extracts numeric value from Passport | Table needs numeric submission entry at referenced index. Guard validates eligibility AND weight range |
 | "Only premium members can file disputes" | Membership verification | Entity registration or tier check | `query` on ENTITY_REGISTRAR_ADDRESS or Repository. Combine entity existence check with tier comparison via `logic_and` |
 
+### Quick Decision: What Guard Pattern Fits?
+
+```
+Identity check?      → context(Signer) + logic_equal (single address) / vec_contains_address (allowlist)
+Time constraint?     → context(Clock) + calc_number_* comparisons
+External data?       → query + table entry declaring target object address
+Progress state?      → query_progress_history_find + convert_witness
+One-time claim?      → query_reward_record_count + logic_equal(0)
+Dynamic weight?      → GuardIdentifier + numeric table entry (b_submission: true)
+External Repository? → query + table entry declaring Repository address
+Entity reputation?   → query + table entry declaring ENTITY_REGISTRAR_ADDRESS(0xaab) / ENTITY_LINKER_ADDRESS(0xaaa)
+```
+
 ### Design Before Building
 
-The Guard design process is entirely upfront. There is no "draft" or "edit" phase after creation. Design thoroughly before calling the create operation:
+**Design thoroughly before calling the create operation** — there is no edit phase after creation (see The Immutability Contract above).
 
 1. **Query available query instructions first**: Before designing any Guard that queries on-chain data, use `wowok_buildin_info` with query `"guard queries"` to retrieve the complete list of available query instructions. Each query has a specific ID, name, parameters, and return type — you MUST verify these details before constructing your Guard. Never guess query instruction names or parameter types.
 2. List every data dependency — what must the caller provide? What constants are baked in?
@@ -141,7 +149,9 @@ The Guard table is the **complete declaration of information** the Guard consume
 - **Non-submission entries must have a value.** These are baked into the Guard immutably.
 - **Submission entries use placeholder values.** The actual value is provided by the caller at runtime.
 - **Query target objects must be of type Address in the table.** Their `object_type` field should match the expected query target type (Progress, Order, Machine, Reward, etc.).
+- **Querying EntityRegistrar or EntityLinker requires system address table entries.** Add entries for `ENTITY_REGISTRAR_ADDRESS` (`0xaab`) or `ENTITY_LINKER_ADDRESS` (`0xaaa`) to the table as Address-type constants when your query instruction targets these global registries. Without them, creation fails.
 - **Maximum 256 table entries** (identifiers 0–255). The total serialized table size must not exceed 40000 bytes.
+- **Submission entries must have descriptive `name` values.** For `b_submission: true` entries, `name` is the contract between Guard and caller — it tells callers what data they must provide. Use natural language that explains the purpose and necessity: "The order ID that identifies the target Order for verification" not `"order_id"`, "The signer's account address that will be compared against the authorized list" not `"addr"`. This is critical because callers see only this name when submitting data.
 
 ### The convert_witness Mechanism
 
@@ -150,26 +160,14 @@ The Guard table is the **complete declaration of information** the Guard consume
 **Core principle**: Caller submits what they have (e.g., Order ID); Guard queries what it needs (e.g., Progress state) via witness conversion.
 
 **Rules**:
-- Witness type encodes source→target transformation (e.g., `100` = Order→Progress)
+- Witness type encodes source→target transformation
 - Table entry's `object_type` must match witness source type
 - Query instruction's object type must match witness target type
 - Type mismatches cause Guard creation to fail
 
-**Available Witness Types**:
+**Available witness types** are defined in the schema — query `wowok_buildin_info` with `"guard instructions"` for the complete list with use cases.
 
-| Witness Type | Value | Source → Target | Use Case |
-|--------------|-------|-----------------|----------|
-| TypeOrderProgress | 100 | Order → Progress | Check if order has reached a specific workflow node (e.g., 'complete') before allowing reward claims |
-| TypeOrderMachine | 101 | Order → Machine | Verify the workflow structure or check node configurations |
-| TypeOrderService | 102 | Order → Service | Validate the service offering details or check service-level configurations |
-| TypeProgressMachine | 103 | Progress → Machine | Access workflow definition from a Progress context |
-| TypeArbOrder | 104 | Arb → Order | In arbitration voting guards, verify order details like payment amount or service ID |
-| TypeArbArbitration | 105 | Arb → Arbitration | Access arbitration configuration or fee settings from within an Arb case |
-| TypeArbProgress | 106 | Arb → Progress | Check order workflow state during arbitration validation |
-| TypeArbMachine | 107 | Arb → Machine | Access workflow definition for dispute context analysis |
-| TypeArbService | 108 | Arb → Service | Verify service terms or compensation fund status during arbitration |
-
-**Example**: To validate that an order has reached the 'complete' node, query the Order with `convert_witness=100` (TypeOrderProgress) and check the Progress's `current_node` field.
+**Notable**: `TypeArbArbitration (105)`: Arb and Arbitration are **different on-chain objects**. The witness queries the Arbitration (parent service) from an Arb (case) address — the binding is set when Arbitration creates the Arb. Schema describes this as "access arbitration configuration or fee settings."
 
 ---
 
@@ -181,7 +179,6 @@ The root tree is a computational expression whose terminal nodes read data and w
 
 - **Type safety is enforced at creation time.** Every node validates that its children return types compatible with its operation. A `logic_equal` node that receives a String child and a U64 child will fail validation.
 - **Evaluation order is stack-based.** Children are evaluated in reverse, so the first child in the array appears at the top of the evaluation stack.
-- **The root must return Bool.** Logic and comparison nodes produce Bool. Arithmetic nodes produce numbers. Conversion nodes produce the target type. Ensure your outermost node is a logic or comparison type.
 - **Every `identifier` node's index must exist in the table.** This is validated at creation time.
 
 ### Discovering Available Node Types
@@ -211,6 +208,10 @@ Guard creation is a **single atomic operation** — it either succeeds (the Guar
 
 Use `onchain_operations` with `operation_type: "guard"`.
 
+**Two creation modes**:
+- `root.type: "node"` — build the computation tree directly in the operation payload.
+- `root.type: "file"` — load the tree from a `guard2file`-exported JSON/Markdown file. Use this to iterate on existing Guards: export → edit file → create new Guard from file.
+
 **Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_guard" })`
 
 ---
@@ -232,11 +233,31 @@ This tool verifies one or more Guards and, on success, generates an immutable Pa
 
 The Passport itself is useful beyond testing — it serves as a reusable on-chain credential for offline verification, transaction condition checking, and multi-guard validation. A single Passport can satisfy multiple Guards in a single transaction.
 
+**Multi-Guard behavior**: When verifying multiple Guards, they are AND-ed — all must pass for the Passport to be generated. Each Guard's submission is passed independently.
+
+**Optional `info` field**: If you omit `info` (submission data), the system attempts to auto-fetch existing submissions from the Guard. Provide `info` explicitly when testing with custom inputs.
+
+**Passport query**: Once generated, query the Passport object via `query_toolkit` → `onchain_objects` to inspect its data, validated Guards, and timestamp.
+
 ### Query On-Chain Guards
 
 **Tool**: `query_toolkit` with `query_type: "onchain_objects"`
 
 Guards are **public consensus**. Once bound to objects (Service, Machine, Arbitration), they become the trusted executor of rights and obligations. All parties can inspect the exact validation rules — this transparency is the foundation of trustless interaction. Query Guards before engaging with any protected operation.
+
+Query results include `_guard_node_comments` — human-readable annotations for each computation node automatically injected by the system. Use these to quickly verify that the Guard's logic matches the intended design without manually decoding the node tree.
+
+### Guard Iteration Workflow
+
+Guards are immutable but iterable. The full cycle:
+
+```
+1. guard2file <existing_guard> → JSON/Markdown file
+2. Edit file (table, root tree, rely)
+3. Review edited JSON with user → confirm
+4. onchain_operations(guard) with root.type="file" → new Guard created
+5. Update all references (Machine forwards, Service buy_guard, Arbitration voting_guard, etc.)
+```
 
 ---
 
@@ -258,11 +279,23 @@ Machine's forward `guard` validates state transitions. If `retained_submission` 
 
 ### Repository: Policy Write Guard with Data Extraction
 
-Repository's `write_guard` validates writes. If `id_from_submission` is set, reads entity ID from that submission index; if `data_from_submission` is set, reads data value from that index. Guard table must include entries for the data being extracted.
+Repository's `write_guard` validates writes. If `id_from_submission` is set, reads entity ID from that submission index — **the index must be Address type**. If `data_from_submission` is set, reads data value from that index — **the value type must match the Repository's declared value_type**. Guard table must include entries for the data being extracted.
 
 ---
 
 **Key Principle**: Design your Guard table based on what data the target object needs to read. Objects don't just validate — they consume Guard submissions as structured data inputs.
+
+### Type Requirements by Object
+
+Each object extracts Guard data with precise type expectations. Mismatches cause creation or runtime failure:
+
+| Object | Extraction Field | Table Index Requirement | Type Constraint |
+|--------|-----------------|------------------------|-----------------|
+| **Arbitration** `voting_guard` | Vote weight via `GuardIdentifier(u8)` | Index must be `b_submission: true` | **Numeric** (U8–U256, cast to u32) |
+| **Demand** `ServiceGuard` | `service_identifier` mapping | Index must be `b_submission: true` | Depends on Service validation |
+| **Machine** Forward | `retained_submission` | Index must be `b_submission: true`; uniquely located by `node→next_node→forward` triple | As declared in table |
+| **Repository** | `id_from_submission` | Index must be `b_submission: true` | **Must be Address** |
+| **Repository** | `data_from_submission` | Index must be `b_submission: true` | **Must match Repository's value_type** |
 
 ---
 
@@ -284,7 +317,7 @@ Repository's `write_guard` validates writes. If `id_from_submission` is set, rea
 
 7. **Root not returning Bool**: The outermost node of the tree must produce Bool. Logic and comparison nodes return Bool; arithmetic, conversion, and string operation nodes do not. Ensure your tree terminates at a logic or comparison node — the creation validation will reject non-Bool roots.
 
-8. **Dependency on non-standalone Guards**: A Guard's `rely` entries must reference Guards that are themselves standalone (`immutable: true` and `rep: true`). Guards with their own dependencies cannot be used as dependencies for others — this is a strict no-transitive-dependency rule.
+8. **Dependency on non-standalone Guards**: A Guard's `rely` entries must reference Guards with `rep: true` — meaning they have no external Repository dependency. Guards that depend on a Repository (`rep: false`) cannot serve as dependencies. The contract layer catches violations at creation time.
 
 9. **Forgetting voting_guard weight type validation**: When using `GuardIdentifier`, the referenced identifier must exist in the guard's table and its value type must be numeric. The system checks this when the VotingGuard is added to the Arbitration — if the identifier does not exist or is non-numeric, the operation reverts with `E_GUARD_IDENTIFIER_NOT_NUMBER`.
 

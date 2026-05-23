@@ -22,7 +22,7 @@ when_to_use:
 # WoWok Service Provider Guide
 
 > **Role**: Service Provider (Merchant/Seller)
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-safety](../wowok-safety/SKILL.md) (safety)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-guard](../wowok-guard/SKILL.md) (validation rules), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-safety](../wowok-safety/SKILL.md) (safety)
 
 ---
 
@@ -105,6 +105,12 @@ STEP 2: Trust Layer
 └── Guards — CREATE new or REUSE existing
       Tool: onchain_operations (guard) | Fields: logic, instructions
       Template: guard2file (export existing for editing)
+      ⚠️ Design your Guard tables based on how the target object reads data:
+         - buy_guard → pass/fail only, no data extraction
+         - Allocator guard → pass/fail only
+         - Machine forward guard → if retained_submission is used, ensure b_submission:true entries match expected types
+         - Reward guard → pass/fail only
+      Full design reference: [wowok-guard](../wowok-guard/SKILL.md)
 
 STEP 3: Business Logic (MODIFY)
 ├── Machine — bind Guards to forwards

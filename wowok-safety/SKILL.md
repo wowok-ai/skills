@@ -47,7 +47,7 @@ always: true
 - **Hot Wallet Usage**: WoWok never exposes private keys. Treat it as a spending account for transfers, receipts, and commerce. Flag large transactions for explicit user confirmation.
 - **Amount-Sensitive Operations**: Any token transfer, payment, or reward distribution MUST be verbally confirmed with the user before execution. Use `Payment` objects for commercial transfers when possible (they offer Guard validation and purpose tracking).
 
-### 1.2 LOCAL vs ON-CHAIN
+### 1.3 LOCAL vs ON-CHAIN
 
 | Type | Tools | Gas | Confirmation |
 |------|-------|-----|--------------|
@@ -56,7 +56,7 @@ always: true
 | **QUERY** | `query_toolkit`, `onchain_table_data`, `onchain_events`, `guard2file`, `machineNode2file` | Read-only | Not needed |
 | **ENCRYPTED** | `messenger_operation` (watch/send messages) | Local encryption | Not needed |
 
-### 1.3 Default Account
+### 1.4 Default Account
 
 Empty string `""` means the default account. Always use `""` when the user does not specify an account.
 
@@ -211,7 +211,7 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 **Tool**: `wowok_buildin_info` with `info: "permissions"`, `info: "guard_instructions"`, or `info: "value types"`.
 
-### 9.1 Value Types — Built-in Type Annotation System
+### 8.1 Value Types — Built-in Type Annotation System
 
 WoWok's value type system is the foundation for type-safe data declarations used across Guards, records, and query instructions. Every data field in a Guard table or Guard submission carries a `value_type` annotation, ensuring the protocol can validate and process data correctly.
 
@@ -262,4 +262,4 @@ For complex objects with many fields (Service, Machine), use **incremental build
 
 **Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
 
-**Related Skills**: [wowok-tools](../wowok-tools/SKILL.md) | [wowok-guard](../wowok-guard/SKILL.md) | [wowok-machine](../wowok-machine/SKILL.md)
+**Related Skills**: [wowok-tools](../wowok-tools/SKILL.md) | [wowok-guard](../wowok-guard/SKILL.md) | [wowok-machine](../wowok-machine/SKILL.md) | [wowok-order](../wowok-order/SKILL.md) | [wowok-provider](../wowok-provider/SKILL.md) | [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | [wowok-messenger](../wowok-messenger/SKILL.md)

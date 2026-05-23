@@ -137,6 +137,10 @@ When user asks about field meanings:
 | Skill | Purpose |
 |-------|---------|
 | [wowok-safety](../wowok-safety/SKILL.md) | Pre-operation safety checks |
+| [wowok-guard](../wowok-guard/SKILL.md) | Guard design & validation |
 | [wowok-tools](../wowok-tools/SKILL.md) | Tool selection patterns |
 | [wowok-order](../wowok-order/SKILL.md) | Order lifecycle (buyer) |
 | [wowok-provider](../wowok-provider/SKILL.md) | Service management (merchant) |
+| [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | Dispute resolution |
+| [wowok-machine](../wowok-machine/SKILL.md) | Workflow design |
+| [wowok-messenger](../wowok-messenger/SKILL.md) | Encrypted communication |

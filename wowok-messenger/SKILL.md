@@ -26,8 +26,7 @@ End-to-end encrypted messaging for secure off-chain business communication with 
 
 > **Role**: Any WoWok participant (customer, service provider, arbitrator)  
 > **Prerequisites**: Understand the tool pattern — use `schema_query({ action: "get", name: "messenger_operation" })`  
-> **Guard Design**: See [wowok-guard](../wowok-guard/SKILL.md) if configuring guard-based spam protection  
-> **Tool Reference**: See [wowok-tools](../wowok-tools/SKILL.md) for MCP tool schemas
+> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (guard-based spam protection), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (WTS evidence in disputes), [wowok-safety](../wowok-safety/SKILL.md) (safety), [wowok-tools](../wowok-tools/SKILL.md) (tool reference)
 
 ---
 

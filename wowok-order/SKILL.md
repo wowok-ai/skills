@@ -1,12 +1,8 @@
 ---
 name: wowok-order
 description: |
-  WoWok Customer Guide — complete order lifecycle for buyers: service evaluation,
-  consensus building, order creation, progress tracking, and dispute resolution.
-  
-  Covers the full buyer journey: pre-purchase due diligence based on on-chain objects, consensus establishment with Messenger as off-chain
-  but self-verifiable evidence supplement, order operations, progress advancement
-  with game theory, and arbitration when needed.
+  WoWok Customer Guide — complete buyer order lifecycle: pre-purchase due diligence
+  (E1-E10), consensus building, order creation, progress advancement, and arbitration.
 when_to_use:
   - User is a customer/buyer placing or managing orders
   - User wants to evaluate services before purchasing
@@ -18,428 +14,306 @@ when_to_use:
 
 # WoWok Customer Guide
 
-Complete guide for buyers on WoWok — from service discovery to order completion.
-
 > **Role**: Customer (Buyer/Order Holder)  
-> **Provider Guide**: See [wowok-provider](../wowok-provider/SKILL.md)  
-> **Arbitration Guide**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md)  
-> **Messenger**: See [wowok-messenger](../wowok-messenger/SKILL.md) for encrypted communication  
-> **Tools**: See [wowok-tools](../wowok-tools/SKILL.md)
+> **Provider Guide**: [wowok-provider](../wowok-provider/SKILL.md) | **Arbitration Guide**: [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | **Guard Design**: [wowok-guard](../wowok-guard/SKILL.md) | **Machine**: [wowok-machine](../wowok-machine/SKILL.md) | **Messenger**: [wowok-messenger](../wowok-messenger/SKILL.md) | **Safety**: [wowok-safety](../wowok-safety/SKILL.md) | **Tools**: [wowok-tools](../wowok-tools/SKILL.md)
 
 ---
 
-## Core Concepts
+## Core Concepts (Design Invariants Not in Schema)
 
-### Order Lifecycle Objects
+### Object Relationships
 
-When you purchase from a Service, three runtime objects are created:
+Purchase creates three objects: **Order** (fund escrow, you are `builder`), **Progress** (Machine node tracker), **Allocation** (fund distribution engine). Only `builder` withdraws funds. Agents may operate but never access funds.
 
-| Object | Purpose | Key Points |
-|--------|---------|------------|
-| **Order** | Fund escrow & ownership | You are the `builder` (owner). Agents can help operate but **only you can withdraw funds**. |
-| **Progress** | Workflow state tracking | Tracks which Machine node you're at. Advanced via Order operations. |
-| **Allocation** | Fund distribution engine | Executes the winning allocator strategy when reaching exit nodes. |
+### The No-Bypass Rule
 
-### Allocators vs Allocation
+A forward with `namedOperator === ""` signals "user-operable". **However**: if that forward also binds a Guard, passport verification is mandatory and **cannot be bypassed**. `order.next` fails without validated passport. This is a protocol invariant.
 
-- **Allocators** (Service level): Multiple distribution strategies defined by seller, each with a Guard condition
-- **Allocation** (Order level): Auto-created execution engine that evaluates all allocator Guards and runs the strategy whose Guard returns `true`
+### Weight Accumulation
 
-**When Allocation Executes**:
-- Allocation evaluates **whenever the Progress reaches a node** that triggers fund distribution
-- **Any node** (not just exit nodes) can be configured to trigger Allocation evaluation
-- The winning allocator is the one whose Guard validates `true` for the current state
-- Guards can check: Progress node, time elapsed, signatures, or any on-chain data
+Each forward contributes `weight` toward a node's `threshold`. `weight ≥ threshold` → one operation suffices. Multi-forward nodes may require cumulative multi-party contributions. Parse the `machineNode2file` JSON output; never query node-by-node.
 
-**Consensus Principle**: Allocators and their Guard conditions are immutable and transparent. Both parties see the same rules, but choose different paths based on their interests.
+### Allocation Triggers
+
+Allocation evaluates when Progress reaches **any** configured node (not just exit nodes). The winning Allocator is the first whose Guard returns `true`. Rules are immutable after Service publish — both parties see identical conditions.
 
 ---
 
-## Phase 1: Service Evaluation (Pre-Purchase)
+## Phase 1: Pre-Purchase Due Diligence (MANDATORY GATE)
 
-Thoroughly investigate before committing funds.
-
-### 1.1 Query Service Configuration
-
-**Tool**: Use `query_toolkit` with `onchain_objects` query type to retrieve Service configuration.
-
-**Schema Reference**: `schema_query({ action: "get", name: "query_toolkit" })`
-
-**Key Fields to Analyze**:
-
-| Field | What to Check | Risk Signals |
-|-------|---------------|--------------|
-| `sales` | Pricing, stock, WIP files | No `wip_hash` = unverified product claims |
-| `machine` | Workflow complexity | Overly complex = higher dispute risk |
-| `allocators` | Fund distribution rules | Unfair splits = reconsider purchase |
-| `arbitrations` | Available dispute resolution | None available = higher risk |
-| `compensation_fund` | Arbitration payout capacity | Low balance = limited recourse |
-
-**WIP File Verification**:
-- `wip`: URL to product description/images
-- `wip_hash`: Integrity hash (if empty, auto-verified; if provided, must match)
-- **This is the seller's immutable commitment on-chain** — serves as arbitration evidence
-
-### 1.2 Evaluate Service Reputation
-
-Query the Service's EntityLinker for community endorsement data.
-
-**Tool**: `query_toolkit` with `onchain_table_item_entity_linker` query type.
-
-**Key Metrics to Calculate**:
-
-| Metric | How to Calculate | Good Sign |
-|--------|------------------|-----------|
-| **Completion Rate** | % orders reaching terminal nodes | >90% |
-| **Arbitration Rate** | % orders with non-empty `dispute` | <5% |
-| **Avg Resolution Time** | Time from creation to completion | Short |
-| **Repeat Customer Rate** | % builders appearing multiple times | High |
-| **Community Sentiment** | likes vs dislikes in EntityLinker | Positive |
+> **⛔ Complete E1-E10 in order. User must explicitly confirm every item.**
+> **⚠️ = explain risk, wait for decision. 🔴 = strongly advise against purchase.**
 
 ---
 
-## Phase 2: Consensus Building (CRITICAL)
+### E1 — Service Basic Status
 
-Establish mutual understanding with seller BEFORE purchasing. Consensus is built on **immutable on-chain data** (Guard, Machine, Allocators), with Messenger serving as **off-chain but self-verifiable evidence supplement**.
+Query `query_toolkit` → `onchain_objects` for `<service_name_or_id>`. Fields in schema. Save: `bPublished`, `bPaused`, `sales`, `machine`, `buy_guard`, `customer_required`, `arbitrations`, `compensation_fund`, `compensation_lock_duration`, `order_allocators`, `um`.
 
-### Consensus Layers
+- `bPublished === false` → 🔴 **ABORT**
+- `bPaused === true` → 🔴 **ABORT**
+- OK → E2
 
-| Layer | Source | Immutability | Purpose |
-|-------|--------|--------------|---------|
-| **On-Chain Foundation** | Service.machine, order_allocators, Guards | Immutable after publish | Transparent rules both parties agree to |
-| **Off-Chain Supplement** | Messenger WTS files | Self-verifiable via signatures | Clarification, negotiation, evidence |
+---
 
-> **Core Principle**: On-chain data (Machine workflow, Allocator rules, Guard conditions) forms the **immutable consensus foundation**. Messenger communication provides **clarification and evidence** but cannot override on-chain rules.
+### E2 — Product & WIP Verification
 
-> **Full Messenger Guide**: See [wowok-messenger](../wowok-messenger/SKILL.md) for complete messaging operations, WTS evidence generation, and list management.
+From E1 `sales[]`. Skip `suspension === true` items.
 
-### 2.1 Verify On-Chain Consensus First
+**WIP Verification** (mandatory when `wip_hash` non-empty):
 
-Before contacting seller, thoroughly understand the immutable rules:
+Use `wip_file` → `type: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wip_hash>"`.
 
-**Tool**: `query_toolkit` with `onchain_objects` query type to retrieve Service data.
+- `wip_hash` empty → no on-chain commitment (auto-verified, weaker evidence)
+- Verification fails → 🔴 **WIP tampered after publish**
+- No `wip` URL → ⚠️ No product evidence
+- Verified → E3
 
-**Key On-Chain Consensus Elements**:
-- **Machine**: Workflow nodes and transitions — defines how order progresses
-- **Allocators**: Fund distribution strategies — defines who gets what under which conditions
-- **Guards**: Validation logic — determines which allocator executes
-- **Arbitrations**: Available dispute resolution services
+---
 
-### 2.2 Get Service Contact
+### E3 — Machine Workflow Analysis (CORE)
 
-**Steps**:
-1. Query Service object to extract `um` field (Contact object ID)
-2. Query Contact object to retrieve `ims[]` array (Messenger addresses)
+**Step 1**: `query_toolkit` → `onchain_objects` for `<machine_id>`. Fail if `bPublished === false` or `bPaused === true`.
 
-**Tool**: `query_toolkit` with `onchain_objects` query type.
+**Step 2**: `machineNode2file` → export the complete Machine JSON. Contains all nodes and forwards — parse locally, never node-by-node. Machine structure: see [wowok-machine](../wowok-machine/SKILL.md).
 
-### 2.3 Send Encrypted Messages
+**Step 3: Classify every forward**:
 
-Use Messenger to clarify on-chain rules and negotiate specifics.
+| `namedOperator` | `guard` | User Can Execute? |
+|-----------------|---------|-------------------|
+| `Some("")` | `None` | ✅ Independently via `order.progress` |
+| `Some("")` | `Some({...})` | ⚠️ Need Guard passport — **no bypass** |
+| `None` | Any | ❌ Provider/permission-holder only |
+| `Some("<other>")` | Any | ❌ Named operator required |
 
-**Tool**: `messenger_operation` with `send_message` operation.
+**Step 4: Detect paths**:
+- Terminal nodes (no outgoing forwards) → order ends
+- Refund paths → lead to 100%→Order Allocator (cross-check E5)
+- Arbitration paths → lead to arbitration nodes
+- User-blocked paths → all forwards require `namedOperator ≠ ""`
 
-**Schema Reference**: `schema_query({ action: "get", name: "messenger_operation" })`
+**Risk Rules**:
 
-**Evidence Closure Principle**: Messages only become valid evidence when the recipient **explicitly confirms** (ARK signature). One-sided claims are not evidence.
+| Signal | Level |
+|--------|-------|
+| No user-operable path from critical node | 🔴 Stuck unless provider acts |
+| No refund path | 🔴 No fund recovery |
+| No arbitration path | 🔴 No recourse |
+| All exits favor provider | ⚠️ Provider paid regardless |
+| Forward requires Guard user can't pass | ⚠️ Cooperation needed |
 
-**Why Messenger Matters** (as consensus supplement):
-- ✅ End-to-end encrypted (NOT on-chain) — privacy for negotiations
-- ✅ Creates tamper-proof audit trail (WTS files) — see [wowok-messenger](../wowok-messenger/SKILL.md) for WTS generation
-- ✅ Clarifies on-chain rules without modifying them
-- ✅ Generates arbitration evidence for off-chain commitments
+> **🔴 "No refund" + "No arbitration" → strongly advise against purchase.**
 
-**AI Should Proactively Suggest Clarifying**:
-- Exact deliverables and acceptance criteria
-- Timeline and milestones
-- Edge case handling
-- Refund/cancellation terms
-- Delivery logistics (address, phone)
-- Custom requirements
+---
 
-**Request Explicit Confirmation**: Ensure the seller responds and confirms understanding before proceeding. Unconfirmed messages have limited evidentiary value.
+### E4 — Guards Analysis
+
+Guard structure and instruction reference: [wowok-guard](../wowok-guard/SKILL.md).
+
+**Step 1**: Collect unique Guard IDs from E3 Machine JSON (`forward.guard.guard`), E1 `order_allocators`, E1 `buy_guard`. Deduplicate.
+
+**Step 2**: `guard2file` → export each unique Guard as JSON. Skip duplicates (same address = same Guard).
+
+**Step 3**: `wowok_buildin_info` → `info: "guard instructions"` for instruction reference.
+
+**Step 4**: For each exported Guard file, classify:
+
+| Level | Criteria | Action |
+|-------|----------|--------|
+| 🟢 Simple | Clear purpose, few conditions | Explain |
+| 🟡 Complex | Multi-layer, intent clear | Explain step-by-step |
+| 🔴 Ambiguous | Unclear logic or dependencies | **Warn. Never speculate. User must review file.** |
+
+> **⛔ Never invent Guard logic. Prioritize Guards gating user-operable forwards and refund allocators.**
+
+---
+
+### E5 — Fund Allocation Rules
+
+From E1 `order_allocators.allocators[]`. Fields in schema. For each Allocator: cross-reference Guard (E4) → trigger condition; map to Machine node (E3) → when it fires; present distribution outcome.
+
+**Risk Rules**:
+
+| Check | Risk |
+|-------|------|
+| No 100%→Order Allocator | 🔴 No refund mechanism |
+| Surplus receiver = provider | ⚠️ Remainder to provider |
+| Triggers only on provider-only paths | ⚠️ Unilateral collection |
+| No allocators on user-operable paths | ⚠️ No financial control |
+
+> **Key safeguard**: 100%→Order Allocator on a user-operable forward.
+
+---
+
+### E6 — Arbitration Availability
+
+Batch query E1 `arbitrations[]` via `onchain_objects`. Fields in schema. Arb process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+
+Also: `onchain_events` → `type: "ArbEvent"`, `limit: 20`, filter for these Arb IDs.
+
+- `arbitrations[]` empty → 🔴 no recourse
+- Any Arb `bPaused === true` → 🔴 unavailable
+- High `fee` / closed `voting_guard` / no history → ⚠️
+
+---
+
+### E7 — Compensation Fund
+
+From E1: `compensation_fund`, `compensation_lock_duration`. Balance type in schema.
+
+- Balance < planned order amount → ⚠️ may not cover award
+- Lock near expiry → ⚠️ provider may withdraw
+
+---
+
+### E8 — Contact Channel
+
+Query `onchain_objects` for E1 `um` ID. Contact fields in schema.
+
+- `um === null` → 🔴 **ABORT**
+- `ims[]` empty → 🔴 **No Messenger**
+- Has active `ims[]` → E9
+
+---
+
+### E9 — Chain Reputation
+
+**Sentiment**: `query_toolkit` → `onchain_table_item_entity_linker` for provider address. Compute likes/dislikes ratio from `votes[]` (fields in schema).
+
+**Orders**: Batch query `votes[].address` via `onchain_objects` (50/batch, max 200). Filter Order-type objects where `service` matches. Aggregate dispute rate (`dispute ≠ []` / total) and repeat buyer ratio.
+
+- Dispute rate >10% → ⚠️
+
+---
+
+### E10 — Privacy Information Matching
+
+From E1 `customer_required[]`. Check locally via `query_toolkit` → `local_info_list`. Match against local `name` fields.
+
+> **⛔ Never send private info without explicit user confirmation per item.**
+
+For matched: present value, ask "correct?" and "OK to send?". For missing: ask user to provide. Transmission: **Messenger only** (Phase 2), never on-chain.
+
+---
+
+### Pre-Purchase GATE
+
+```
+┌──────────────────────────────────────────────────────┐
+│              PRE-PURCHASE GATE                        │
+├──────────┬───────────────────────────────────────────┤
+│ E1       │ Service Status          [ ] OK  [ ] ⚠️    │
+│ E2       │ Product & WIP           [ ] OK  [ ] ⚠️    │
+│ E3       │ Machine Workflow        [ ] OK  [ ] ⚠️    │
+│ E4       │ Guards Logic            [ ] OK  [ ] 🔴    │
+│ E5       │ Fund Allocation         [ ] OK  [ ] ⚠️    │
+│ E6       │ Arbitration             [ ] OK  [ ] ⚠️    │
+│ E7       │ Compensation Fund       [ ] OK  [ ] ⚠️    │
+│ E8       │ Contact Channel         [ ] OK  [ ] ⚠️    │
+│ E9       │ Chain Reputation        [ ] OK  [ ] ⚠️    │
+│ E10      │ Privacy Info Match      [ ] OK  [ ] ⚠️    │
+├──────────┴───────────────────────────────────────────┤
+│ ⛔ E1 bPublished=false / E8 um=null → ABORT           │
+│ ⛔ E3 no-refund + E6 no-arb → strongly advise ABORT   │
+│ ⛔ E4 ambiguous Guards → user MUST manually review    │
+│ ⛔ Any ⚠️ → explain risk, wait for user decision      │
+│ ✅ All OK → Phase 2                                   │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## Phase 2: Consensus Building
+
+Consensus foundation: immutable on-chain rules (Phase 1). Messenger: encrypted, self-verifiable supplement — clarifies, cannot override on-chain. Full operations: [wowok-messenger](../wowok-messenger/SKILL.md).
+
+### 2.1 Send Privacy Info
+
+Contact `ims[]` from E8. Send E10 info via `messenger_operation` → `send_message`. **Messenger only — never on-chain.** Get explicit user confirmation per item.
+
+### 2.2 Negotiate
+
+Clarify via Messenger: deliverables (E2 WIP), timeline (E3 nodes), refund/cancellation (E3/E5), privacy info received (E10). Evidence value requires recipient **explicit confirmation** (ARK signature). WTS evidence: [wowok-messenger](../wowok-messenger/SKILL.md).
+
+### 2.3 Consensus GATE
+
+- [ ] E10 info sent and acknowledged
+- [ ] Seller confirmed deliverables and edge cases
+- [ ] WTS evidence generated
 
 ---
 
 ## Phase 3: Order Creation
 
-Once consensus is reached, create the order through Service operation.
+Schema: `schema_query({ action: "get", name: "onchain_operations_service" })`. Safety: [wowok-safety](../wowok-safety/SKILL.md).
 
-### 3.1 Key Parameters
+**Not in schema**:
+- Excess `buy.total_pay` auto-refunded. Agents cannot withdraw.
+- Discounts: query `onchain_received` (type `0x2::service::Discount`), filter by `service`, validate time/benchmark. Rate: `total_pay × (off / 10000)`. Fixed: `min(off, total_pay)`.
 
-**Operation**: `onchain_operations` with `operation_type: "service"`
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_service" })`
-
-**Key Parameters**:
-
-| Parameter | Purpose | Notes |
-|-----------|---------|-------|
-| `buy.items` | Products to purchase | Reference `Service.sales` |
-| `buy.total_pay` | Payment budget | **Excess automatically refunded** |
-| `buy.discount` | Coupon object ID | Optional — see 3.1.1 below |
-| `agents` | Delegated operators | Can operate order but **CANNOT withdraw funds** |
-
-#### 3.1.1 Using Discount Coupons
-
-When creating an order via the `buy` operation, you can apply a discount coupon by including the `discount` field with the coupon name/ID.
-
-**Finding Available Discounts**:
-
-Discount coupons are separate objects that you receive (usually transferred from Service marketing campaigns or other users). To find discounts applicable to the current Service:
-
-**Step 1: Query all Discount objects you own**
-
-Use `query_toolkit` with `onchain_received` query type to get all Discount objects:
-
-```json
-{
-  "query_type": "onchain_received",
-  "name_or_address": "your_account_name",
-  "type": "0x2::service::Discount", // Discount type on-chain
-  "cursor": null,
-  "limit": 50
-}
-```
-
-This returns `ReceivedNormal[]` where each item's `content_raw` contains Discount fields:
-- `name`: Discount name
-- `discount_type`: "rate" (percentage) or "fixed" (absolute amount)
-- `benchmark`: Minimum order amount required
-- `off`: Discount value (e.g., 1000 for 10% if rate, or 100 for 100 units if fixed)
-- `time_start` / `time_end`: Validity period
-- `service`: Parent Service object ID (which Service this discount belongs to)
-- `transferable`: Whether it can be transferred to others
-
-**Step 2: Filter discounts for the current Service**
-
-Each Discount has a `service` field indicating which Service it can be used with. Filter the received Discount objects by comparing each Discount's `service` field with the target Service object ID you're purchasing from. Only Discounts where `service` matches the target Service can be applied to that Service.
-
-**Step 3: Validate discount applicability**
-
-Before using a discount, verify:
-1. **Time validity**: `time_start` ≤ current_time ≤ `time_end`
-2. **Minimum amount**: Order total ≥ `benchmark`
-3. **Service match**: Discount's `service` field matches the Service being purchased
-
-**Step 4: Apply discount in order creation**
-
-Include the selected Discount object ID in the `buy.discount` field:
-
-```json
-{
-  "operation_type": "service",
-  "data": {
-    "buy": {
-      "items": [...],
-      "total_pay": "10000",
-      "discount": "discount_object_id_here"
-    }
-  }
-}
-```
-
-**Discount Calculation**:
-- If `discount_type` is "rate": Discount = `total_pay` × (`off` / 10000)
-- If `discount_type` is "fixed": Discount = min(`off`, `total_pay`)
-- Final payment = `total_pay` - Discount
-
-| `namedNewOrder` | Local name for Order | Recommended for easy reference |
-| `namedNewProgress` | Local name for Progress | Recommended |
-| `namedNewAllocation` | Local name for Allocation | Recommended |
-
-### 3.2 Private Information Handling
-
-After order creation, the AI must check the Service's `customer_required` field to see what information the provider needs (e.g., phone, email, delivery address).
-
-1. **Retrieve from local storage**: Use `query_toolkit` → `local_info_list` to retrieve your saved private information matching the `customer_required` fields. These are sensitive records stored only on your device.
-2. **AI should prompt**: If the required info is not in `local_info`, ask if the user wants to save it there for future use. If it exists, present it for user confirmation before sending.
-3. **Send via Messenger**: Use `messenger_operation` with `send_message` — **NEVER put private information on-chain**.
-4. **Include order ID** in the message for traceability.
-5. **Request explicit confirmation**: Unconfirmed delivery may stall order progress.
-
-### 3.3 Post-Creation Notification
-
-**Mandatory**: Notify Service customer service via Messenger with order ID and submitted info reference.
+Post-creation: notify via Messenger with order ID.
 
 ---
 
 ## Phase 4: Order Operations
 
-All operations use `operation_type: "order"`.
+Schema: `schema_query({ action: "get", name: "onchain_operations_order" })`.
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_order" })`
+### Progress Advancement
 
-### 4.1 Permission Hierarchy
+When user reaches a node, AI MUST cross-reference Phase 1:
 
-| Role | Can Do | Cannot Do |
-|------|--------|-----------|
-| **Builder** (You) | Everything + withdraw funds | — |
-| **Agents** | Operate progress, arbitration, cancel | **Withdraw funds** |
+1. **E3 Machine JSON**: user-operable forwards from current node?
+2. **E4 Guard files**: Guard requirements? Can user satisfy?
+3. **E5 Allocation**: financial outcome of each path?
 
-> **Critical**: You maintain ultimate financial control. Agents assist but cannot access funds.
+Present all three dimensions. Never just the operation name.
 
-### 4.2 Progress Advancement
-
-**Key Rule**: As the order holder (builder), you advance progress **through the Order object**.
-
-The Machine workflow defines who can operate each forward transition:
-- **Order-operable forwards**: `namedOperator === ""` — you can execute via `order.progress`
-- **Permission-operable forwards**: Require specific namespace permission — typically for Service Provider or collaborators
-
-**Steps**:
-1. Query Order object to get `progress` (Progress ID) and `machine` (Machine ID)
-2. Query Progress object to get `current_node`
-3. Query Machine table to find valid transitions from current node
-
-**Tools**: 
-- `query_toolkit` with `onchain_objects` query type
-- `query_toolkit` with `onchain_table` query type
-
-> **Note**: Service Providers or their collaborators may operate other forwards directly via Progress if the Machine design grants them permission. The Machine consensus is immutable — both parties operate within the same transparent rules.
-
-### 4.3 Path Selection & Game Theory
-
-**Core Principle**: Same transparent rules, different optimal paths based on interests.
-
-**Example Scenario**:
-
-```
-Current Node: "delivery_pending"
-├── Path A → "delivery_confirmed"
-│   ├── Guard: buyer signs receipt
-│   └── Allocation: 95% seller, 5% platform
-│
-├── Path B → "dispute_filed"
-│   ├── Guard: arbitration requested
-│   └── Allocation: funds frozen
-│
-└── Path C → "return_initiated"
-    ├── Guard: within return window
-    └── Allocation: 90% refund, 10% fee
-```
-
-**AI Decision Framework**:
-
-1. **Query all valid paths** from current node
-2. **Evaluate Guard conditions** for each path
-3. **Assess Allocation impact** (query `service.order_allocators`)
-4. **Present options** with consequences:
-
-| Path | Guard Required | Financial Outcome | Best For |
-|------|----------------|-------------------|----------|
-| A | Sign receipt | Pay seller 95% | Satisfied customer |
-| B | Request arbitration | Frozen | Disputed order |
-| C | Return in window | 90% refund | Unsatisfied customer |
-
-**AI Guidance**:
-- Always present ALL available paths
-- Explain Guard requirements
-- Map to Allocation consequences
-- Recommend based on user's goals and evidence
+- `namedOperator === ""` + no Guard → `order.progress` directly
+- `namedOperator === ""` + Guard → passport required, no bypass
+- `namedOperator !== ""` → not user-operable
 
 ---
 
-## Phase 5: Arbitration (When Needed)
+## Phase 5: Arbitration
 
-When disputes cannot be resolved directly, use third-party Arbitration.
+Schema: `schema_query({ action: "get", name: "onchain_operations_arbitration" })`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
-### 5.1 Arbitration Process
+Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confirm` → voting → (`order.arb_objection`) → `order.arb_claim_compensation`.
 
-| Step | Operation | Key Points |
-|------|-----------|------------|
-| 1 | `arbitration.dispute` | Create Arb object, **pay fee separately** (NOT from Order) |
-| 2 | Generate WTS | Export Messenger history as tamper-proof evidence |
-| 3 | Send evidence | Via Messenger to Arbitration's contact (encrypted) |
-| 4 | `order.arb_confirm` | Signal "all evidence submitted" |
-| 5 | Wait for voting | Arbitration organizes voters |
-| 6 | `order.arb_objection` | (Optional) Object to unfavorable result |
-| 7 | `order.arb_claim_compensation` | Claim payout from `service.compensation_fund` |
-
-**Schema References**:
-- `schema_query({ action: "get", name: "onchain_operations_arbitration" })`
-- `schema_query({ action: "get", name: "onchain_operations_order" })`
-- `schema_query({ action: "get", name: "messenger_operation" })`
-
-### 5.2 Key Rules
-
-- **Multiple Arb Objects**: Can arbitrate on multiple services simultaneously
-- **One Compensation**: Only ONE claim per Order (choose best result)
-- **Time Sensitivity**: Long arbitration may exceed order deadlines — discuss timelines pre-purchase
-- **Evidence Privacy**: WTS files verify authenticity via `messenger_operation` with `verify_wts` operation
-
-### 5.3 Arb Object Lifecycle
-
-```
-Principal_confirming → Arbitrator_confirming → Voting → Arbitrated → Objectionable → Finished/Withdrawn
-```
+**Not in schema**: fee paid separately, not from Order. One compensation claim per Order. Source: `compensation_fund` (E7).
 
 ---
 
 ## Fund Management
 
-### Receiving Funds (`order.receive`)
-
-Extract funds sent to Order (compensation, penalties, rewards) to your wallet.
-
-**Operation**: `onchain_operations` with `operation_type: "order"` and `receive` field.
-
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_order" })`
-
-**Sources**:
-- Arbitration compensation (from `service.compensation_fund`)
-- Service penalties (late delivery, quality issues)
-- Collaboration payments
-- Direct transfers
-
-**Who Can Execute**: Builder and agents (but only builder receives).
-
-### Ownership Transfer (`order.transfer_to`)
-
-Transfer order ownership to new address. Requires builder permission.
-
-**Operation**: `onchain_operations` with `operation_type: "order"` and `transfer_to` field.
+Schema: `onchain_operations_order`. Builder-only operations: `order.transfer_to` (ownership), `order.receive` (withdraw — agents can execute, only builder receives).
 
 ---
 
 ## Quick Reference
 
-### Essential Schemas
+Schemas: `schema_query({ action: "get", name: "<name>" })` for `onchain_operations_service`, `onchain_operations_order`, `onchain_operations_arbitration`, `messenger_operation`, `query_toolkit`, `onchain_table_data`, `wip_file`.
 
-| Purpose | Schema Name |
-|---------|-------------|
-| Service operations (purchase) | `onchain_operations_service` |
-| Order operations (progress, arbitration, receive) | `onchain_operations_order` |
-| Arbitration operations (dispute) | `onchain_operations_arbitration` |
-| Messenger (encrypted communication) | `messenger_operation` |
-| Query toolkit (object data, tables) | `query_toolkit` |
+### Phase Dependency
 
-**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
+```
+E1 (Service) ──→ E2 (Products/WIP)
+  │    │
+  │    ├──→ E8 (Contact)   ├──→ E7 (Compensation)
+  │    ├──→ E10 (Privacy)  └──→ E6 (Arbitrations)
+  │
+  └──→ E3 (Machine) ──→ E4 (Guards) ──→ E5 (Allocators)
+         │
+         └──→ E9 (Reputation)
+```
 
-### Common Workflows
+> E3→E4→E5 is a strict chain. E6-E10 run in parallel after E1.
 
-**Evaluate → Communicate → Purchase → Track → Complete/Dispute**
+### ⚠️ Critical Attention Items
 
-1. Query Service → Check sales, machine, allocators, arbitrations
-2. Messenger contact → Clarify terms, save WTS
-3. Service operation → Create order with named objects
-4. Order operations → Advance progress, choose paths
-5. Receive funds or arbitration → Extract to wallet
-
----
-
-## Safety Checklist
-
-Before purchasing:
-- [ ] Verified WIP file and product claims
-- [ ] Reviewed allocators (fair distribution?)
-- [ ] Checked available arbitrations
-- [ ] Established Messenger contact with seller
-- [ ] Clarified deliverables, timeline, refund policy
-- [ ] Saved conversation as WTS evidence
-
-Before advancing progress:
-- [ ] Understand ALL available paths
-- [ ] Know Guard requirements for chosen path
-- [ ] Aware of Allocation consequences
-- [ ] Have required evidence/proof ready
+1. **E4 Ambiguous Guards** — blind spot. User must review file directly. AI must not speculate.
+2. **E3 no-refund + E6 no-arb** — no mechanism to recover funds. Single most important decision factor.
+3. **E3 Forward with Guard** — "user-operable" is misleading if Guard blocks you. Verify requirements.
+4. **E2 WIP hash mismatch** — seller altered claims post-publish. Red flag regardless of other factors.
+5. **E9 High dispute rate** — >10% quantitative warning independent of structural analysis.

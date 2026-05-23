@@ -170,6 +170,7 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-messenger` | Encrypted messaging (E2E communication, WTS evidence, conversation management) | All Roles | On-demand |
 | `wowok-guard` | Guard design mastery (programmable trust rules) | All Roles | On-demand |
 | `wowok-machine` | Machine workflow design (state machines, progress tracking) | Service Provider | On-demand |
+| `wowok-output` | Output processing (address resolution, name mapping, amount formatting) | All Roles | Always |
 | `wowok-tools` | MCP tool usage mastery (13 tools, schema references) | All Roles | Always |
 | `wowok-safety` | Safety protocol (dry-run → confirm → execute) | All Roles | Always |
 

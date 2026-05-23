@@ -26,7 +26,7 @@ Design, build, and operate automated workflow templates.
 
 > **Role**: Service Provider or Workflow Designer  
 > **Key Tools**: `onchain_operations` with `operation_type: "machine"`  
-> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (Guards), [wowok-provider](../wowok-provider/SKILL.md) (Service binding), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-tools](../wowok-tools/SKILL.md) (schema reference)
+> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (Guards), [wowok-provider](../wowok-provider/SKILL.md) (Service binding), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-messenger](../wowok-messenger/SKILL.md) (privacy), [wowok-safety](../wowok-safety/SKILL.md) (safety), [wowok-tools](../wowok-tools/SKILL.md) (schema reference)
 
 ---
 
@@ -112,9 +112,9 @@ A Forward can include a **Guard** — an on-chain validation rule that must pass
 
 **Common uses**: Time-locks, external condition checks, sub-order validation, penalty verification.
 
-**Retained submissions**: Guards can preserve submitted values for subsequent nodes via `retained_submission`.
+**Retained submissions**: When a Forward's Guard has `retained_submission` set, the submitted values are stored in Progress history. Each retained value is uniquely located by the triple `(current_node, next_node, forward_name)` — subsequent nodes query these via `query_progress_history_*`. Design Guard tables with this in mind: any `b_submission: true` entry that should carry forward to later nodes must be included in `retained_submission`.
 
-> **Full Reference**: See [wowok-guard](../wowok-guard/SKILL.md) for 70+ Guard node types.
+> **Guard Design Reference**: See [wowok-guard](../wowok-guard/SKILL.md) for full Guard construction — table design, computation trees, data extraction patterns, and the type constraints each object imposes on Guard submissions.
 
 ### Threshold Mechanics
 
