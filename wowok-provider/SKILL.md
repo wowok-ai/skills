@@ -21,93 +21,135 @@ when_to_use:
 
 # WoWok Service Provider Guide
 
-Build and operate commercial services on WoWok as a service provider.
-
-> **Role**: Service Provider (Merchant/Seller)  
-> **Prerequisites**: Understand CREATE vs MODIFY pattern — use `schema_query({ action: "get", name: "onchain_operations" })`  
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication)
+> **Role**: Service Provider (Merchant/Seller)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-safety](../wowok-safety/SKILL.md) (safety)
 
 ---
 
-## AI Decision Framework
+## ⚠️ PRE-FLIGHT: Required Items Checklist
 
-When user wants to create/publish a service, follow this **strict dependency order**:
+**THIS SECTION IS MANDATORY.** Before ANY service creation or publication, the AI MUST collect explicit user confirmation for EVERY required item. **Do NOT skip, do NOT fabricate, do NOT proceed with missing items.**
+
+### The Golden Rule
 
 ```
-STEP 1: Foundation (CREATE or REUSE)
-├── Permission — REUSE existing if available (strongly recommended)
-├── Service (unpublished) — CREATE new
-└── Machine (unpublished) — CREATE new or REUSE template
+NEVER guess what the user sells, how their workflow operates, or how funds are distributed.
+These are BUSINESS decisions that ONLY the user can make.
 
-STEP 2: Trust Layer (CREATE or REUSE)
+User hasn't provided it → ASK.
+User provides incomplete info → ASK for clarification.
+User says "just make something up" → REFUSE and explain why each item matters.
+```
+
+### Required Items
+
+For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"** OR **"Create new: `<details>`"**
+
+| # | Item | User Must Provide | Why Not Fabricate |
+|---|------|-------------------|--------------------|
+| **R1** | **Account** | Account name/address. Default `""` is fine. | Safe default exists |
+| **R2** | **Permission** | Existing Permission to reuse, OR name + type_parameter for new. **Reuse strongly recommended.** | Controls access to ALL your services |
+| **R3** | **Service** | Service name, type_parameter. What kind of service? | Your brand identity on-chain |
+| **R4** | **Machine** | Nodes, state transitions (pairs), forward paths. | IS your business process |
+| **R5** | **Guards** | For each Guard: validation logic, conditions. Reuse or define new. | Enforces your business rules |
+| **R6** | **Guard Bindings** | Which Guard validates which Machine forward? | Wrong binding = unauthorized access |
+| **R7** | **Allocators** | For each outcome: who gets what %/amount? (e.g. "success: 95% me, 5% platform") | IS your revenue model |
+
+**Conditionally Required:**
+
+| # | Item | Trigger | User Must Provide |
+|---|------|---------|-------------------|
+| **C1** | **Contact (um)** | If `customer_required` is set | Contact name/ID |
+| **C2** | **WIP Files** | Physical goods | Product description, images |
+| **C3** | **Sales Products** | Listing products | Name, price, stock, WIP per product |
+
+### Information Collection Protocol
+
+```
+STEP 0: Present checklist R1-R7 to user
+├── Each item: "Reuse or create new? Provide details."
+├── Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]
+├── If user indicates physical goods / customer_required → also confirm C1-C3
+└── ⛔ GATE: ALL R1-R7 must be [confirmed] before any on-chain action
+    └── NOT confirmed → STOP. Ask. Do NOT suggest creating service.
+```
+
+### Anti-Fabrication Rules (HARD Constraints)
+
+| Never... | Because... |
+|----------|------------|
+| Invent product names, prices, descriptions | You don't know what they sell |
+| Design workflow nodes without user input | You don't know their business process |
+| Decide fund splits | You don't know their revenue model |
+| Assume Guard logic | You don't know their security requirements |
+| Skip the checklist | Even if user seems to know what they want |
+
+---
+
+## Service Build Lifecycle
+
+Once R1-R7 confirmed, execute in strict order. All operations use R1 (Account) as `env.account`.
+
+```
+STEP 1: Foundation
+├── Permission — REUSE existing (strongly recommended)
+│     Tool: onchain_operations (permission) | Fields: name, type_parameter
+├── Service (unpublished) — CREATE new
+│     Tool: onchain_operations (service) | Fields: name, type_parameter, permission
+└── Machine (unpublished) — CREATE new or REUSE template
+      Tool: onchain_operations (machine) | Fields: nodes, pairs, forwards
+      Discovery: query_toolkit (account_list, local_mark_list, onchain_objects)
+      Template: machineNode2file (export existing for editing)
+
+STEP 2: Trust Layer
 └── Guards — CREATE new or REUSE existing
+      Tool: onchain_operations (guard) | Fields: logic, instructions
+      Template: guard2file (export existing for editing)
 
 STEP 3: Business Logic (MODIFY)
-├── Machine — bind Guards to nodes
+├── Machine — bind Guards to forwards
+│     Tool: onchain_operations (machine)
 ├── Service — set Allocators
-├── Service — add Arbitrations (optional, REUSE existing Arb services)
-├── Service — add Compensation Fund (optional)
-└── Reward — incentive pools (optional)
+│     Tool: onchain_operations (service) | Fields: order_allocators
+├── Arbitrations (optional) — REUSE existing Arb services
+│     Tool: onchain_operations (service) | Fields: arbitrations.list
+├── Compensation Fund (optional): compensation_fund_add + setting_locked_time_add (min 30d)
+│     Tool: onchain_operations (service)
+└── Reward (optional) — incentive pools
 
 STEP 4: Publication
 ├── Publish Machine → IMMUTABLE
+│     Tool: onchain_operations (machine) | publish: true
 ├── Bind Machine to Service
+│     Tool: onchain_operations (service) | machine: "<machine_id>"
 └── Publish Service → machine/allocators LOCKED
+      Tool: onchain_operations (service) | publish: true
 
-STEP 5: Post-Publish (MODIFY Service)
+      ⚠️ Pre-Publish Verification:
+      1. Re-check PRE-FLIGHT: all R1-R7 still confirmed?
+      2. guard2file export Guards → review
+      3. machineNode2file export Machine → review
+      4. Allocator splits match user's stated model?
+      5. Warn: publish = immutable. Proceed?
+
+STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 ├── description, location
-├── sales (products with WIP)
+├── sales (products with WIP) — ⛔ user MUST provide: name, price, stock, WIP
 ├── customer_required
-└── um (REUSE existing Contact or CREATE new)
+└── um — Contact (REUSE existing or CREATE new)
+      ⚠️ If customer_required is set → um MUST be set
 ```
 
-### Object Reuse (See [wowok-safety](../wowok-safety/SKILL.md))
+### Object Reuse & Immutability
 
-**General Rule**: Reuse existing objects when available. See wowok-safety for detailed reuse principles and CREATE vs MODIFY patterns.
-
-**Provider-Specific Reuse Notes**:
-| Object | Reuse Strategy |
-|--------|----------------|
-| **Permission** | **Strongly recommended** — enables centralized permission control across all your services |
-| Machine | Reuse via `machineNode2file` export/import for similar workflows |
-| Contact (um) | Reuse existing customer service Contact |
-| Arbitration | Always reuse existing Arbitration services (customers choose from your approved list) |
-
-**Immutability Rules**:
-| Object | When Locked | Impact |
-|--------|-------------|--------|
-| Guard | After creation | Cannot modify |
-| Machine | After publish | Nodes frozen |
-| Service | After publish | machine, order_allocators frozen |
-
----
-
-## Service Build Checklist
-
-Use this checklist when guiding users through service creation:
-
-| Phase | Step | Required | Tool/Operation | Key Fields |
-|-------|------|----------|----------------|------------|
-| 1 | Permission | ✅ | `onchain_operations` (permission) | name, type_parameter |
-| 1 | Service (unpublished) | ✅ | `onchain_operations` (service) | object: {name, type_parameter, permission} |
-| 1 | Machine (unpublished) | ✅ | `onchain_operations` (machine) | nodes, pairs, forwards |
-| 2 | Guards | ✅ | `onchain_operations` (guard) | logic, instructions |
-| 3 | Machine + Guards | ✅ | `onchain_operations` (machine) | bind guards to forwards |
-| 3 | Allocators | ✅ | `onchain_operations` (service) | order_allocators |
-| 3 | Arbitrations | ❌ | `onchain_operations` (service) | arbitrations.list |
-| 3 | Compensation Fund | ❌ | `onchain_operations` (service) | compensation_fund_add, setting_locked_time_add |
-| 4 | Publish Machine | ✅ | `onchain_operations` (machine) | publish: true |
-| 4 | Bind Machine | ✅ | `onchain_operations` (service) | machine: "<machine_id>" |
-| 4 | Publish Service | ✅ | `onchain_operations` (service) | publish: true |
-| 5 | Description/Location | ❌ | `onchain_operations` (service) | description, location |
-| 5 | Sales Products | ❌ | `onchain_operations` (service) | sales.sales[] |
-| 5 | Customer Required | ❌ | `onchain_operations` (service) | customer_required[], um |
-
-**Critical Rules**:
-1. **Reuse First**: Always ask if user has existing Permission/Machine/Guard/Contact to reuse
-2. If `customer_required` is set → `um` (Contact) **MUST** be set
-3. Physical goods **MUST** have WIP files
-4. `wip_hash` default `""` (uses embedded hash)
+| Object | Reuse Strategy | When Locked |
+|--------|---------------|-------------|
+| **Permission** | **Strongly recommended** — centralized control | Never |
+| Machine | Reuse via `machineNode2file` template | After publish |
+| Contact (um) | Reuse existing customer service Contact | Never |
+| Arbitration | Always reuse existing Arb services | — |
+| Guard | Reuse if logic matches | After creation |
+| Service | — | After publish: machine, order_allocators frozen |
 
 ---
 
@@ -131,41 +173,17 @@ Order (per purchase)
 └── allocation → Fund distribution engine
 ```
 
-### WIP Files (Witness Immutable Promise)
-
-**Purpose**: Immutable product commitment for arbitration evidence.
-
-**Creating WIP**:
-```
-Tool: wip_file
-type: "generate"
-options.markdown_text: Product description
-options.images: Product visuals
-outputPath: Output file path
-```
-
-**Attaching to Service**:
-```
-Operation: onchain_operations (service)
-sales.op: "add"
-sales.sales: [{
-  name: Product name
-  price: Token amount
-  stock: Quantity
-  wip: URL to WIP file
-  wip_hash: "" (default, uses embedded hash)
-}]
-```
-
 ### Allocators + Machine Integration
 
-Design together for coherent fund flow:
+Design together for coherent fund flow. **Allocation Modes** (execute in order):
+1. **Amount** — Fixed U64 per recipient
+2. **Rate** — Basis points (10000 = 100%)
+3. **Surplus** — Receives remainder (max 1)
 
 ```
 Example: Delivery workflow
 "delivered" → "order_complete" (threshold: 1)
-└── Forward: "customer_signed"
-└── Allocator: 95% merchant, 5% platform
+└── Forward: "customer_signed"    → Allocator: 95% merchant, 5% platform
 
 "delivered" → "package_lost" (threshold: 2)
 ├── Forward: "customer_reports_lost"
@@ -173,100 +191,36 @@ Example: Delivery workflow
 └── Allocator: 100% to order (buyer withdraws)
 ```
 
-**Allocation Modes** (execute in order):
-1. **Amount**: Fixed U64 per recipient
-2. **Rate**: Basis points (10000 = 100%)
-3. **Surplus**: Receives remainder (max 1 per allocator)
+### WIP Files (Witness Immutable Promise)
 
----
+Immutable product commitment for arbitration evidence.
 
-## Phase Details
-
-### Phase 1: Foundation
-
-Create base objects. Service starts unpublished.
-
-**Pre-Build Discovery**:
-- `query_toolkit` (account_list) — list accounts
-- `query_toolkit` (local_mark_list) — list marks
-- `query_toolkit` (onchain_objects) — query existing
-
-**Reuse Templates**:
-- `machineNode2file` — export Machine for editing
-- `guard2file` — export Guard for editing
-
-### Phase 2: Trust Layer
-
-Create all Guards needed for workflow validation.
-
-### Phase 3: Business Logic
-
-**Compensation Fund** (optional but recommended):
-- `compensation_fund_add`: Add funds
-- `setting_locked_time_add`: Lock duration (min 30 days = 2592000000ms)
-
-**Merchant Withdrawal Constraints**:
-1. Pause Service
-2. Wait lock duration
-3. Withdraw via `compensation_fund_receive`
-
-**Arbitration** (optional):
-- Without it: Lower setup, but customers bear full dispute risk
-- With it: Customer trust ↑, dispute resolution available
-
-### Phase 4: Publication
-
-**Order Matters**: Publish Machine → Bind → Publish Service
-
-After publish: machine, order_allocators are **LOCKED**
-
-### Phase 5: Post-Publish Configuration
-
-These can be updated after publication:
-
-| Field | Purpose | Required |
-|-------|---------|----------|
-| description | Service description | ❌ |
-| location | Service area | ❌ |
-| sales | Products with WIP | ❌ (but needed to sell) |
-| customer_required | Required customer info | ❌ |
-| um | Contact for customer service | ❌ (REQUIRED if customer_required set) |
-
-**Customer Required + Contact Rule**:
 ```
-If customer_required: ["phone", "address"]
-Then um: "<contact_id>"  ← MUST be set
+Create:  wip_file → generate → markdown_text + images → outputPath
+Attach: onchain_operations (service) → sales.sales[{
+          name, price, stock, wip: "<URL>", wip_hash: "" (auto)
+        }]
 ```
 
-**Contact Setup**:
-1. Create Contact object
-2. Set `um` to Contact ID
-3. Customers use Messenger to provide info securely
+### Compensation Fund (Optional but Recommended)
+
+- Add: `compensation_fund_add` | Lock: `setting_locked_time_add` (min 30d = 2592000000ms)
+- **Withdraw**: Pause Service → Wait lock duration → `compensation_fund_receive`
 
 ---
 
 ## Order Fulfillment
 
-### Progress Operations
-
-| Object | Purpose | Target |
-|--------|---------|--------|
+| Object | Purpose | Operation |
+|--------|---------|-----------|
 | Order | Fund escrow | Read-only |
-| Progress | Workflow state | **Operate this** |
+| **Progress** | Workflow state | **Operate this** — `hold: true` (lock) → work → `hold: false` (submit) |
 
-**Two-Phase Pattern**:
-1. Lock: `hold: true` (prevents race conditions)
-2. Submit: `hold: false` (after off-chain work)
-
-### Customer Service
-
-**AI Reminder**: When fulfilling orders, check if `customer_required` fields are provided. If missing, prompt provider to request via Messenger.
+**AI Reminder**: When fulfilling, check `customer_required` fields. Missing → prompt via Messenger.
 
 ---
 
 ## Quick Reference
-
-### Essential Schemas
 
 | Purpose | Schema |
 |---------|--------|
@@ -278,10 +232,4 @@ Then um: "<contact_id>"  ← MUST be set
 | Messenger | `messenger_operation` |
 | Query | `query_toolkit` |
 
-### Common Operations
-
-**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
-
-**Export Templates**:
-- `machineNode2file` — Machine → JSON
-- `guard2file` — Guard → JSON
+**Export**: `machineNode2file`, `guard2file` | **Query Schema**: `schema_query({ action: "get", name: "<name>" })`
