@@ -74,7 +74,7 @@ export const wowokSkills: SkillConfig = {
     },
     {
       name: 'wowok-tools',
-      description: 'MCP tool usage mastery — query_toolkit, onchain_operations, messenger_operation, schema_query, and all 13+ tools with correct parameter formats. ALWAYS loaded for all roles.',
+      description: 'MCP tool usage mastery — query_toolkit, onchain_operations, messenger_operation, schema_query, and all 13 tools with correct parameter formats. ALWAYS loaded for all roles.',
       version: '1.0.0',
       role: 'shared',
       loading: 'always',

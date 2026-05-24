@@ -22,7 +22,7 @@ when_to_use:
 # WoWok Service Provider Guide
 
 > **Role**: Service Provider (Merchant/Seller)
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-guard](../wowok-guard/SKILL.md) (validation rules), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-safety](../wowok-safety/SKILL.md) (safety)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-guard](../wowok-guard/SKILL.md) (validation rules), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-safety](../wowok-safety/SKILL.md) (safety), [wowok-tools](../wowok-tools/SKILL.md) (MCP tools)
 
 ---
 
@@ -119,7 +119,7 @@ STEP 3: Business Logic (MODIFY)
 │     Tool: onchain_operations (service) | Fields: order_allocators
 ├── Arbitrations (optional) — REUSE existing Arb services
 │     Tool: onchain_operations (service) | Fields: arbitrations.list
-├── Compensation Fund (optional): compensation_fund_add + setting_locked_time_add (min 30d)
+├── Compensation Fund (optional): compensation_fund_add + setting_locked_time_add (default 30 days, configurable)
 │     Tool: onchain_operations (service)
 └── Reward (optional) — incentive pools
 
@@ -210,7 +210,7 @@ Attach: onchain_operations (service) → sales.sales[{
 
 ### Compensation Fund (Optional but Recommended)
 
-- Add: `compensation_fund_add` | Lock: `setting_locked_time_add` (min 30d = 2592000000ms)
+- Add: `compensation_fund_add` | Lock: `setting_locked_time_add` (default 30 days = 2592000000ms, configurable via `setting_lock_duration_add`)
 - **Withdraw**: Pause Service → Wait lock duration → `compensation_fund_receive`
 
 ---

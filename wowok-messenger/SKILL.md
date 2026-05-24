@@ -5,8 +5,8 @@ description: |
   evidence collection, and dispute resolution.
 
   Core features: send/receive encrypted messages, generate WTS evidence files,
-  verify message authenticity, manage conversation lists, and integrate with
-  arbitration workflows.
+  verify message authenticity, manage conversations with anti-spam controls, and
+  integrate with arbitration workflows.
 
   Used by customers, service providers, and arbitrators for secure off-chain
   communication that creates tamper-proof audit trails.
@@ -22,11 +22,11 @@ always: false
 
 # WoWok Messenger Guide
 
-End-to-end encrypted messaging for secure off-chain business communication with tamper-proof audit trails.
+End-to-end encrypted messaging with tamper-proof audit trails.
 
-> **Role**: Any WoWok participant (customer, service provider, arbitrator)  
-> **Prerequisites**: Understand the tool pattern — use `schema_query({ action: "get", name: "messenger_operation" })`  
-> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (guard-based spam protection), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (WTS evidence in disputes), [wowok-safety](../wowok-safety/SKILL.md) (safety), [wowok-tools](../wowok-tools/SKILL.md) (tool reference)
+> **Role**: Any WoWok participant
+> **Schema**: `schema_query({ action: "get", name: "messenger_operation" })` — all 16 operations with full parameter types and constraints. This document focuses on **design decisions and strategy** not captured by the schema.
+> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (guard design), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (WTS evidence in disputes), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-provider](../wowok-provider/SKILL.md) (service provider perspective), [wowok-safety](../wowok-safety/SKILL.md) (safety)
 
 ---
 
@@ -34,259 +34,230 @@ End-to-end encrypted messaging for secure off-chain business communication with 
 
 ### Trust Model
 
-The messenger operates on a **triple-trust model**. For detailed architecture and communication mechanisms, see the [Messenger Deep Dive Documentation](https://github.com/wowok-ai/docs/blob/main/docs/stage-03b-messenger.md).
-
-**Key Design Decisions**:
-- Messages are **NOT on-chain**. Communication is off-chain for privacy and cost efficiency.
-- The server **cannot read** messages. Ciphertext is opaque; only endpoints hold decryption keys.
-- The server **proves message order**. Its Falcon512 signature on the Merkle tree is verifiable by anyone.
-- On-chain proof is **optional**. A message's Merkle root can be anchored to the blockchain via `proof_message`.
+Messages are **off-chain**, end-to-end encrypted. The server cannot read content — ciphertext is opaque. The server provides **verifiable message ordering** via Falcon512 signatures on a Merkle tree. On-chain anchoring (`proof_message`) is optional.
 
 ### Evidence Closure Principle
 
 > **A message becomes valid evidence ONLY when the recipient explicitly responds to or decrypts it.**
 
-One-sided claims are not evidence. The system enforces this through cryptographic and behavioral rules:
 - A message alone proves nothing about the recipient's awareness.
-- ARK confirmation (recipient-signed receipt) creates cryptographic proof both parties acknowledge the message.
+- ARK confirmation (recipient-signed receipt) creates cryptographic proof of acknowledgment.
 - A reply is the strongest form of acknowledgment — it proves the recipient held the session key and acted on the message.
-- WTS files include both sides of the conversation for complete context.
-- Arbitration requires **confirmed**, reciprocated evidence — never unilateral claims.
+- Arbitration requires **confirmed, reciprocated evidence** — never unilateral claims.
+
+### Sessions
+
+Every conversation between two addresses has a deterministic session. Messages are ordered by a monotonically increasing `leafIndex` starting from zero, establishing their absolute position. Both parties share the same session context.
 
 ---
 
-## 1. Message Delivery Mechanism
+## Setup
 
-### 1.1 Message Delivery & Stranger Rules
-Messages from **strangers** (addresses not in the recipient's friends list) are subject to additional restrictions:
+Before any communication:
 
-- **One-message limit**: A stranger may send exactly one message. Until the recipient replies, any further messages from the same stranger are rejected.
-- **Reply unlocks**: When the recipient replies, the stranger is automatically added to the recipient's friends list, and both parties can message freely thereafter.
-- **Cool-down window**: The one-message restriction persists for a configurable duration. If the recipient does not reply within this window, the stranger may retry one message.
-- **Recipient opt-out**: A recipient can disable stranger messages entirely. When blocked, the sender receives the recipient's guard list as an alternative contact path.
+1. **Account must exist** → `account_operation` (gen)
+2. **Enable messenger** → `account_operation` (messenger), set a messenger name
+3. **Get your address** → `account_operation` (get) — share this address with your counterparties
 
-**Rationale**: This design prevents unsolicited spam while allowing legitimate first contact. The one-message limit forces the stranger to make their opening message count, and auto-friend-on-reply ensures smooth continuation once the recipient engages.
-
-### 1.2 Guard Message Flow (Spam-Bypass Path)
-
-When a sender provides both `guardAddress` and `passportAddress`, the server verifies the guard and passport are valid. On success the message is delivered; on failure the sender is notified.
-
-**When to use**: When the recipient has disabled stranger messages and you are not in their friends list, the rejection response includes the recipient's guard list. Obtain a valid passport from one of those guards and resend with both `guardAddress` and `passportAddress`.
-
-### 1.3 Session and Message Sequence
-
-Every conversation between two addresses has a deterministic session, ensuring both parties share the same session context. Messages are ordered by a monotonically increasing index starting from zero, establishing their absolute position in the conversation.
+> The messenger name is required for message delivery. Without it, your account has no messenger endpoint and cannot receive messages.
 
 ---
 
-## 2. Anti-Spam Mechanism
+## Daily Communication
 
-### 2.1 Protection Model
+The user's daily loop — these are the operations they will return to repeatedly.
 
-Messages are evaluated in four sequential layers: **Blacklist** → **Friends List** → **Guard Verification** → **Stranger Rules**. See the [technical documentation](https://github.com/wowok-ai/docs/blob/main/docs/stage-03b-messenger.md) for implementation details.
+### Check Inbox
 
-### 2.2 List Management
+Two approaches, depending on need:
 
-Three independently managed lists control who can reach you:
+- **Quick glance** — `watch_conversations` with `unreadOnly: true` lists all conversations with unread messages, sorted by activity. Each conversation shows a preview of the last messages.
+- **Deep dive** — `watch_messages` with a specific `peerAddress` to view the full conversation with a particular counterparty. Supports keyword search, time-range filtering, direction filter, and status filter.
 
-| List | Purpose | Operations | Hard Limits |
-|------|---------|------------|-------------|
-| **Blacklist** | Block specific addresses completely | `add`, `remove`, `clear`, `get`, `exist` | Server-configured max (default 1000) |
-| **Friends List** | Allow trusted contacts to bypass all checks | `add`, `remove`, `clear`, `get`, `exist` | Server-configured max (default 1000) |
-| **Guard List** | Specify which guards can verify strangers | `add`, `remove`, `get` | Server-configured max (default 100) |
+**Design note**: By default, retrieving messages auto-marks them as viewed (`viewedAt` timestamp). Set `skipAutoMarkViewed: true` if you want to peek without marking read.
 
-**Tool**: `messenger_operation` with `blacklist`, `friendslist`, or `guardlist` operation.
+### Send Messages
 
-**Guard List Configuration**: Each entry requires:
-- `guard`: The on-chain Guard object ID or name (see [wowok-guard](../wowok-guard/SKILL.md) for Guard design)
-- `passportValiditySeconds`: How long a passport from this guard remains valid for messaging (typically 60s to 7 days)
+Plain text via `send_message`; files (WTS, WIP, ZIP) via `send_file`.
 
-Strangers with a valid passport from any guard in your list can message you. Passports are generated via `onchain_operations` with `gen_passport`.
+**First-time contact with a stranger**: You get exactly one message. Make it count — include who you are, why you're contacting them, and what you need. After the recipient replies, you're auto-added to their friends list and can message freely.
 
-### 2.3 Settings Control
+**Guard-protected recipients**: If the recipient has disabled stranger messages, the rejection response includes their `guard_list`. Obtain a passport from one of those guards (`gen_passport` via `onchain_operations`), then resend with `guardAddress` + `passportAddress`.
 
-Each user can configure two spam-protection parameters:
+**ZIP file attachments**: Use `send_file` for file delivery. Recipients extract via `extract_zip_messages`. The file is encrypted end-to-end; `zipMetadata` tracks download status locally.
 
-**Tool**: `messenger_operation` with `settings` operation (`get` or `set`).
+### Mark as Read
 
-- **`allowStrangerMessages`**: Toggle whether strangers (non-friends, non-guard-verified) can send you messages at all.
-  - `true` (default): Strangers can send one message each (subject to the one-message limit).
-  - `false`: All stranger messages are rejected. The rejection response includes your `guard_list` so the sender can obtain a passport and retry.
-  
-- **`maxInboxSize`**: Maximum messages retained in your inbox (typically 10–1000). Older messages are removed when the limit is reached.
+- `mark_conversation_as_viewed` — mark an entire conversation thread as read
+- `mark_messages_as_viewed` — mark specific messages by ID
 
-**Note**: The server also has global defaults for these settings.
+### Manage Contacts
 
----
+Three independently managed lists. Schema covers all operations — here are the design choices:
 
-## 3. WTS (Witness Timestamped Sequence) Mechanism
-
-### 3.1 What WTS Is
-
-A WTS file is a **tamper-proof, self-verifying export** of a **continuous** conversation message sequence between two parties. Every message in the chain is cryptographically linked to its predecessor; any gap or modification breaks the entire chain, making tampering immediately detectable. Participant signatures can be added for non-repudiation. Anyone can use a WTS file to verify the authenticity, continuity, and integrity of the conversation content.
-
-
-### 3.2 The Reciprocity Principle
-
-> **Only messages that the other party has replied to have evidentiary value.**
-
-A message alone proves nothing about the recipient's awareness. When the **recipient replies**, their reply references the last message they received, creating cryptographic proof of receipt. A WTS file shows the full conversation — which messages were acknowledged and which were not.
-
-**In practice**: When generating WTS for arbitration, include the full conversation so the arbitrator can see who said what, who acknowledged what, and the exact sequence of events.
-
-### 3.3 WTS Workflow
-
-**Step 1 — Generate WTS**:
-
-**Tool**: `messenger_operation` with `generate_wts` operation.
-
-Key decisions:
-- **Range selection**: Choose which messages to include by time range, message ID range, or sequence index (leafIndex) range.
-- **Output**: One or more `.wts` files are written to the specified output directory (files are split if the total exceeds file size limits).
-
-**Step 2 — Sign WTS**:
-
-**Tool**: `messenger_operation` with `sign_wts` operation.
-
-Adds your Falcon512 (post-quantum) signature to the WTS metadata, proving you endorse the conversation record as accurate. Multiple signatures from any party are supported — participants, arbitrators, or other third parties can all sign to attest to the content.
-
-**Step 3 — Verify WTS**:
-
-**Tool**: `messenger_operation` with `verify_wts` operation.
-
-Verification validates each message's authenticity, the sequence's continuity, the payload's integrity, and all signatures added in Step 2. When all pass, the WTS is **proven authentic, complete, and untampered** — admissible as cryptographic evidence.
-
-**Step 4 — Convert to HTML (optional)**:
-
-**Tool**: `messenger_operation` with `wts2html` operation. Produces a human-readable HTML document.
-
-
-**Step 5 — Submit as evidence**:
-
-Use `send_file` to send the signed WTS file to an arbitrator's messenger address. The arbitrator can then independently verify the WTS using their own `verify_wts` call.
-
-### 3.4 On-Chain Proof (Optional)
-
-**Tool**: `messenger_operation` with `proof_message` operation.
-
-Anchors a message to the WoWok blockchain, creating an **immutable on-chain timestamp** that proves the message existed before that point in time. Anyone can verify the message against this on-chain record independently.
+| List | Design Intent |
+|------|---------------|
+| **Friends** | Mutual trust — added automatically when you reply to a stranger, or manually. Friends bypass all spam checks. |
+| **Blacklist** | Permanent block — the address can never message you. |
+| **Guard list** | Verified strangers — addresses holding a valid passport from any listed Guard can message you. Each entry pairs a Guard object ID with a validity duration (`passportValiditySeconds`: 10s to 10 years). |
 
 ---
 
-## 4. Role-Specific Patterns
+## Anti-Spam Strategy
 
-### 4.1 Customer → Service Provider
+The four-layer protection model evaluates every incoming message:
 
-**Order creation and information delivery**:
+```
+Blacklist → Friends List → Guard Verification → Stranger Rules
+   (reject)     (accept)      (accept if passport valid)    (one-message limit)
+```
 
-1. **Discover the service's messenger contact**:
-   - Query the Service object via `query_toolkit` with `query_type: "onchain_objects"` to extract `service.um` (Contact object ID)
-   - Query the Contact object to get `ims[].at` (list of messenger addresses the provider accepts messages at)
+This section covers **how to configure these layers intelligently** for different user profiles — configuration combinations, not just field descriptions.
 
-2. **Send required customer information** (post-order):
-   - After order creation, check the Service's `customer_required` field (phone, email, delivery address, etc.)
-   - **AI should prompt**: Ask if the user wants to save this information to `local_info` for future use, or retrieve existing info from `local_info_list` to avoid re-entry
-   - Retrieve matching private information from local storage using `query_toolkit` → `local_info_list`
-   - Send via `messenger_operation` with `send_message` to the provider's customer service address
-   - **Request explicit confirmation** — unconfirmed delivery may stall order progress
-   - If this is first contact, you have exactly one message — make it count
+### Stranger Rules
 
-3. **WTS is for disputes only**: Generate WTS only when a disagreement escalates and arbitration evidence is required. Normal conversations are already preserved.
+Messages from non-friend, non-guard-verified addresses are subject to a **one-message limit**:
 
-### 4.2 Service Provider → Customer
+- Stranger sends one message. If the recipient replies, the stranger becomes a friend and messaging is unrestricted.
+- If the recipient does not reply within the cool-down window, the stranger may retry with one new message.
+- `allowStrangerMessages: false` disables stranger messages entirely.
 
-**Customer service response**:
+### Strategy: Choosing Your Protection Profile
 
-1. **Check conversations**: Use `watch_conversations` to see pending inquiries.
-2. **Respond promptly**: Use `send_message` to reply. Your reply automatically adds the customer to your friends list if they were a stranger.
-3. **Document agreements**: For any commitments (pricing, timeline changes, custom work), confirm them in messages. These become evidence if disputes arise.
-4. **WTS for disputes**: If a disagreement escalates, the provider may generate and sign WTS to demonstrate good faith and support their position.
+The optimal configuration depends on your role and openness needs:
 
-**Best practices for providers**:
-- Respond promptly to maintain trust
-- Document all agreements and changes in messages
-- Confirm understanding before proceeding with orders
-- Use guard list to allow verified strangers to reach you without opening to all strangers
+| Profile | Settings | Who Should Use |
+|---------|----------|----------------|
+| **Open** | `allowStrangerMessages: true`, no guard list, empty blacklist | Public-facing services, open marketplaces |
+| **Guarded** | `allowStrangerMessages: false`, guard list with 1-3 guards, friends list for known contacts | Service providers who want verified strangers only; customers discoverable by specific criteria |
+| **Closed** | `allowStrangerMessages: false`, no guard list, friends-only | Private negotiations, internal team communication |
+| **Defensive** | `allowStrangerMessages: true`, substantial blacklist | Users receiving harassment from specific addresses; open but monitoring |
+
+**How to help the user choose**: Ask:
+1. "Do you want strangers to be able to contact you at all?" → determines `allowStrangerMessages`
+2. "If yes, should anyone be able to, or only those who meet certain criteria?" → determines Guard list need
+3. "Are there specific addresses you want to block entirely?" → determines Blacklist use
+
+### Strategy: Guard List Design
+
+The Guard list is where anti-spam becomes programmable. A Guard validates that a stranger **meets a verifiable condition** before allowing their message through.
+
+**Common Guard designs for messenger**:
+
+| Guard Type | What It Verifies | Example Use |
+|------------|-----------------|-------------|
+| Token-gated | Sender holds a specific token/NFT | Premium customer community |
+| Reputation | Sender's `personal` profile has ≥N likes | Verified reputation threshold |
+| Order-based | Sender has an active order on your Service | Only current customers can message |
+| Passport-based | Sender holds a valid passport from a trusted issuer | Whitelist of partner organizations |
+| Payment | Sender has made a minimum payment | Paid consultation access |
+
+**`passportValiditySeconds` trade-off**: Short (60s) = higher security, re-verification per message. Long (7 days) = better UX, one passport covers a week. Match to your Guard's use case: payment-based guards can use longer durations; order-status guards should use shorter durations (order state changes).
+
+**Multiple guards**: Different guards can serve different purposes. A provider might use: (1) order-based guard for existing customers, (2) token-gated guard for premium access — both listed, either suffices for message delivery.
+
+### Strategy: Troubleshooting Anti-Spam Issues
+
+| Symptom | Diagnosis | Solution |
+|---------|-----------|----------|
+| "My message was rejected" | Recipient has `allowStrangerMessages: false` and you're not their friend | Check rejection response for `guard_list` → obtain passport → resend with `guardAddress`+`passportAddress` |
+| "I'm getting too much spam" | `allowStrangerMessages: true` with no filtering | Switch to Guarded profile: set `allowStrangerMessages: false`, add at least one Guard to guard list |
+| "A legitimate customer can't reach me" | Guard requirements too strict, or their passport expired | Lower Guard requirements, extend `passportValiditySeconds`, or add them to friends list manually |
+| "Stranger keeps spamming after cool-down" | Working as designed — one retry per cool-down | Add to blacklist |
+| "I disabled strangers but my friend can't message" | They may not actually be in your friends list | Use `friendslist` → `exist` to verify; add manually if needed |
+
+### Strategy: Filtering Messages by Source
+
+`watch_messages` supports `listFilterMode` to segment your inbox by relationship type:
+
+- `friends` — only messages from your friends list
+- `guard` — only messages from guard-verified senders
+- `stranger` — only messages from unknown senders (highest priority for review)
+- `any` — all messages (default)
+
+Combine with `customListFilter` for fine-grained include/exclude logic.
+
+**Practical use**: A service provider checking their inbox can first scan `listFilterMode: "friends"` for known-customer messages (low risk), then `listFilterMode: "stranger"` for new-customer inquiries (need attention).
 
 ---
 
-## 5. Operation Order and Dependencies
+## Evidence (WTS)
 
-### 5.1 Account Setup Prerequisites
+### Concept
 
-Before using the messenger, the account must be properly initialized:
+A WTS file is a **tamper-proof, self-verifying export** of a continuous conversation. Every message is cryptographically chained; any gap or modification breaks the chain. Participant signatures add non-repudiation.
 
-1. **Account must exist**: Created via `account_operation` (LOCAL operation).
-2. **Messenger must be enabled**: Set a messenger name on the account via `account_operation` to enable Messenger functionality; clear it to disable.
+### The Workflow
 
+When a dispute requires evidence:
 
-### 5.2 List and Settings Order
+```
+1. generate_wts  → export messages by time/messageId/seqIndex range
+2. sign_wts      → add your Falcon512 signature (both parties can sign)
+3. verify_wts    → validate hash chain, continuity, and all signatures
+4. wts2html      → (optional) convert to human-readable HTML
+5. send_file     → submit signed WTS to the arbitrator via messenger
+```
 
-When configuring spam protection:
-1. **Get current state**: Use `settings` (`get`) and list operations (`get`) to see the current configuration.
-2. **Add trusted contacts**: Use `friendslist` (`add`) for known counterparties.
-3. **Configure guards**: Use `guardlist` (`add`) if you want to accept verified strangers. The Guard objects must already exist on-chain (see [wowok-guard](../wowok-guard/SKILL.md)).
-4. **Set stranger policy**: Use `settings` (`set`) with `allowStrangerMessages` to toggle stranger access.
-5. **Block unwanted**: Use `blacklist` (`add`) for addresses you never want to hear from.
+> **Key design decision**: Include the **full conversation** when generating WTS for arbitration — not just favorable messages. The arbitrator needs to see who said what, who acknowledged what, and the exact sequence. Selective exports undermine your credibility.
+
+### On-Chain Proof (Optional)
+
+`proof_message` anchors a message to the blockchain, creating an immutable timestamp proving the message existed before that point. Anyone can independently verify against this on-chain record.
+
+### When to Generate WTS
+
+- **Disputes only** — normal conversations are preserved server-side. WTS is evidence preparation, not archiving.
+- **When the other party disputes a fact** — the WTS proves what was actually said and acknowledged.
+- **When arbitration requires evidence submission** — signed WTS is the standard evidence format.
 
 ---
 
-## 6. Schema Reference
+## Messenger Across Roles
 
-All messenger operations and their parameters are defined in a single schema:
+This section shows **how Messenger fits into each participant's workflow** — not detailed SOP (see the role-specific skills for complete workflows), but the Messenger-specific touchpoints.
 
-**Query**: `schema_query({ action: "get", name: "messenger_operation" })`
+### Customer
 
-This returns the complete discriminated union schema covering all 16 sub-operations with their parameter shapes and constraints.
+| Touchpoint | Messenger Operation | When |
+|------------|-------------------|------|
+| Pre-order inquiry | `send_message` to service provider | Before order creation — ask about service details, pricing, custom requirements |
+| Submit required info | `send_message` with delivery address, phone, etc. | After order creation — the Service's `customer_required` fields dictate what to send |
+| Track progress | `watch_messages` with provider | During order fulfillment — receive status updates |
+| Raise dispute | `generate_wts` + `sign_wts` + `send_file` to arbitrator | When resolution fails — submit evidence |
 
-Related schemas for cross-workflow operations:
+> **Full workflow**: See [wowok-order](../wowok-order/SKILL.md) for the complete customer journey.
 
-| Purpose | Schema Name |
-|---------|-------------|
-| All messenger operations | `messenger_operation` |
-| Query on-chain objects (services, guards, contacts) | `query_toolkit` |
-| On-chain operations (gen_passport for guard) | `onchain_operations` |
-| Local account management | `account_operation` |
-| Local address book (marks) | `local_mark_operation` |
-| Local private info storage | `local_info_operation` |
+### Service Provider
+
+| Touchpoint | Messenger Operation | When |
+|------------|-------------------|------|
+| Monitor inquiries | `watch_conversations` with `unreadOnly` or `listFilterMode: "stranger"` | Daily — check for new customer messages |
+| Respond to customers | `send_message` (reply auto-adds to friends) | As needed — timely response builds trust |
+| Request customer info | `send_message` asking for `customer_required` fields | After order creation if not yet provided |
+| Document agreements | `send_message` confirming terms, changes, custom work | Immediately after agreement — creates evidence trail |
+| Dispute defense | `generate_wts` + `sign_wts` + `send_file` | When a customer escalates — prove good-faith communication |
+
+> **Full workflow**: See [wowok-provider](../wowok-provider/SKILL.md) for the complete service provider journey.
+
+### Arbitrator
+
+| Touchpoint | Messenger Operation | When |
+|------------|-------------------|------|
+| Receive evidence | `watch_messages` or `watch_conversations` | When parties submit WTS files |
+| Verify evidence | `verify_wts` on received files | Before reviewing — ensure evidence integrity |
+| Communicate with parties | `send_message` for clarification requests | During dispute review |
+| Sign attestation | `sign_wts` on verified evidence | After verification — arbitrator endorses authenticity |
+
+> **Full workflow**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for the complete arbitration process.
+
 ---
 
-## 7. Quick Reference
+## Common Pitfalls
 
-### Messaging
-
-| Goal | Operation | Key Parameters |
-|------|-----------|----------------|
-| Send text | `send_message` | `from`, `to`, `content`, `options.guardAddress?`, `options.passportAddress?` |
-| Send file | `send_file` | `from`, `to`, `filePath`, `options.contentType?` |
-| View conversations | `watch_conversations` | `filter.unreadOnly?`, `filter.previewMessageCount?`, `filter.sortBy?` |
-| View messages | `watch_messages` | `filter.peerAddress?`, `filter.direction?`, `filter.contentType?`, `filter.keyword?` |
-| Mark as read | `mark_messages_as_viewed` | `messageIds`, `account?` |
-| Mark convo read | `mark_conversation_as_viewed` | `peerAddress`, `account?` |
-
-### Evidence (WTS)
-
-| Goal | Operation | Key Parameters |
-|------|-----------|----------------|
-| Export | `generate_wts` | `params.myAccount`, `params.peerAccount`, `params.range?`, `params.outputDir` |
-| Sign | `sign_wts` | `wtsFilePath`, `account`, `outputPath?` |
-| Verify | `verify_wts` | `wtsFilePath` |
-| View HTML | `wts2html` | `wtsPath`, `options.title?`, `options.theme?` |
-| Prove on-chain | `proof_message` | `account`, `messageId`, `network` |
-| Extract ZIP | `extract_zip_messages` | `account`, `messages`, `outputDir` |
-
-### List Management
-
-| Goal | Operation | Key Parameters |
-|------|-----------|----------------|
-| Add friend | `friendslist` (`add`) | `account`, `users` (addresses/names) |
-| Block user | `blacklist` (`add`) | `account`, `users` (addresses/names) |
-| Add guard | `guardlist` (`add`) | `account`, `guards[].guard`, `guards[].passportValiditySeconds` |
-| Toggle strangers | `settings` (`set`) | `account`, `allowStrangerMessages` |
-
-### Local Storage
-
-| Goal | Tool | Key Parameters |
-|------|------|----------------|
-| Write private info | `local_info_operation` (add) | `data`: array of `{ name, default, contents }` |
-| Read private info | `query_toolkit` → `local_info_list` | `filter.name?` |
+- **One-message limit trap**: Sending a vague first message to a stranger wastes your only chance. Make the first message complete and actionable.
+- **Disabled messenger**: Without a messenger name set, your account has no endpoint — counterparties cannot find or message you.
+- **WTS range too narrow**: Selecting only favorable messages undermines evidence credibility. Include the full conversation.
+- **Guard list without strategy**: Adding a Guard to your list without testing it (`gen_passport`) means you don't know what conditions strangers must meet — you may be blocking legitimate contacts.
+- **`allowStrangerMessages: false` with no guard list and no friends**: Nobody can contact you. Always ensure at least one inbound path exists.
+- **Stale passports**: `passportValiditySeconds` too short causes frequent re-verification failures. Match duration to your Guard's data volatility.

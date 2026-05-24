@@ -6,7 +6,7 @@ description: |
   the trust layer for Services (buy_guard), Arbitration (voting_guard weight,
   usage_guard), Machines (forward validation), Demands (recommendation filtering),
   Rewards (claim eligibility), and Repositories (write validation with data extraction).
-  Guards also enable off-chain use cases: generate a Passport via `gen_passport` to
+  Guards also enable off-chain use cases: generate a Passport via `onchain_operations` (`operation_type: "gen_passport"`) to
   obtain a signed, time-bound credential for off-chain permission verification.
 when_to_use:
   - User wants to create or modify a Guard
@@ -120,7 +120,7 @@ Entity reputation?   → query + table entry declaring ENTITY_REGISTRAR_ADDRESS(
 
 **Design thoroughly before calling the create operation** — there is no edit phase after creation (see The Immutability Contract above).
 
-1. **Query available query instructions first**: Before designing any Guard that queries on-chain data, use `wowok_buildin_info` with query `"guard queries"` to retrieve the complete list of available query instructions. Each query has a specific ID, name, parameters, and return type — you MUST verify these details before constructing your Guard. Never guess query instruction names or parameter types.
+1. **Query available query instructions first**: Before designing any Guard that queries on-chain data, use `wowok_buildin_info` with info `"guard instructions"` to retrieve the complete list of available query instructions. Each query has a specific ID, name, parameters, and return type — you MUST verify these details before constructing your Guard. Never guess query instruction names or parameter types.
 2. List every data dependency — what must the caller provide? What constants are baked in?
 3. Sketch the logic tree — what comparisons, arithmetic, and logical combinations produce the final boolean?
 4. Verify types — does every comparison receive compatible operands? Are all conversions explicit?
@@ -138,7 +138,7 @@ The Guard table is the **complete declaration of information** the Guard consume
 |-------|---------|---------------|
 | `identifier` | Unique index (0–255). The computation tree uses this number to reference the entry. | Always |
 | `b_submission` | Whether the **caller** must provide this value at runtime. `true` = runtime submission; `false` = pre-set constant. | Always |
-| `value_type` | The type of the value: Bool, Address, String, U8–U256, or vector types. Uses numeric type codes (use `wowok_buildin_info` with query `"value types"` for the complete mapping). | Always |
+| `value_type` | The type of the value: Bool, Address, String, U8–U256, or vector types. Uses numeric type codes (use `wowok_buildin_info` with info `"value types"` for the complete mapping). | Always |
 | `value` | The constant value when `b_submission` is false; a placeholder when `b_submission` is true. | When `b_submission` is false |
 | `name` | Human-readable label describing what this entry represents. | Always |
 
@@ -165,7 +165,7 @@ The Guard table is the **complete declaration of information** the Guard consume
 - Query instruction's object type must match witness target type
 - Type mismatches cause Guard creation to fail
 
-**Available witness types** are defined in the schema — query `wowok_buildin_info` with `"guard instructions"` for the complete list with use cases.
+**Available witness types** are defined in the schema — query `wowok_buildin_info` with info `"guard instructions"` for the complete list with use cases.
 
 **Notable**: `TypeArbArbitration (105)`: Arb and Arbitration are **different on-chain objects**. The witness queries the Arbitration (parent service) from an Arb (case) address — the binding is set when Arbitration creates the Arb. Schema describes this as "access arbitration configuration or fee settings."
 
@@ -196,7 +196,7 @@ This returns the complete `GuardNodeSchema` definition — every node type, its 
 
 **Key principle**: Every node declares its return type and the types it expects from children. The schema enforces these constraints at Guard creation time — type mismatches cause creation to fail. All numeric comparisons normalize to U256, enabling cross-type comparisons without explicit conversion.
 
-**Query instructions**: For the `query` node, discover available instructions via `wowok_buildin_info` with query `"guard instructions"`. Use the `filter` parameter to narrow results by name, return type, parameter count, or object type — more effective than browsing raw ID ranges.
+**Query instructions**: For the `query` node, discover available instructions via `wowok_buildin_info` with info `"guard instructions"`. Use the `filter` parameter to narrow results by name, return type, parameter count, or object type — more effective than browsing raw ID ranges.
 
 ---
 
@@ -222,9 +222,9 @@ Use `onchain_operations` with `operation_type: "guard"`.
 
 Before embedding a Guard into a live Machine, Service, or Arbitration, test it in isolation.
 
-**Tool**: `gen_passport`
+**Tool**: `onchain_operations` with `operation_type: "gen_passport"`
 
-**Schema Reference**: `schema_query({ action: "get", name: "gen_passport" })`
+**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_gen_passport" })`
 
 This tool verifies one or more Guards and, on success, generates an immutable Passport — a verified credential stored on-chain. Use it to:
 
@@ -307,7 +307,7 @@ Each object extracts Guard data with precise type expectations. Mismatches cause
 
 2. **Type mismatches in comparison nodes**: A `logic_equal` comparing a String to a U64 fails validation. Use explicit conversion nodes (`convert_string_number`, `convert_number_string`) when types differ. Numeric comparisons use `logic_as_u256_*` variants which auto-widen to U256.
 
-3. **Wrong query instruction IDs or parameter counts**: Query instructions are system-defined. Always discover them through `wowok_buildin_info` with `"guard instructions"`. The parameter count and types in your query node must match the instruction exactly — off-by-one parameter counts are a common failure.
+3. **Wrong query instruction IDs or parameter counts**: Query instructions are system-defined. Always discover them through `wowok_buildin_info` with info `"guard instructions"`. The parameter count and types in your query node must match the instruction exactly — off-by-one parameter counts are a common failure.
 
 4. **Missing convert_witness**: When accessing Progress data from an Order ID in the table, the query node needs `convert_witness` with the appropriate witness type. Without it, the runtime looks for a Progress at the Order's address — which does not exist as a Progress object. The creation-time validation catches this mismatch.
 
@@ -329,10 +329,10 @@ Each object extracts Guard data with precise type expectations. Mismatches cause
 
 | Tool | Purpose |
 |------|---------|
-| `wowok_buildin_info` (`query: "guard instructions"`) | Discover all available query instructions — their IDs, parameter types, return types, and target object types |
-| `wowok_buildin_info` (`query: "value types"`) | Discover the numeric codes for all supported value types used in table entries |
-| `wowok_buildin_info` (`query: "built-in permissions"`) | Discover all built-in permission index codes for use with `permission.entity.perm has` queries |
-| `gen_passport` | Test Guard validation with runtime submissions and generate a verified on-chain credential on success |
+| `wowok_buildin_info` (`info: "guard instructions"`) | Discover all available query instructions — their IDs, parameter types, return types, and target object types |
+| `wowok_buildin_info` (`info: "value types"`) | Discover the numeric codes for all supported value types used in table entries |
+| `wowok_buildin_info` (`info: "built-in permissions"`) | Discover all built-in permission index codes for use with `permission.entity.perm has` queries |
+| `onchain_operations` (`operation_type: "gen_passport"`) | Test Guard validation with runtime submissions and generate a verified on-chain credential on success |
 | `guard2file` | Export an existing Guard's complete definition (description, table, root tree, dependencies) to a local JSON or Markdown file |
 | `query_toolkit` (`query_type: "onchain_objects"`) | Query any Guard object on-chain by name or address to inspect its full definition |
 | `schema_query` (`name: "onchain_operations_guard"`) | Retrieve the complete Guard operation schema with all parameter definitions |

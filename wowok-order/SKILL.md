@@ -62,7 +62,7 @@ From E1 `sales[]`. Skip `suspension === true` items.
 
 **WIP Verification** (mandatory when `wip_hash` non-empty):
 
-Use `wip_file` → `type: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wip_hash>"`.
+Use `wip_file` → `op: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wip_hash>"`.
 
 - `wip_hash` empty → no on-chain commitment (auto-verified, weaker evidence)
 - Verification fails → 🔴 **WIP tampered after publish**

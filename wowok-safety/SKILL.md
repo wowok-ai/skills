@@ -36,11 +36,13 @@ always: true
 - Use string value `"<name_or_id>"` to reference existing objects
 - Use object shape `{ name?, ... }` only when creating new
 
-**CREATE vs MODIFY Pattern**:
+**CREATE vs MODIFY Pattern** (SDK-enforced, not Move-level):
 | Format | Meaning | Use When |
 |--------|---------|----------|
 | String `"<name>"` or `"<0x...>"` | **REUSE** existing | Object already exists |
 | Object `{ name?, ... }` | **CREATE** new | Need new object |
+
+The SDK resolves names to addresses via `GetObjectExisted()` — a string that fails resolution triggers a hard error. An object shape always creates.
 
 ### 1.2 Security & Safety
 
@@ -209,7 +211,7 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 1. **Design Phase**: Use `wowok_buildin_info` to discover available permissions, Guard instructions, and value types
 
-**Tool**: `wowok_buildin_info` with `info: "permissions"`, `info: "guard_instructions"`, or `info: "value types"`.
+**Tool**: `wowok_buildin_info` with `info: "built-in permissions"`, `info: "guard instructions"`, or `info: "value types"`.
 
 ### 8.1 Value Types — Built-in Type Annotation System
 
@@ -256,8 +258,8 @@ For complex objects with many fields (Service, Machine), use **incremental build
 | Guard export | `guard2file` |
 | Machine export | `machineNode2file` |
 | Build-in info | `wowok_buildin_info` |
-| Built-in permissions | `wowok_buildin_info` with `info: "permissions"` |
-| Guard instructions | `wowok_buildin_info` with `info: "guard_instructions"` |
+| Built-in permissions | `wowok_buildin_info` with `info: "built-in permissions"` |
+| Guard instructions | `wowok_buildin_info` with `info: "guard instructions"` |
 | Value types | `wowok_buildin_info` with `info: "value types"` |
 
 **Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
