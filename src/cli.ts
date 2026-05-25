@@ -14,15 +14,13 @@ import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT
  * - Shared: wowok-guard, wowok-tools, wowok-safety
  */
 const SKILL_DIRS = [
-  // Customer
   'wowok-order',
-  // Provider
   'wowok-provider',
   'wowok-machine',
-  // Arbitrator
   'wowok-arbitrator',
-  // Shared
   'wowok-guard',
+  'wowok-messenger',
+  'wowok-output',
   'wowok-tools',
   'wowok-safety',
 ];
@@ -142,7 +140,7 @@ function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>
     return [targetArg as Exclude<ClientTarget, 'all'>];
   }
   console.error(`Invalid target: ${targetArg}`);
-  console.error(`Valid targets: claude, agents, codebuddy, all`);
+  console.error(`Valid targets: claude, codex, agents, codebuddy, all`);
   process.exit(1);
 }
 
@@ -305,6 +303,7 @@ function printUsage(): void {
   console.log('');
   console.log('Targets:');
   console.log('  claude       .claude/skills/       (Claude Code, default)');
+  console.log('  codex        .codex/skills/        (OpenAI Codex)');
   console.log('  agents       .agents/skills/       (Trae IDE)');
   console.log('  codebuddy    .codebuddy/skills/    (CodeBuddy)');
   console.log('  cursor       .cursor/rules/        (Cursor IDE)');

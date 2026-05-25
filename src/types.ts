@@ -10,10 +10,11 @@ export type SkillRole = 'customer' | 'provider' | 'arbitrator' | 'shared';
  */
 export type LoadingMode = 'always' | 'on-demand';
 
-export type ClientTarget = 'claude' | 'agents' | 'codebuddy' | 'cursor' | 'copilot' | 'all';
+export type ClientTarget = 'claude' | 'codex' | 'agents' | 'codebuddy' | 'cursor' | 'copilot' | 'all';
 
 export const CLIENT_SKILL_DIRS: Record<Exclude<ClientTarget, 'all'>, string> = {
   claude: '.claude/skills',
+  codex: '.codex/skills',
   agents: '.agents/skills',
   codebuddy: '.codebuddy/skills',
   cursor: '.cursor/rules',
@@ -22,13 +23,14 @@ export const CLIENT_SKILL_DIRS: Record<Exclude<ClientTarget, 'all'>, string> = {
 
 export const CLIENT_FILE_EXT: Record<Exclude<ClientTarget, 'all'>, string> = {
   claude: '.md',
+  codex: '.md',
   agents: '.md',
   codebuddy: '.md',
   cursor: '.mdc',
   copilot: '.prompt.md',
 };
 
-export const ALL_CLIENT_TARGETS: Exclude<ClientTarget, 'all'>[] = ['claude', 'agents', 'codebuddy', 'cursor', 'copilot'];
+export const ALL_CLIENT_TARGETS: Exclude<ClientTarget, 'all'>[] = ['claude', 'codex', 'agents', 'codebuddy', 'cursor', 'copilot'];
 
 /**
  * Skill definition

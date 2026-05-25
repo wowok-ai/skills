@@ -1,18 +1,19 @@
 # WoWok Skills
 
-WoWok AI Skills for Claude Code, Trae IDE, CodeBuddy, and other AI assistants — Helping AI use WoWok MCP tools correctly.
+WoWok AI Skills for Claude Code, OpenAI Codex, Trae IDE, CodeBuddy, and other AI assistants — Helping AI use WoWok MCP tools correctly.
 
 ## Supported AI Clients
 
 | Client | Skills Directory | Format |
 |--------|-----------------|--------|
 | **Claude Code** | `.claude/skills/` | SKILL.md (native) |
+| **OpenAI Codex** | `.codex/skills/` | SKILL.md (native) |
 | **Trae IDE** | `.agents/skills/` | SKILL.md (native) |
 | **CodeBuddy** | `.codebuddy/skills/` | SKILL.md (native) |
 | **Cursor IDE** | `.cursor/rules/` | `.mdc` (frontmatter adapted) |
 | **GitHub Copilot** | `.github/prompts/` | `.prompt.md` (plain markdown) |
 
-> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. All other clients use the native SKILL.md format directly.
+> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. Codex follows the [Agent Skills](https://agentskills.io) open standard natively. All other clients use the native SKILL.md format directly.
 
 ## Overview
 
@@ -74,7 +75,7 @@ npm install -g @wowok/skills
 WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 
 # All supported clients:
-WOWOK_SKILLS_TARGETS=claude,agents,codebuddy npm install -g @wowok/skills
+WOWOK_SKILLS_TARGETS=claude,codex,agents,codebuddy npm install -g @wowok/skills
 ```
 
 This copies skills to the respective `~/.*/skills/` directories. They will be available in your next session.
@@ -87,6 +88,9 @@ cd your-project
 
 # Claude Code (default):
 wowok-skills init
+
+# OpenAI Codex:
+wowok-skills init --target codex
 
 # Trae IDE:
 wowok-skills init --target agents
@@ -142,10 +146,11 @@ wowok-skills uninit
 | `wowok-skills role <role>` | — | List skills by role |
 | `wowok-skills recommend <intent>` | — | Recommend skills by intent |
 | `wowok-skills init` | Project | Install to `.claude/skills/` (default) |
+| `wowok-skills init --target codex` | Project | Install to `.codex/skills/` (Codex) |
 | `wowok-skills init --target agents` | Project | Install to `.agents/skills/` (Trae) |
 | `wowok-skills init --target cursor` | Project | Install to `.cursor/rules/` (Cursor) |
 | `wowok-skills init --target copilot` | Project | Install to `.github/prompts/` (Copilot) |
-| `wowok-skills init --target all` | Project | Install to all 5 clients |
+| `wowok-skills init --target all` | Project | Install to all 6 clients |
 | `wowok-skills uninit` | Project | Remove from `.claude/skills/` (default) |
 | `wowok-skills uninit --target all` | Project | Remove from all clients |
 

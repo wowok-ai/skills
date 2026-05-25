@@ -21,12 +21,14 @@ const SKILL_DIRS = [
   'wowok-messenger',
   'wowok-guard',
   'wowok-machine',
+  'wowok-output',
   'wowok-tools',
   'wowok-safety',
 ];
 
 const CLIENT_DIRS = {
   claude: path.join(os.homedir(), '.claude', 'skills'),
+  codex: path.join(os.homedir(), '.codex', 'skills'),
   agents: path.join(os.homedir(), '.agents', 'skills'),
   codebuddy: path.join(os.homedir(), '.codebuddy', 'skills'),
   cursor: path.join(os.homedir(), '.cursor', 'rules'),
@@ -68,7 +70,7 @@ function removeDir(dir) {
 }
 
 function getFileExt(target) {
-  const exts = { claude: '.md', agents: '.md', codebuddy: '.md', cursor: '.mdc', copilot: '.prompt.md' };
+  const exts = { claude: '.md', codex: '.md', agents: '.md', codebuddy: '.md', cursor: '.mdc', copilot: '.prompt.md' };
   return exts[target] || '.md';
 }
 
