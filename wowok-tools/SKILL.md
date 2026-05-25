@@ -24,6 +24,28 @@ Canonical reference for all 13 MCP tools. Covers patterns, constraints, and desi
 
 ---
 
+## 🔴 Gas and Faucet
+
+On-chain operations require gas. Transactions will fail if the account has insufficient balance.
+
+### For AI Assistant
+
+When assisting users with WoWok operations:
+
+- After a user creates a new account, proactively call `account_operation` → `faucet` to claim test tokens on their behalf
+- Before starting any on-chain workflow, check balance via `query_toolkit` → `account_balance`
+- If balance is below 1 WOW, automatically request faucet without asking the user
+- If a transaction fails due to gas, retry after claiming more tokens
+
+### Tool Reference
+
+- **Claim tokens**: `account_operation` → `faucet` (not `onchain_operations`)
+- **Check balance**: `query_toolkit` → `account_balance`
+
+Each faucet claim provides approximately 5 WOW, sufficient for dozens of transactions.
+
+---
+
 ## Core Rules
 
 ### Structural Wrapper Rules
@@ -162,10 +184,52 @@ Discover?    → schema_query / wowok_buildin_info / onchain_events
 
 ---
 
+## Examples Reference
+
+The deployment package includes 5 complete examples in the `examples/` directory. These serve as reference implementations to help explain concepts and demonstrate patterns to users.
+
+### Matching User Intent to Examples
+
+When a user describes their needs, reference the appropriate example to illustrate the approach:
+
+| User Intent | Example | Complexity | Key Techniques Demonstrated |
+|-------------|---------|------------|----------------------------|
+| Simple service with time-lock | Insurance | ⭐ Low | Two-node workflow, convert_witness, time-lock Guard |
+| E-commerce store setup | MyShop | ⭐⭐ Medium | Four-node workflow, Permission indexes, Messenger integration, discounts |
+| Complex multi-path order flow | MyShop_Advanced | ⭐⭐⭐ High | 11+ nodes, dual-signature (threshold=2), Merkle Root verification, Reward pool |
+| Weather/data validation service | Travel | ⭐⭐⭐ High | Repository queries, convert_number_address, supply chain sub-orders |
+| Signature/authorization service | ThreeBody_Signature | ⭐ Low | Buy Guard for access control, Machine-Service binding |
+
+### Finding Examples by Technique
+
+When explaining a specific technique to users, reference where it appears:
+
+| Technique | Example | Location |
+|-----------|---------|----------|
+| convert_witness: 100 (Order to Progress) | Insurance, Travel | Insurance Step 2 |
+| Repository data query Guard | Travel | Step 3.1 |
+| Dual-signature (threshold=2) | MyShop_Advanced | Lost/Return nodes |
+| Reward pool with Guard verification | MyShop_Advanced | reward_wonderful_v2 Guards |
+| Buy Guard (restricting purchasers) | ThreeBody_Signature | Step 2 |
+| Discount coupons | MyShop | Step 8 |
+| Arbitration with voting_guard | MyShop_Advanced | Step 9 |
+| Time-lock Guard | Insurance, Travel | Step 2 / Step 3.2 |
+
+### How to Use Examples with Users
+
+1. **Assess complexity** — Match user requirements to the appropriate complexity level
+2. **Reference the example** — Show users the relevant example path and explain which techniques it demonstrates
+3. **Extract patterns** — Use JSON snippets from examples as templates to help users understand the structure
+4. **Reference test results** — Each example includes `*_TestResults.md` with real testnet execution results for troubleshooting
+
+---
+
 ## Common Pitfalls
 
 | Trap | Fix |
 |------|-----|
+| **Transaction fails, gas error** | → [Pre-Flight: Gas & Faucet](#-pre-flight-gas--faucet前置必读). AI should auto-check balance + faucet. |
+| **Don't know how to build a service** | → [Examples Reference](#examples-reference内置示例导航). Match user intent → example, extract JSON templates. |
 | `gen_passport` called as standalone tool | It's not — use `onchain_operations` with `operation_type: "gen_passport"` |
 | Missing `data` wrapper | Only `gen_passport` omits it; `payment`/`personal` omit `submission` |
 | String `object` passed expecting CREATE | String = existing (MODIFY), Object = new (CREATE) → [safety §1.1](../wowok-safety/SKILL.md) |
