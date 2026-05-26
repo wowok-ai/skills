@@ -1,0 +1,36 @@
+WoWok Skills SDK
+
+Copyright (c) 2024-2025 WoWok Team. All Rights Reserved.
+
+================================================================================
+IMPORTANT LICENSE INFORMATION
+================================================================================
+
+This software is part of the WoWok Blockchain Project.
+
+WoWok uses technology from the Sui blockchain project (https://github.com/MystenLabs/sui)
+developed by Mysten Labs, Inc. and licensed under the Apache License 2.0.
+
+For complete license information, including:
+- Apache License 2.0 (for Sui-derived code)
+- WoWok Commercial License (for original WoWok code)
+- Third-party component licenses
+- Attribution notices
+
+Please visit:
+    https://github.com/wowok-ai/licence
+
+Or see the local licence repository at:
+    d:\wowok\licence
+
+================================================================================
+SUMMARY
+================================================================================
+
+- Sui-derived code: Apache License 2.0
+  Copyright (c) Mysten Labs, Inc.
+
+- WoWok original code: WoWok Commercial License
+  Copyright (c) WoWok Team
+
+For licensing inquiries, please contact: build@wowok.net

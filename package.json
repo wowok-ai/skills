@@ -20,7 +20,8 @@
     "wowok-output/",
     "examples/",
     "scripts/install.js",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
@@ -40,7 +41,7 @@
     "ai-agent"
   ],
   "author": "wowok <build@wowok.net>",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/wowok-ai/skills.git"
