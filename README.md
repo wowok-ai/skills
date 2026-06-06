@@ -13,15 +13,8 @@ WoWok AI Skills for Claude Code, OpenAI Codex, Trae IDE, CodeBuddy, and other AI
 | **Cursor IDE** | `.cursor/rules/` | `.mdc` (frontmatter adapted) |
 | **GitHub Copilot** | `.github/prompts/` | `.prompt.md` (plain markdown) |
 
-> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. Codex follows the [Agent Skills](https://agentskills.io) open standard natively. All other clients use the native SKILL.md format directly.
+> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. Codex follows the [Agent Skills](https://agentskills.io) open standard natively. All other clients use the native SKILL.md format directly.    
 
-## Overview
-
-WoWok Skills provide structured guidance for AI assistants to effectively use WoWok's blockchain collaboration tools. Built on Claude Code's [progressive disclosure](https://docs.anthropic.com/en/docs/claude-code/skills) skills system, they solve common AI challenges:
-
-- **Complex system building** — Dependency chains, build order, step-by-step patterns
-- **Tool usage failures** — Correct parameter formats, tool selection, error recovery
-- **Safety & authorization** — User confirmation for important operations
 
 ## How It Works
 
