@@ -95,6 +95,27 @@ Ordered Guard evaluation where **the first Guard returning `true` wins** applies
 - `allocation`: evaluated modes (Amount → Rate → Surplus)
 - `demand`: presenter submission filtering
 
+### Object-Guard Circular Reference Pattern
+
+When an object and its Guard need to reference each other (Guard queries the object it protects), follow this **universal three-step pattern**:
+
+```
+1. CREATE object (without Guard)
+2. CREATE Guard (reference object by NAME in table)
+3. MODIFY object (bind Guard by name)
+```
+
+**Applies to all:** Service, Machine, Reward, Repository, Treasury, Demand, Arbitration — any object with Guard fields.
+
+**Key point:** Guards are immutable and require the target object's address in their table. Use the object's **name** (string) as the table value; the SDK resolves it to the actual address at runtime.
+
+**Example (Reward):**
+```
+Step 1: CREATE reward { name: "reward_v1" }                    // no guard
+Step 2: CREATE guard { table: [{ value: "reward_v1", ... }] }  // name reference
+Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
+```
+
 ---
 
 ## The 13 Tools
