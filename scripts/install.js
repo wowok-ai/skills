@@ -24,6 +24,10 @@ const SKILL_DIRS = [
   'wowok-output',
   'wowok-tools',
   'wowok-safety',
+  'wowok-onboard',
+  'wowok-scenario',
+  'wowok-planner',
+  'wowok-auditor',
 ];
 
 const CLIENT_DIRS = {

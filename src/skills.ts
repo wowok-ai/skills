@@ -103,6 +103,40 @@ export const wowokSkills: SkillConfig = {
       role: 'shared',
       loading: 'on-demand',
       related: ['wowok-provider', 'wowok-machine']
+    },
+
+    // === ONBOARDING / PLANNING / AUDIT (L3+L4 BRIDGE) ===
+    {
+      name: 'wowok-onboard',
+      description: 'First-touch onboarding — guides a new user from zero to their first published Service in a structured 10-round dialogue. Use when a new user says "I want to open a shop" or has no published Service yet.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-scenario', 'wowok-tools', 'wowok-provider', 'wowok-safety', 'wowok-guard', 'wowok-machine']
+    },
+    {
+      name: 'wowok-scenario',
+      description: 'Industry mode templates — freelance, rental, digital goods, travel, subscription. Pre-fills Permission indexes, Machine node graphs, Guard bindings, and Allocation splits based on business type.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-onboard', 'wowok-provider', 'wowok-machine', 'wowok-guard']
+    },
+    {
+      name: 'wowok-planner',
+      description: 'Main planning Skill for the Harness Plan Loop — converts natural language intent into an Object Dependency Graph (ODG). Covers 5 scenario templates: freelance, rental, digital_goods, travel_package, general. Hand-off protocol to Harness documented.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-onboard', 'wowok-scenario', 'wowok-auditor', 'wowok-provider']
+    },
+    {
+      name: 'wowok-auditor',
+      description: 'Pre-publish audit Skill for the Harness Verify Loop — checks Guard completeness, Machine soundness, fund flow correctness, and publish readiness before irreversible publish operations. 4 audit rule tables with 32 total checks.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-planner', 'wowok-provider', 'wowok-safety', 'wowok-guard', 'wowok-machine']
     }
   ]
 };
