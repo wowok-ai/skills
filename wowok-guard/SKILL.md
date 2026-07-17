@@ -78,6 +78,101 @@ A Guard is fundamentally a **data computation tree**: deterministic data (on-cha
 
 **Guard essence**: A deterministic data set (Type 1 + Type 4) + submitted data (Type 3, must have constraint rules and defined types) → derived through finite operation rules → a single boolean result. The semantics are deterministic — you only need to fill in the "data object source meaning" and "field meaning" (e.g., "the permission address of service A", "the current node time of workflow B").
 
+### Verifier Constraint Levels — Designing Who Can Pass
+
+When a Guard uses `context(Signer)`, the designer chooses how strictly to constrain the verifier's identity. Three levels exist, trading off **security** against **convenience**. Evaluating designer intent and dismantling the semantic execution plan across these levels is a core capability — choose the right level for each scene.
+
+#### Level 1 — Strict Single-Identity Binding (avoid unless justified)
+
+**Pattern**: `logic_equal[context(Signer), identifier[N](fixed_address)]`
+
+- **Maximally secure**: only ONE address can pass
+- **Maximally inconvenient**: if that address is unavailable (key loss, personnel change, rotation), the Guard permanently blocks the operation — Guards are **immutable** after publish
+- **Use only when**: the role is permanently tied to one address AND the designer explicitly accepts the lock-in risk
+- **Risk rule**: `R-C4-04` (info) flags this pattern with a convenience reminder
+- **Example**: `logic_equal[context(Signer), identifier[5](myshop_merchant)]`
+
+> ⚠️ **Avoid Level 1 unless you understand the lock-in risk.** Prefer Level 2 (identity-set) or Level 3 (scene-combined) whenever possible.
+
+#### Level 2 — Identity-Set Binding (recommended for role-based access)
+
+**Pattern**: `logic_or` of multiple identity checks — Signer is ANY of a valid set.
+
+**Key semantic insight — Address vs Bool return types**:
+Guard queries that verify identity fall into two categories based on their return type, and this determines how they participate in a `logic_or`:
+
+| Return Type | Query Examples | Construction in `logic_or` |
+|-------------|---------------|---------------------------|
+| **Address** | `1562 order.owner`, `1002 permission.owner`, `1488 service.permission` | Must wrap each in `logic_equal[query, context(Signer)]` to produce a Bool |
+| **Bool** (suffix "has") | `1567 order.agent has`, `1004 permission.admin has`, `1006 permission.entity has` | Use **directly** as a `logic_or` child — they already return a verdict; pass `context(Signer)` as a parameter |
+
+**Example — Order-holder identity set** (Signer is owner OR agent):
+```json
+{
+  "type": "logic_or",
+  "nodes": [
+    {
+      "type": "logic_equal",
+      "nodes": [
+        {"type": "query", "query": 1562, "object": {"identifier": 0}, "parameters": []},
+        {"type": "context", "context": "Signer"}
+      ]
+    },
+    {
+      "type": "query",
+      "query": 1567,
+      "object": {"identifier": 0},
+      "parameters": [{"type": "context", "context": "Signer"}]
+    }
+  ]
+}
+```
+Here `1562` returns Address → wrapped in `logic_equal`; `1567` returns Bool → used directly with `context(Signer)` as its parameter.
+
+**Example — Service-provider identity set** (Signer is permission.owner OR has admin):
+
+Three sub-patterns with increasing flexibility:
+
+1. **Static permission address** (simplest, breaks if Service rotates permission):
+   Query `1002`/`1004` against a table-constant permission address. If the Service changes its permission (like a company changing its board), the Guard must be rebuilt.
+
+2. **Dynamic permission address** (survives rotation — **RECOMMENDED**):
+   The caller submits a permission address; the Guard verifies `query(1488: service.permission) == submitted_perm`, then checks `1002`/`1004` against the submitted permission. This survives permission rotation without rebuilding the Guard.
+
+3. **Repository-based address set** (most flexible, most complex — **only for extreme flexibility needs**):
+   The permission address set is stored in a Repository and queried dynamically. This allows runtime configuration of the authorized set, but adds significant complexity.
+
+> 💡 **`logic_or` wrapping of the Signer check suppresses R-C4-04** — this is the recommended Level 2 alternative to Level 1 strict binding.
+
+#### Level 3 — Scene-Combined Constraint (verify whether Signer binding is even needed)
+
+Before adding any Signer binding, evaluate the Guard's usage scene. **Many scenes do not need Signer binding at all** — the scene itself ensures safety through other mechanisms.
+
+| Scene | Is Signer binding needed? | Why |
+|-------|--------------------------|-----|
+| Service `order_allocators` + `sharing.who=Entity` | **NO** | Funds flow to a fixed Treasury/address regardless of caller — `sharing.who` already guarantees recipient safety (R-C3-06 safe) |
+| Service `order_allocators` + `sharing.who=Signer` | **YES (Level 2 dynamic)** | Funds flow to caller — must bind Signer to authorized recipient (e.g., `order.owner`) |
+| Machine `forward` guard | **MAYBE** | Forward's `permissionIndex`/`namedOperator` already verifies operator permission; Signer binding only needed if submitted data must belong to operator |
+| Service `buy_guard` | **Usually NO** | The customer is the caller; identity checks via whitelist/credentials suffice |
+| Reward `guard` | **Depends** | If claim is one-time (record count), no Signer binding needed; if claim amount is submitted, bind Signer |
+| Arbitration `voting_guard` | **NO** (weight from query, not Signer) | Weight must come from on-chain EntityRegistrar, not submission (R-C3-02) |
+
+**Decision flow**:
+1. Does the scene's host object already verify the operator? (e.g., Machine forward) → Signer binding may be redundant
+2. Does `sharing.who` route funds to a fixed recipient? → Signer binding unnecessary (R-C3-06 safe)
+3. Does the resource flow matter more than who triggers it? → Focus on flow safety, not caller identity
+4. Only if resources flow to the caller AND no other layer verifies identity → add Level 2 Signer binding
+
+#### One Guard One Purpose Principle
+
+Each Guard should serve **ONE specific purpose**, documented in its `description`:
+- **Scenario**: where the Guard is attached (which host object, which binding field)
+- **Verification rules**: concise statement of what conditions are checked
+- **Risk notes**: which risks are mitigated (R-C3-01/05/06, etc.) and which trade-offs apply
+- **Verifier constraint level**: which Level (1/2/3) is used and why
+
+General-purpose Guards designed for `rely` composition are the exception — they need explicit general rules and composition documentation. All other Guards should be single-purpose.
+
 ### Where Guards Attach in the Ecosystem
 
 Guards are not standalone — they plug into other WoWok objects as validation rules. Understanding these integration points is essential because the **context** of the Guard determines what data is available to it and what happens when it fails.
@@ -161,7 +256,7 @@ The Guard table is the **complete declaration of information** the Guard consume
 |-------|---------|---------------|
 | `identifier` | Unique index (0–255). The computation tree uses this number to reference the entry. | Always |
 | `b_submission` | Whether the **caller** must provide this value at runtime. `true` = runtime submission; `false` = pre-set constant. | Always |
-| `value_type` | The type of the value: Bool, Address, String, U8–U256, or vector types. Uses numeric type codes (use `wowok_buildin_info` with info `"value types"` for the complete mapping). | Always |
+| `value_type` | The type of the value: Bool, Address, String, U8–U256, or vector types. Accepts both string names (preferred, e.g., `"Address"`, `"U64"`) and numeric codes (e.g., `1`, `6`). Use `wowok_buildin_info` with info `"value types"` for the complete mapping. SDK deserialization returns string names. | Always |
 | `value` | The constant value when `b_submission` is false; a placeholder when `b_submission` is true. | When `b_submission` is false |
 | `name` | Human-readable label describing what this entry represents. | Always |
 
@@ -428,6 +523,102 @@ These constraints are checked at Guard verification time (gen_passport or actual
 - **RUN_IMPACK_01/02**: At least one impack guard is required; an impack guard failure fails the entire passport. **Note**: `impack_list` is always empty during verify (see Repository section above), so quote_guard queries will fail unless `quote_guard = None`.
 - **RUN_TX_01**: The Passport's `tx_hash` must match the current transaction.
 - **RUN_RELY_01**: Rely guards must have been added to the passport.
+
+### Readability Conventions — Prefer String Names Over Numeric IDs
+
+> **Built-in MCP convention**: Whenever the schema accepts BOTH a numeric ID and a human-readable string name for the same field, **always prefer the string name** in examples, documentation, and AI-generated JSON. Numeric IDs are accepted for backward compatibility and compact machine output, but string names are the canonical form for any human-readable artifact.
+
+This convention is grounded in the user-experience principle: *"Wherever the interface supports it, optimize from the user's understanding as the starting point."* A reader who sees `"query": "order.service"` understands the intent immediately; `"query": 1563` requires an extra lookup against the `GUARDQUERY` registry.
+
+#### Fields Affected
+
+| Field | String form (preferred) | Numeric form (avoid) | Source of truth |
+|-------|-------------------------|----------------------|-----------------|
+| `query` | `"order.service"` | `1563` | `GUARDQUERY` registry (375 entries, exported by `@wowok/wowok`) |
+| `value_type` | `"Address"`, `"U64"`, `"String"` | `1`, `6`, `2` | `ValueType` enum |
+| `context` | `"Signer"`, `"Clock"`, `"Guard"` | (numeric not accepted) | `Context` enum |
+| `convert_witness` | `"OrderProgress"`, `"OrderMachine"` | `100`, `101` | `WitnessType` enum (SDK `parseWitnessType` / `witnessTypeToString`) |
+
+#### Why String Names
+
+1. **Self-documenting JSON** — `"query": "order.service"` reads as intent; `1563` is opaque.
+2. **Stable across registry renumbering** — names are part of the public contract; numeric IDs are an implementation detail.
+3. **Case-insensitive matching** — `isValidGuardQueryName` lowercases both sides, so `"Order.Service"` and `"order.service"` are equivalent. Use the canonical lowercase form in examples.
+4. **Lint-friendly** — string names survive refactoring; numeric IDs silently rot when an ID is deprecated.
+
+#### Canonical Name Examples
+
+The most common queries used in allocator Guards (R-C3-05 / R-C3-06 protection):
+
+| Numeric ID | Canonical name | Returns | Typical use |
+|------------|----------------|---------|-------------|
+| `1253` | `progress.current` | String | Verify order is at a named node (with `convert_witness: 100`) |
+| `1563` | `order.service` | Address | Cross-service theft protection (R-C3-05) |
+| `1562` | `order.owner` | Address | Signer binding for refunds (R-C3-06 Level 2 dynamic) |
+| `1272` | `progress.current_time` | U64 | Time-lock comparisons |
+| `1488` | `service.permission` | Address | Verify Service's Permission object |
+| `1002` | `permission.owner` | Address | Signer == permission owner (Level 1 fixed) |
+| `1004` | `permission.admin has` | Bool | Caller is in admin set (Level 2 identity-set) |
+| `1567` | `order.agent has` | Bool | Verify caller is an order agent |
+
+#### WitnessType String Names
+
+The `convert_witness` field accepts both numeric IDs (100-108) and string names. String matching is case-insensitive and accepts both the full enum name (`"TypeOrderProgress"`) and the shortened form without the `"Type"` prefix (`"OrderProgress"`). The shortened form is preferred for readability.
+
+| Numeric ID | Shortened name (preferred) | Full enum name | Source → Target |
+|------------|----------------------------|----------------|-----------------|
+| `100` | `"OrderProgress"` | `"TypeOrderProgress"` | Order → Progress |
+| `101` | `"OrderMachine"` | `"TypeOrderMachine"` | Order → Machine |
+| `102` | `"OrderService"` | `"TypeOrderService"` | Order → Service |
+| `103` | `"ProgressMachine"` | `"TypeProgressMachine"` | Progress → Machine |
+| `104` | `"ArbOrder"` | `"TypeArbOrder"` | Arb → Order |
+| `105` | `"ArbArbitration"` | `"TypeArbArbitration"` | Arb → Arbitration |
+| `106` | `"ArbProgress"` | `"TypeArbProgress"` | Arb → Progress |
+| `107` | `"ArbMachine"` | `"TypeArbMachine"` | Arb → Machine |
+| `108` | `"ArbService"` | `"TypeArbService"` | Arb → Service |
+
+SDK functions: `parseWitnessType(input)` converts string→number; `witnessTypeToString(type)` converts number→string (returns the shortened form). The SDK's Guard deserialization (`parseQueryNode`) already returns `convert_witness` as a string name.
+
+#### Deserialization Output — All Protocol Constants Return Strings
+
+The SDK's Guard deserialization (`query_objects` / `guard2file`) returns ALL protocol constants as user-friendly strings, not numeric IDs:
+
+| Field | Returned as | Example | Conversion function |
+|-------|-------------|---------|---------------------|
+| `query` | String name | `"order.service"` | `GUARDQUERY` registry lookup |
+| `value_type` | String name | `"Address"`, `"U64"` | `valueTypeToString()` |
+| `convert_witness` | String name | `"OrderProgress"` | `witnessTypeToString()` |
+| `context` | String literal | `"Signer"`, `"Clock"`, `"Guard"` | Hardcoded string |
+| `object_type` | String name | `"Order"`, `"Service"` | `numberToObjectType` mapping |
+| `type` (node discriminator) | String literal | `"logic_and"`, `"query"` | Always string |
+
+This means `guard2file` JSON/Markdown output and `query_objects` results are fully self-documenting without requiring numeric ID lookups.
+
+#### Example — Before and After
+
+**Before (numeric, opaque):**
+```json
+{
+  "type": "logic_equal",
+  "nodes": [
+    {"type": "query", "query": 1563, "object": {"identifier": 0, "convert_witness": 100}, "parameters": []},
+    {"type": "identifier", "identifier": 2}
+  ]
+}
+```
+
+**After (string, self-documenting):**
+```json
+{
+  "type": "logic_equal",
+  "nodes": [
+    {"type": "query", "query": "order.service", "object": {"identifier": 0, "convert_witness": "OrderProgress"}, "parameters": []},
+    {"type": "identifier", "identifier": 2}
+  ]
+}
+```
+
+Both forms are schema-valid and produce identical on-chain behavior; the string form is preferred for all human-readable output.
 
 ---
 
