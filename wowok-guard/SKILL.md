@@ -53,7 +53,30 @@ Every Guard is built from three layers, each with a distinct role:
 
 **The root is the question**: It must return Bool. Intermediate nodes return numbers, strings, addresses, or vectors. Guard is **strongly typed** — the type system is strictly enforced at creation time. Type mismatches (e.g., passing a string to a numeric comparison node) will cause validation errors and prevent Guard creation.
 
-**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass (AND). When true, any passing is sufficient (OR). A Guard can only depend on Guards with `rep: true` — `rep` is the Guard's internal flag indicating it has no external Repository dependency and can serve as a dependency. Guards with `rep: false` cannot appear in `rely` lists. Violations are caught by the contract layer at creation time.
+**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass (AND). When true, any passing is sufficient (OR). A Guard can only depend on Guards with `rep: true` — `rep` indicates the Guard's `repository.data` queries (query 1167) do not depend on runtime submissions, so results are deterministic and the Guard can serve as a dependency. Guards with `rep: false` cannot appear in `rely` lists. Violations are caught by the contract layer at creation time.
+
+### Data Source 4 Classification — The Foundation of Guard Semantics
+
+A Guard is fundamentally a **data computation tree**: deterministic data (on-chain constants + system context) + submitted data (runtime, semi-open) → derived through finite operation rules → a single boolean result. Every leaf node in the computation tree draws data from one of **4 data source classifications**. Understanding these 4 classifications is essential for designing and interpreting Guards.
+
+| Type | Name | SDK Manifestation | Native Opcode | Trust Level | Typical Scenario |
+|------|------|-------------------|---------------|-------------|------------------|
+| **Type 1** | OnChainConstant | `query` + `identifier` (`b_submission: false`, no witness) | TYPE_QUERY + TYPE_CONSTANT | Highest | Query fields of already-published Service/Machine/Reward objects |
+| **Type 2** | WitnessDerived | `query` + `identifier` + `convert_witness` (100-108) | TYPE_QUERY + witness_byte | High (source trusted + deterministic derivation) | Order → Progress query via witness=100 |
+| **Type 3** | SubmittedObject | `query` + `identifier` (`b_submission: true`, no witness) | TYPE_QUERY + TYPE_CONSTANT | Medium (requires constraint rules) | User submits Order address for field query |
+| **Type 4** | SystemContext | `context` (Signer/Clock/Guard) | TYPE_SIGNER / TYPE_CLOCK / TYPE_GUARD | Highest | Identity verification, time-locks |
+
+**Key insights**:
+1. **Type 1 and Type 3 are isomorphic at the native layer** — both use TYPE_QUERY+TYPE_CONSTANT; the only difference is the `b_submission` flag (false vs true)
+2. **Type 2 can overlay on Type 1 or Type 3** — the source object can be a constant (Type 1) or a submission (Type 3), then witness derives the target object
+3. **Type 4 is fully independent** — does not depend on the table
+4. **Except for Type 4, all data must be declared in the table** — the table is the complete data contract between Guard and caller
+
+**The table as data contract**: The table declares:
+- **Deterministic data** (`b_submission: false`): type + value, baked at creation, immutable
+- **Submitted data** (`b_submission: true`): type only (1-byte placeholder), value provided by caller at runtime — **must have constraint rules designed, otherwise empty data is meaningless**
+
+**Guard essence**: A deterministic data set (Type 1 + Type 4) + submitted data (Type 3, must have constraint rules and defined types) → derived through finite operation rules → a single boolean result. The semantics are deterministic — you only need to fill in the "data object source meaning" and "field meaning" (e.g., "the permission address of service A", "the current node time of workflow B").
 
 ### Where Guards Attach in the Ecosystem
 
@@ -148,26 +171,43 @@ The Guard table is the **complete declaration of information** the Guard consume
 - **No duplicate identifiers.** Each index number must appear exactly once.
 - **Non-submission entries must have a value.** These are baked into the Guard immutably.
 - **Submission entries use placeholder values.** The actual value is provided by the caller at runtime.
-- **Query target objects must be of type Address in the table.** Their `object_type` field should match the expected query target type (Progress, Order, Machine, Reward, etc.).
+- **Query target objects must be of type Address in the table.** The `object_type` field is **automatically filled by the SDK** based on the first query node referencing this identifier (it is NOT a user-provided field). The SDK infers the object type from the query instruction's target object type (Progress, Order, Machine, Reward, etc.).
 - **Querying EntityRegistrar or EntityLinker requires system address table entries.** Add entries for `ENTITY_REGISTRAR_ADDRESS` (`0xaab`) or `ENTITY_LINKER_ADDRESS` (`0xaaa`) to the table as Address-type constants when your query instruction targets these global registries. Without them, creation fails.
 - **Maximum 256 table entries** (identifiers 0–255). The total serialized table size must not exceed 40000 bytes.
 - **Submission entries must have descriptive `name` values.** For `b_submission: true` entries, `name` is the contract between Guard and caller — it tells callers what data they must provide. Use natural language that explains the purpose and necessity: "The order ID that identifies the target Order for verification" not `"order_id"`, "The signer's account address that will be compared against the authorized list" not `"addr"`. This is critical because callers see only this name when submitting data.
 
 ### The convert_witness Mechanism
 
-`convert_witness` transforms a submitted object ID into its associated object — enabling queries across object relationships without requiring the caller to submit multiple IDs.
+`convert_witness` transforms a source object ID into its associated target object — enabling queries across object relationships without requiring the caller to submit multiple IDs. This is the **Type 2 (WitnessDerived)** data source.
 
-**Core principle**: Caller submits what they have (e.g., Order ID); Guard queries what it needs (e.g., Progress state) via witness conversion.
+**Core principle**: Witness is a "read the source object's associated field" mechanism (not a lookup table, not an independent index). It is a one-to-one deterministic derivation of object relationships with only 9 derivation types. Caller submits what they have (e.g., Order ID); Guard queries what it needs (e.g., Progress state) via witness conversion.
 
 **Rules**:
 - Witness type encodes source→target transformation
-- Table entry's `object_type` must match witness source type
+- Table entry's `object_type` (auto-filled by SDK) must match witness source type
 - Query instruction's object type must match witness target type
 - Type mismatches cause Guard creation to fail
+- Multi-hop witnesses (106-108) require intermediate objects to exist
 
-**Available witness types** are defined in the schema — query `wowok_buildin_info` with info `"guard instructions"` for the complete list with use cases.
+**Complete 9 witness types** (defined in `guard.rs#L34-L65`):
 
-**Notable**: `TypeArbArbitration (105)`: Arb and Arbitration are **different on-chain objects**. The witness queries the Arbitration (parent service) from an Arb (case) address — the binding is set when Arbitration creates the Arb. Schema describes this as "access arbitration configuration or fee settings."
+| Code | Name | Source → Target | Derivation | Hops |
+|------|------|-----------------|------------|------|
+| 100 | TypeOrderProgress | Order → Progress | read order.progress field | 1 |
+| 101 | TypeOrderMachine | Order → Machine | read order.machine field | 1 |
+| 102 | TypeOrderService | Order → Service | read order.service field | 1 |
+| 103 | TypeProgressMachine | Progress → Machine | read progress.machine field | 1 |
+| 104 | TypeArbOrder | Arb → Order | read arb.order field | 1 |
+| 105 | TypeArbArbitration | Arb → Arbitration | read arb.arbitration field | 1 |
+| 106 | TypeArbProgress | Arb → Progress | arb.order → order.progress | 2 (multi-hop) |
+| 107 | TypeArbMachine | Arb → Machine | arb.order → order.machine | 2 (multi-hop) |
+| 108 | TypeArbService | Arb → Service | arb.order → order.service | 2 (multi-hop) |
+
+**Key notes**:
+- **Type 2 can overlay on Type 1 or Type 3**: The source object can be a constant (Type 1, `b_submission: false`) or a submission (Type 3, `b_submission: true`). The witness then derives the target object.
+- **Multi-hop witnesses (106-108)**: Arb → Progress/Machine/Service uses two hops (Arb → Order → target). The intermediate Order object must exist for the derivation to succeed.
+- **TypeArbArbitration (105)**: Arb and Arbitration are **different on-chain objects**. The witness queries the Arbitration (parent service) from an Arb (case) address — the binding is set when Arbitration creates the Arb.
+- **Available witness types** are also discoverable via `wowok_buildin_info` with info `"guard instructions"`.
 
 ---
 
@@ -281,6 +321,8 @@ Machine's forward `guard` validates state transitions. If `retained_submission` 
 
 Repository's `write_guard` validates writes. If `id_from_submission` is set, reads entity ID from that submission index — **the index must be Address type**. If `data_from_submission` is set, reads data value from that index — **the value type must match the Repository's declared value_type**. Guard table must include entries for the data being extracted.
 
+**Important — impack_list semantics in verify phase**: When a Guard queries Repository data (query 1167 `repository.data`) with a policy that has a `quote_guard` set, the verification checks whether the quote_guard address is in the `impack_list`. However, `impack_list` is **always empty during the `verify_guard` phase** — `Passport.new()` initializes `impack:vector[]` and the verify loop never modifies it; `impack` is only populated in `result_for_permission` (after verify completes). This means a Repository query with `quote_guard = Some(addr)` will always fail with `IMPACK_GUARD_NOT_FOUND` in the gen_passport flow; only `quote_guard = None` passes. Verify the quote_guard mechanism's design intent before relying on it.
+
 ---
 
 **Key Principle**: Design your Guard table based on what data the target object needs to read. Objects don't just validate — they consume Guard submissions as structured data inputs.
@@ -303,25 +345,89 @@ Each object extracts Guard data with precise type expectations. Mismatches cause
 
 ### Common Pitfalls
 
-1. **Undefined table identifiers**: Every `identifier` node in the tree must match an entry in the table. Missing entries cause creation failure — validate your tree against your table before submitting.
+> The full constraint system has **33 rules: 22 creation-phase + 11 runtime-phase**. The 22 creation-phase constraints below are all enforced by SDK + native `validate_guard_data`; runtime constraints are enforced by native `verify_guard`.
 
-2. **Type mismatches in comparison nodes**: A `logic_equal` comparing a String to a U64 fails validation. Use explicit conversion nodes (`convert_string_number`, `convert_number_string`) when types differ. Numeric comparisons use `logic_as_u256_*` variants which auto-widen to U256.
+#### Creation-Phase Constraints (22 items, enforced by SDK + native `validate_guard_data`)
 
-3. **Wrong query instruction IDs or parameter counts**: Query instructions are system-defined. Always discover them through `wowok_buildin_info` with info `"guard instructions"`. The parameter count and types in your query node must match the instruction exactly — off-by-one parameter counts are a common failure.
+**Root (1 item)**
 
-4. **Missing convert_witness**: When accessing Progress data from an Order ID in the table, the query node needs `convert_witness` with the appropriate witness type. Without it, the runtime looks for a Progress at the Order's address — which does not exist as a Progress object. The creation-time validation catches this mismatch.
+1. **ROOT_01 — Root must return Bool**: The outermost node of the tree must produce Bool. Logic and comparison nodes return Bool; arithmetic, conversion, and string operation nodes do not. Ensure your tree terminates at a logic or comparison node — the creation validation will reject non-Bool roots.
 
-5. **Testing with production durations**: Set time-lock durations to small values (e.g., 1000 milliseconds) during testing. Increase to production values only after verifying the logic works correctly. A Guard with a 30-day lock tested with real durations cannot produce results for a month.
+**Table (5 items)**
 
-6. **Forgetting to export before recreating**: Guards are immutable. If you need to change one, export it first with `guard2file` so you have the exact on-chain definition as a reference. Then create a new Guard with a versioned name and update all references.
+2. **TABLE_01 — Identifier uniqueness**: Every `identifier` in the table must be unique (0–255). Duplicate identifiers cause creation failure. SDK uses `lodash.groupBy` to detect duplicates.
 
-7. **Root not returning Bool**: The outermost node of the tree must produce Bool. Logic and comparison nodes return Bool; arithmetic, conversion, and string operation nodes do not. Ensure your tree terminates at a logic or comparison node — the creation validation will reject non-Bool roots.
+3. **TABLE_02 — Identifier referential integrity**: Every `identifier` node in the computation tree must match an entry in the table. Missing entries cause creation failure — validate your tree against your table before submitting.
 
-8. **Dependency on non-standalone Guards**: A Guard's `rely` entries must reference Guards with `rep: true` — meaning they have no external Repository dependency. Guards that depend on a Repository (`rep: false`) cannot serve as dependencies. The contract layer catches violations at creation time.
+4. **TABLE_03 — Constant value non-empty**: When `b_submission=false`, the `value` field must be non-empty. These values are baked into the Guard immutably at creation time.
 
-9. **Forgetting voting_guard weight type validation**: When using `GuardIdentifier`, the referenced identifier must exist in the guard's table and its value type must be numeric. The system checks this when the VotingGuard is added to the Arbitration — if the identifier does not exist or is non-numeric, the operation reverts with `E_GUARD_IDENTIFIER_NOT_NUMBER`.
+5. **TABLE_04 — Table size limits**: Maximum 256 table entries (identifiers 0–255), and the total serialized table size must not exceed 40000 bytes (BCS). Enforced by Move `guard::new`.
 
-10. **Not checking Arbitration pause state**: Even with a valid usage_guard Passport, the dispute fails if the Arbitration is paused (`bPaused: true`). The pause check happens before the guard check — advise customers to verify the Arbitration is active before generating Passports.
+6. **TABLE_05 — Submission value is 1-byte type code**: When `b_submission=true`, the `value` field is only a 1-byte type code placeholder (the actual value is provided at runtime). Enforced by native `deserialize_constants`.
+
+**Query (4 items)**
+
+7. **QUERY_01 — Query instruction ID valid**: Query instruction IDs are system-defined. Always discover them through `wowok_buildin_info` with info `"guard instructions"`. Invalid IDs cause creation failure.
+
+8. **QUERY_02 — Parameter count matches**: The parameter count and types in your query node must match the instruction exactly — off-by-one parameter counts are a common failure.
+
+9. **QUERY_03 — Return type compatible**: The query node's return type must be compatible with the parent node's expected input. A `logic_equal` comparing a String to a U64 fails validation. Use explicit conversion nodes (`convert_string_number`, `convert_number_string`) when types differ. Numeric comparisons use `logic_as_u256_*` variants which auto-widen to U256.
+
+10. **QUERY_04 — Object identifier is Address type**: The table entry referenced by a query node's `object.identifier` must have `value_type: Address`. SDK `buildNode` validates this at L603-609.
+
+**Witness (3 items)**
+
+11. **WITNESS_01 — Witness type valid (100-108)**: The `convert_witness` value must be one of the 9 valid witness types (100-108). Invalid witness types cause creation failure.
+
+12. **WITNESS_02 — Witness target matches query objectType**: The witness's target object type must match the query instruction's expected object type. For example, `TypeOrderProgress` (100) derives a Progress, so the query must target a Progress object. SDK `buildNode` validates this at L613-619.
+
+13. **WITNESS_03 — Witness source matches table object_type**: If the table entry has an `object_type` declared (auto-filled by SDK), it must match the witness's source object type. For example, `TypeOrderProgress` (100) expects an Order source, so the table entry's `object_type` must be Order. SDK `buildNode` validates this at L622-631. **Missing convert_witness** is a related failure: when accessing Progress data from an Order ID, the query node needs `convert_witness` with the appropriate witness type. Without it, the runtime looks for a Progress at the Order's address — which does not exist as a Progress object.
+
+**Rely (3 items)**
+
+14. **RELY_01 — Dependency count ≤ 4**: A Guard can depend on at most 4 other Guards (`MAX_DEPENDED_COUNT`). SDK `reliesAdd` enforces this limit.
+
+15. **RELY_02 — Dependencies must have rep=true**: A Guard's `rely` entries must reference Guards with `rep: true` — meaning their `repository.data` queries do not depend on runtime submissions. Guards that depend on a Repository via submitted addresses (`rep: false`) cannot serve as dependencies. Move `guard::relies_add` catches violations at creation time.
+
+16. **RELY_03 — No self-reference**: A Guard cannot depend on itself. SDK `reliesAdd` prevents self-referential rely entries.
+
+**Binding (3 items)**
+
+17. **BINDING_01 — voting_guard GuardIdentifier must be numeric**: When using `GuardIdentifier` for Arbitration `voting_guard`, the referenced table entry must have a numeric `value_type` (U8–U256). The system checks this when the VotingGuard is added to the Arbitration — if the identifier does not exist or is non-numeric, the operation reverts with `E_GUARD_IDENTIFIER_NOT_NUMBER`.
+
+18. **BINDING_02 — Repository id_from_submission must be Address**: When a Repository `write_guard` uses `id_from_submission`, the referenced table entry must have `value_type: Address`. Move Repository enforces this at binding time.
+
+19. **BINDING_03 — Repository data_from_submission type must match**: When a Repository `write_guard` uses `data_from_submission`, the referenced table entry's `value_type` must match the Repository's declared `value_type`. Move Repository enforces this at binding time.
+
+**Input (2 items)**
+
+20. **INPUT_01 — Root bytecode non-empty**: The serialized root computation tree must not be empty. SDK `newGuard` validates this before submission.
+
+21. **INPUT_02 — Root bytecode size ≤ MAX_INPUT_SIZE**: The serialized root computation tree must not exceed `MAX_INPUT_SIZE`. SDK `newGuard` validates this before submission.
+
+**Immutable (1 item)**
+
+22. **IMMUTABLE_01 — Guard becomes immutable after creation**: Once `guard::create` is called, the Guard's `immutable` flag is set to `true` and no further modifications are possible. This is the foundation of the immutability contract — to change a Guard, export via `guard2file`, create a new Guard, and update all references.
+
+#### Practical Tips (not strict constraints, but strongly recommended)
+
+- **Testing with production durations**: Set time-lock durations to small values (e.g., 1000 milliseconds) during testing. Increase to production values only after verifying the logic works correctly. A Guard with a 30-day lock tested with real durations cannot produce results for a month.
+- **Forgetting to export before recreating**: Guards are immutable. If you need to change one, export it first with `guard2file` so you have the exact on-chain definition as a reference. Then create a new Guard with a versioned name and update all references.
+- **Not checking Arbitration pause state**: Even with a valid usage_guard Passport, the dispute fails if the Arbitration is paused (`bPaused: true`). The pause check happens before the guard check — advise customers to verify the Arbitration is active before generating Passports.
+
+#### Runtime-Phase Constraints (enforced by native `verify_guard`)
+
+These constraints are checked at Guard verification time (gen_passport or actual usage), not at creation. They are often overlooked because creation succeeds but runtime fails:
+
+- **RUN_IMMUTABLE_01**: Guard must have `immutable=true` to be verified. A Guard that hasn't been finalized via `guard::create` cannot be used.
+- **RUN_SUB_01**: The submission's `value[0]` (type byte) must match the table declaration. A submission with the wrong type byte is rejected.
+- **RUN_SUB_02**: Every table entry with `b_submission=true` must have a corresponding submission value. Missing submissions cause failure.
+- **RUN_SUB_03**: Total submission bytes must be ≤ `MAX_SUBMISSION_SIZE` (256).
+- **RUN_WITNESS_01/02**: When witness conversion runs, the source object must have the associated field, and the derived target object must exist. Multi-hop witnesses (106-108) require the intermediate Order object to exist.
+- **RUN_QUERY_01**: The query target object must exist and its type must match.
+- **RUN_IMPACK_01/02**: At least one impack guard is required; an impack guard failure fails the entire passport. **Note**: `impack_list` is always empty during verify (see Repository section above), so quote_guard queries will fail unless `quote_guard = None`.
+- **RUN_TX_01**: The Passport's `tx_hash` must match the current transaction.
+- **RUN_RELY_01**: Rely guards must have been added to the passport.
 
 ---
 
