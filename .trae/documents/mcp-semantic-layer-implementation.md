@@ -2,7 +2,7 @@
 
 ## Context
 
-The WoWok MCP server returns raw Sui transaction responses. AI must perform 3-4 inference steps per call to understand "what happened, succeeded or not, what's next" — parsing `objectType` strings, correlating `objectChanges`/`events`/`balanceChanges`, and re-deriving business meaning every time. This burns context, causes errors, and blocks the Harness Expect/Verify loops and the Tauri client rendering from having a clean input.
+The WoWok MCP server returns raw Wow transaction responses. AI must perform 3-4 inference steps per call to understand "what happened, succeeded or not, what's next" — parsing `objectType` strings, correlating `objectChanges`/`events`/`balanceChanges`, and re-deriving business meaning every time. This burns context, causes errors, and blocks the Harness Expect/Verify loops and the Tauri client rendering from having a clean input.
 
 This change adds an optional `semantic` field to `CallOutput` that pre-translates business meaning (intent / status / one-line summary / object roles / fund roles / next_actions / warnings) plus structured error fields (`error_code` / `retryable` / `recovery_hint`). It is the foundation for the AI-understandability goals and the Loop Engineering flywheel — rule tables are data-driven precisely so AI can evolve them.
 

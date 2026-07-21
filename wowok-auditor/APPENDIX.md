@@ -105,7 +105,7 @@ decision (still no on-chain write from this Skill — it hands off to
 - For each Service: trace the payment path (customer pays → escrow → Allocator distributes). Does every payment path have a refund path?
 - For each Allocator: does the `sharing` array sum to 10000 (100%)?
 - Is the treasury balance sufficient for pending allocations?
-- Are gas coins (SUI/WOW) mixed into business-token allocations?
+- Are gas coins (WOW) mixed into business-token allocations?
 - Does the escrow amount equal the sum of Allocation paths from that order?
 
 **Tool Calls**:
@@ -320,7 +320,7 @@ For each Allocator in order_allocators:
 │   │   └── NO → FAIL: no refund path. Recommend refund Allocator on dispute terminal.
 │   └── (Skip if Service is non-payment, e.g., repository-only.)
 ├── Gas coin separation:
-│   ├── Allocation contains SUI or WOW (gas coins) alongside business tokens?
+│   ├── Allocation contains WOW (gas coins) alongside business tokens?
 │   │   ├── YES → WARN: gas coin in allocation. Recommend separate treasury.
 │   │   └── NO → PASS.
 │   └── (Skip if Service is single-token WOW only.)

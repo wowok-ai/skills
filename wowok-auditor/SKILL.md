@@ -80,7 +80,7 @@ pass / warn / fail report. A FAIL blocks the publish in R10.
 | Refund path exists | Every payment path has a corresponding refund path | FAIL: no refund path |
 | Allocation sum | Each Allocator's `sharing` array sums to 10000 (100%) | FAIL: allocation doesn't sum to 100% |
 | Treasury balance | Treasury has sufficient balance for pending allocations | WARN: low balance |
-| Gas coin separation | Gas coins (SUI/WOW) are not mixed with business tokens in allocations | WARN: gas coin in allocation |
+| Gas coin separation | Gas coins (WOW) are not mixed with business tokens in allocations | WARN: gas coin in allocation |
 | Recipient type | Refund path uses `Entity`/`Signer` for known parties, `GuardIdentifier` for dynamic | WARN: ambiguous recipient |
 | Escrow symmetry | Order escrow amount equals sum of all Allocation paths from that order | FAIL: escrow mismatch |
 

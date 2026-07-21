@@ -421,7 +421,7 @@ Filters templates by industry tag (e.g., `"ecommerce"` returns buy_guard, order_
 ### `validateTemplateParams(template, params)`
 Validates user-provided parameters against template definition:
 - Required parameters present
-- Type matching (Address must be valid Sui address format)
+- Type matching (Address must be valid Wow address format)
 - Numeric range validity (U64 must be ≥ 0)
 - String length constraints
 
