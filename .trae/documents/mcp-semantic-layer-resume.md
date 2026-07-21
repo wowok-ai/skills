@@ -1,51 +1,51 @@
-# 计划：恢复并完成 MCP 语义层实现
+# Plan: Resume and Complete MCP Semantic Layer Implementation
 
-## 摘要
+## Summary
 
-恢复并完成 MCP 语义层（S-3 → S-2 → S-4 → JSON schema 重生成 → vitest），为后续 Phase 1 行业模板（自由职业+租赁）和 MCP 原生 Tauri 本地客户端提供 AI 可直接理解的业务语义基础。
+Resume and complete the MCP semantic layer (S-3 → S-2 → S-4 → JSON schema regeneration → vitest), providing an AI-directly-understandable business semantics foundation for the subsequent Phase 1 industry templates (freelance + rental) and the MCP-native Tauri local client.
 
-用户最新确认的 5 项战略收敛决策（Phase 1 = 自由职业+租赁；客户端 = MCP 形态本地化优先、不做中心化 web；遥测 = 无需明示同意；模式市场 = 官方审核+社区评分；技术栈 = Tauri 跨平台本地客户端）已记录，将指导后续 Phase 1 计划，**不在本计划范围内**。
+The 5 strategic convergence decisions the user most recently confirmed (Phase 1 = freelance + rental; Client = MCP-first local deployment, no centralized web; Telemetry = no explicit consent required; Mode marketplace = official review + community scoring; Tech stack = Tauri cross-platform local client) have been recorded and will guide the subsequent Phase 1 plan, **and are out of scope for this plan**.
 
-## 当前状态分析（基于实际文件读取）
+## Current State Analysis (based on actual file reads)
 
-### ✅ S-1 已完成 — base.ts (schema/call)
-- `ObjectRoleSchema`（L109-122）：18 值 role enum + relation 子对象
-- `FundRoleSchema`（L125-131）：9 值 fund role enum
-- `NextActionSchema`（L134-140）：action/reason/tool/prerequisite/priority
-- `SemanticSummarySchema`（L143-152）：intent/status/summary/created/modified/released/next_actions/warnings
-- `CallResponseErrorSchema`（L155-162）：扩展 `error_code`（9 值 enum）/`retryable`/`recovery_hint`/`related_object`
-- `CallOutputSchema`（L229-233）：新增 optional `semantic` 字段
-- 类型导出：`ObjectRole`, `FundRole`, `NextAction`, `SemanticSummary`
-- `npx tsc --noEmit` 已通过
+### ✅ S-1 Complete — base.ts (schema/call)
+- `ObjectRoleSchema` (L109-122): 18-value role enum + relation sub-object
+- `FundRoleSchema` (L125-131): 9-value fund role enum
+- `NextActionSchema` (L134-140): action/reason/tool/prerequisite/priority
+- `SemanticSummarySchema` (L143-152): intent/status/summary/created/modified/released/next_actions/warnings
+- `CallResponseErrorSchema` (L155-162): extended `error_code` (9-value enum)/`retryable`/`recovery_hint`/`related_object`
+- `CallOutputSchema` (L229-233): new optional `semantic` field
+- Type exports: `ObjectRole`, `FundRole`, `NextAction`, `SemanticSummary`
+- `npx tsc --noEmit` passed
 
-### 🔄 S-3 半完成
-- `semantic.ts` (schema/call)：`SemanticContext` 接口、`ErrorCode` 类型、`ErrorClassification` 接口、`ERROR_RULES` 表（8 规则 + fallback）、`classifyError(errorMsg)` 函数 — **全部已实现**
-- `handler.ts` (schema/call)：L7 已 `import { classifyError } from "./semantic.js"` — **import 完成**
-- **未完成**：两个 error 分支（L35-45 error 分支、L54-67 tx-failure 分支）仍构建原始 `{ type: "error", error: enrichedError }`，未调用 classifyError、未注入 `error_code`/`retryable`/`recovery_hint`
+### 🔄 S-3 Half Complete
+- `semantic.ts` (schema/call): `SemanticContext` interface, `ErrorCode` type, `ErrorClassification` interface, `ERROR_RULES` table (8 rules + fallback), `classifyError(errorMsg)` function — **all implemented**
+- `handler.ts` (schema/call): L7 already has `import { classifyError } from "./semantic.js"` — **import done**
+- **Not done**: two error branches (L35-45 error branch, L54-67 tx-failure branch) still construct raw `{ type: "error", error: enrichedError }`, do not call classifyError, do not inject `error_code`/`retryable`/`recovery_hint`
 
-### ⏳ S-2 未开始
-- `semantic.ts` L142-145：`buildSemantic` 仍是占位注释
-- `handler.ts`：tx-success 分支（L69-79）和 submission 分支（L83-95）未注入 `semantic`
-- `handleCallResult` 签名未扩展 context 参数
+### ⏳ S-2 Not Started
+- `semantic.ts` L142-145: `buildSemantic` is still a placeholder comment
+- `handler.ts`: tx-success branch (L69-79) and submission branch (L83-95) do not inject `semantic`
+- `handleCallResult` signature not extended with context parameter
 
-### ⏳ S-4 未开始
-- `index.ts` (MCP main) `handleOnchainOperations`（L435-710）：
-  - 16 个 case（L456-694）：service, machine, progress, repository, arbitration, contact, treasury, reward, allocation, permission, guard, personal, payment, demand, order, gen_passport — 每个调用 `handleCallResult(result)` 无 context
-  - catch 块（L697-709）：直接构建 error CallOutput，绕过 handleCallResult（不获得 error 分类）
+### ⏳ S-4 Not Started
+- `index.ts` (MCP main) `handleOnchainOperations` (L435-710):
+  - 16 cases (L456-694): service, machine, progress, repository, arbitration, contact, treasury, reward, allocation, permission, guard, personal, payment, demand, order, gen_passport — each calls `handleCallResult(result)` without context
+  - catch block (L697-709): directly constructs an error CallOutput, bypassing handleCallResult (no error classification)
 
-### ⏳ 其他未开始
-- JSON schema 重生成未执行（MCP 客户端无法发现新字段）
-- vitest 未配置（package.json 无 test 脚本、无 vitest devDep）
+### ⏳ Other Not Started
+- JSON schema regeneration not executed (MCP clients cannot discover new fields)
+- vitest not configured (package.json has no test script, no vitest devDep)
 
-## 提议的变更
+## Proposed Changes
 
-### 变更 1 — S-3 完成：handler.ts error 分支接线
+### Change 1 — S-3 Complete: handler.ts error branch wiring
 
-**文件**：handler.ts (schema/call)
+**File**: handler.ts (schema/call)
 
-**1a. Error 分支（当前 L35-45）**
+**1a. Error branch (currently L35-45)**
 
-当前代码：
+Current code:
 ```typescript
 if (safeResult && "error" in safeResult) {
     const enrichedError = enrichMoveError(safeResult.error);
@@ -57,7 +57,7 @@ if (safeResult && "error" in safeResult) {
 }
 ```
 
-改为：
+Change to:
 ```typescript
 if (safeResult && "error" in safeResult) {
     const enrichedError = enrichMoveError(safeResult.error);
@@ -76,28 +76,28 @@ if (safeResult && "error" in safeResult) {
 }
 ```
 
-**1b. Tx-failure 分支（当前 L54-67）**
+**1b. Tx-failure branch (currently L54-67)**
 
-同样模式：调用 `classifyError(enrichedError)`，注入 `error_code`/`retryable`/`recovery_hint`。
+Same pattern: call `classifyError(enrichedError)`, inject `error_code`/`retryable`/`recovery_hint`.
 
-**为什么**：`handleCallResult` 是所有 onchain 工具构建 CallOutput 的单一 chokepoint。在此处注入一次，所有 16 个 case 自动获得结构化错误分类，驱动 Recover Loop 策略选择。
+**Why**: `handleCallResult` is the single chokepoint where all onchain tools build CallOutput. Injecting once here means all 16 cases automatically get structured error classification, driving Recover Loop strategy selection.
 
-**验证**：`npx tsc --noEmit` 通过（在 MCP 目录）。
+**Verification**: `npx tsc --noEmit` passes (in the MCP directory).
 
 ---
 
-### 变更 2 — S-2 实现：buildSemantic + tx-success/submission 分支接线
+### Change 2 — S-2 Implementation: buildSemantic + tx-success/submission branch wiring
 
-**文件**：semantic.ts (schema/call)（在 classifyError 之后追加）
+**File**: semantic.ts (schema/call) (appended after classifyError)
 
-**2a. INTENT_RULES 规则表 + inferIntent**
+**2a. INTENT_RULES rule table + inferIntent**
 
-数据驱动的规则表，覆盖 16 个 operation_type。每条规则：`{ operation_type, signals?, intent, confidence }`。signals 是可选的 data 字段检查函数（用于区分同一 operation_type 下的子意图，如 service 的 create vs publish）。
+Data-driven rule table covering 16 operation_types. Each rule: `{ operation_type, signals?, intent, confidence }`. signals is an optional data field check function (used to distinguish sub-intents under the same operation_type, e.g., create vs publish for service).
 
 ```typescript
 interface IntentRule {
     operation_type: string;
-    signals?: (data: any) => boolean;  // 可选子意图区分
+    signals?: (data: any) => boolean;  // optional sub-intent discrimination
     intent: string;
     confidence: number;
 }
@@ -126,10 +126,10 @@ const INTENT_RULES: IntentRule[] = [
 
 function inferIntent(operation_type: string, data: any): string {
     const rules = INTENT_RULES.filter(r => r.operation_type === operation_type);
-    // 优先匹配带 signals 的规则
+    // prefer rules with signals
     const signaled = rules.find(r => r.signals && r.signals(data));
     if (signaled) return signaled.intent;
-    // 否则取无 signals 的兜底规则
+    // otherwise fall back to rules without signals
     const fallback = rules.find(r => !r.signals);
     return fallback?.intent ?? operation_type;
 }
@@ -139,18 +139,18 @@ function inferIntent(operation_type: string, data: any): string {
 
 ```typescript
 function inferStatus(safeResult: any): "success" | "partial" | "failed" | "pending_input" {
-    // pending_input 由 submission 分支单独处理，此处不返回
+    // pending_input is handled separately by the submission branch, not returned here
     if (safeResult && "error" in safeResult) return "failed";
     if (safeResult && "digest" in safeResult) {
         return safeResult?.effects?.status?.status === "success" ? "success" : "failed";
     }
-    return "success";  // data/null/array 分支
+    return "success";  // data/null/array branch
 }
 ```
 
 **2c. tagObjectRoles**
 
-strip generics → split "::" → 取最后段 → 映射到 role enum。
+Strip generics → split "::" → take last segment → map to role enum.
 
 ```typescript
 function objectTypeToRole(objectType: string): ObjectRole["role"] {
@@ -185,7 +185,7 @@ function tagObjectRoles(objectChanges: any[]): ObjectRole[] {
 }
 ```
 
-**2d. tagFundRoles**（基础版，仅 payment/refund/gas 三类）
+**2d. tagFundRoles** (basic version, only payment/refund/gas three categories)
 
 ```typescript
 function tagFundRoles(balanceChanges: any[], operation_type: string): FundRole[] {
@@ -211,7 +211,7 @@ function tagFundRoles(balanceChanges: any[], operation_type: string): FundRole[]
 }
 ```
 
-**2e. inferNextActions**（数据驱动，覆盖关键 workflow 推进点）
+**2e. inferNextActions** (data-driven, covering key workflow advancement points)
 
 ```typescript
 interface NextActionRule {
@@ -232,16 +232,16 @@ const NEXT_ACTION_RULES: NextActionRule[] = [
 ];
 ```
 
-**2f. inferWarnings**（业务级警告）
+**2f. inferWarnings** (business-level warnings)
 
 ```typescript
 function inferWarnings(operation_type: string, data: any, safeResult: any): string[] {
     const warnings: string[] = [];
-    // 示例：service 未配置 order_allocators
+    // example: service without order_allocators configured
     if (operation_type === "service" && data?.order_allocators === undefined) {
         warnings.push("order_allocators not configured; order funds cannot be distributed automatically");
     }
-    // 示例：reward 余额不足
+    // example: reward balance is zero
     if (operation_type === "reward" && data?.balance === "0") {
         warnings.push("Reward pool balance is zero; claimants cannot withdraw");
     }
@@ -264,11 +264,11 @@ function composeSummary(intent: string, status: string, created: ObjectRole[], m
 }
 ```
 
-**2h. buildSemantic**（编排函数）
+**2h. buildSemantic** (orchestration function)
 
 ```typescript
 export function buildSemantic(safeResult: any, context?: SemanticContext): SemanticSummary | undefined {
-    if (!context) return undefined;  // 无 context = 向后兼容，不注入 semantic
+    if (!context) return undefined;  // no context = backward compatible, do not inject semantic
 
     const intent = inferIntent(context.operation_type, context.data);
     const status = inferStatus(safeResult);
@@ -299,20 +299,20 @@ export function buildSemantic(safeResult: any, context?: SemanticContext): Seman
 }
 ```
 
-**2i. handler.ts 签名扩展 + tx-success/submission 分支接线**
+**2i. handler.ts signature extension + tx-success/submission branch wiring**
 
-扩展签名（L30）：
+Extend signature (L30):
 ```typescript
 export function handleCallResult(result: any, context?: SemanticContext): { content: any[]; structuredContent: CallOutput } {
 ```
 
-import 扩展（L7）：
+Extend import (L7):
 ```typescript
 import { classifyError, buildSemantic, type SemanticContext } from "./semantic.js";
 ```
 
-Tx-success 分支（L69-79）：注入 `semantic: buildSemantic(safeResult, context)`
-Submission 分支（L83-95）：构造固定 semantic：
+Tx-success branch (L69-79): inject `semantic: buildSemantic(safeResult, context)`
+Submission branch (L83-95): construct fixed semantic:
 ```typescript
 const semantic: SemanticSummary = {
     intent: "guard_submission_required",
@@ -327,26 +327,26 @@ const semantic: SemanticSummary = {
 };
 ```
 
-**为什么**：per-branch enrichment（非单次末尾调用），因为 tx-success 分支有 objectChanges/balanceChanges/events，submission 分支无交易数据但有固定语义。数据驱动规则表形式（TS const 数组 + signal fns）是 Loop Engineering 演化的最佳形式 — 加规则 = 加数组条目，无需改控制流。
+**Why**: Per-branch enrichment (not a single end-of-function call), because the tx-success branch has objectChanges/balanceChanges/events, while the submission branch has no transaction data but has fixed semantics. The data-driven rule table form (TS const array + signal fns) is the best evolution form for Loop Engineering — adding a rule = adding an array entry, no control flow changes needed.
 
-**验证**：`npx tsc --noEmit` 通过（在 MCP 目录）。
+**Verification**: `npx tsc --noEmit` passes (in the MCP directory).
 
 ---
 
-### 变更 3 — S-4：16 个 call site 接线 + catch 块补丁
+### Change 3 — S-4: 16 call site wiring + catch block patch
 
-**文件**：index.ts (MCP main)
+**File**: index.ts (MCP main)
 
-**3a. 16 个 case**（L456-694）
+**3a. 16 cases** (L456-694)
 
-每个 `handleCallResult(result)` → `handleCallResult(result, { operation_type: "<case>", data: validated.data })`
+Each `handleCallResult(result)` → `handleCallResult(result, { operation_type: "<case>", data: validated.data })`
 
-具体 16 处（gen_passport 例外，使用 `{ operation_type: "gen_passport", data: { guard: validated.guard, info: validated.info } }`）：
+Specific 16 locations (gen_passport is an exception, using `{ operation_type: "gen_passport", data: { guard: validated.guard, info: validated.info } }`):
 - service (L461), machine (L497), progress (L504), repository (L511), arbitration (L518), contact (L525), treasury (L532), reward (L541), allocation (L548), permission (L553), guard (L612), personal (L670), payment (L675), demand (L682), order (L689), gen_passport (L693)
 
-**3b. catch 块（L697-709）**
+**3b. catch block (L697-709)**
 
-改为路由到 handleCallResult，使 catch 错误也获得 classifyError 分类：
+Change to route through handleCallResult so that catch errors also get classifyError classification:
 ```typescript
 } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -357,43 +357,43 @@ const semantic: SemanticSummary = {
 }
 ```
 
-注意：`validated` 可能在 strictParse 抛错时未定义，需用可选链 + try-catch 包裹。若 `validated` 未定义，传 `undefined` context（handleCallResult 向后兼容）。
+Note: `validated` may be undefined when strictParse throws, so optional chaining + try-catch wrapping is needed. If `validated` is undefined, pass `undefined` context (handleCallResult is backward compatible).
 
-**为什么**：16 个 case 一次性接线，使所有 onchain 操作获得语义层。catch 块路由确保参数验证错误、文件读取错误等也获得结构化分类（如 `invalid_parameter`）。
+**Why**: Wire all 16 cases at once so every onchain operation gets the semantic layer. Routing the catch block ensures parameter validation errors, file read errors, etc. also get structured classification (e.g., `invalid_parameter`).
 
-**验证**：`npx tsc --noEmit` 通过（在 MCP 目录）。
+**Verification**: `npx tsc --noEmit` passes (in the MCP directory).
 
 ---
 
-### 变更 4 — JSON schema 重生成
+### Change 4 — JSON Schema Regeneration
 
-**命令**（在 MCP 目录）：
+**Command** (in the MCP directory):
 ```bash
 pnpm generate:schemas
 ```
 
-**为什么**：MCP 客户端通过 JSON schema 发现工具的输入/输出字段。新增的 `semantic`、`error_code`、`retryable`、`recovery_hint` 必须出现在生成的 JSON schema 中，否则客户端无法感知。
+**Why**: MCP clients discover tool input/output fields through JSON schema. The newly added `semantic`, `error_code`, `retryable`, `recovery_hint` must appear in the generated JSON schema, otherwise clients cannot detect them.
 
-**验证**：检查生成的 JSON schema 文件包含 `semantic` 字段定义。
+**Verification**: Check that the generated JSON schema file contains the `semantic` field definition.
 
 ---
 
-### 变更 5 — vitest 配置 + 4 个 spec 文件
+### Change 5 — vitest Configuration + 4 spec files
 
-**5a. package.json**（MCP package.json）
+**5a. package.json** (MCP package.json)
 
-devDependencies 添加：
+Add to devDependencies:
 ```json
 "vitest": "^2.1.0"
 ```
 
-scripts 添加：
+Add to scripts:
 ```json
 "test": "vitest run",
 "test:watch": "vitest"
 ```
 
-**5b. vitest.config.ts**（新建 MCP vitest.config.ts）
+**5b. vitest.config.ts** (new file in MCP vitest.config.ts)
 
 ```typescript
 import { defineConfig } from "vitest/config";
@@ -404,64 +404,64 @@ export default defineConfig({
 });
 ```
 
-**5c. 4 个 spec 文件**（新建于 MCP __tests__ 目录）
+**5c. 4 spec files** (new files in MCP __tests__ directory)
 
-1. `classifyError.spec.ts` — 测试 8 个 error_code 模式匹配 + fallback 到 unknown
-2. `inferIntent.spec.ts` — 测试 16 个 operation_type → intent 映射 + signals 子意图区分
-3. `tagObjectRoles.spec.ts` — 测试 objectType generics strip、`::` split、last segment → role enum 映射
-4. `buildSemantic.spec.ts` — 端到端：构造 mock tx result + context，验证完整 SemanticSummary 结构
+1. `classifyError.spec.ts` — test 8 error_code pattern matches + fallback to unknown
+2. `inferIntent.spec.ts` — test 16 operation_type → intent mappings + signals sub-intent discrimination
+3. `tagObjectRoles.spec.ts` — test objectType generics strip, `::` split, last segment → role enum mapping
+4. `buildSemantic.spec.ts` — end-to-end: construct mock tx result + context, verify full SemanticSummary structure
 
-**为什么**：vitest 是该 mcp 包的首个测试基础设施。4 个 spec 覆盖语义层核心逻辑，防止规则表回归。
+**Why**: vitest is the first test infrastructure for this MCP package. 4 specs cover the core semantic layer logic, preventing rule table regressions.
 
-**验证**：`pnpm test` 全部通过。
+**Verification**: `pnpm test` all pass.
 
-## 假设与决策
+## Assumptions and Decisions
 
-1. **语义层语言**：英文实现（per 用户 E4 决策："英文实现。其他语言 LLM 会自动做处理，语义层核心用英文表达"）
-2. **数据驱动规则表**：TS const 数组 + signal fns + confidence（Loop Engineering 最佳演化形式 — 加规则 = 加数组条目，无需改控制流，全类型检查）
-3. **向后兼容**：所有新字段 optional；无 context 调用 `handleCallResult` 行为与之前完全一致（`buildSemantic(undefined, undefined)` 返回 `undefined`）
-4. **objectType 解析**：strip generics `replace(/<.*>/,"")`，split `"::"`，取最后段 → role enum
-5. **单 chokepoint**：`handleCallResult` 是所有 onchain 工具构建 CallOutput 的唯一入口
-6. **per-branch enrichment**：buildSemantic 在每个分支单独调用（非单次末尾调用），因为各分支可用数据不同
-7. **FundRole 基础版**：仅推断 payment/refund/gas/deposit/release/reward 六类，不涉及完整业务上下文推断（范围外）
-8. **Phase 1 行业（自由职业+租赁）+ Tauri 客户端**：本计划范围外，待语义层完成后另立计划
+1. **Semantic layer language**: English implementation (per user E4 decision: "English implementation. Other languages will be handled by the LLM automatically; the semantic layer core uses English")
+2. **Data-driven rule tables**: TS const array + signal fns + confidence (best evolution form for Loop Engineering — adding a rule = adding an array entry, no control flow changes required, fully type-checked)
+3. **Backward compatibility**: All new fields are optional; calling `handleCallResult` without context behaves identically to before (`buildSemantic(undefined, undefined)` returns `undefined`)
+4. **objectType parsing**: Strip generics `replace(/<.*>/,"")`, split `"::"`, take last segment → role enum
+5. **Single chokepoint**: `handleCallResult` is the only entry point for all onchain tools to build CallOutput
+6. **Per-branch enrichment**: buildSemantic is called separately in each branch (not a single end-of-function call), because each branch has different available data
+7. **FundRole basic version**: Only infers payment/refund/gas/deposit/release/reward six categories, does not involve full business context inference (out of scope)
+8. **Phase 1 industries (freelance + rental) + Tauri client**: Out of scope for this plan, to be planned separately after the semantic layer is complete
 
-## 范围外（per approved plan）
+## Out of Scope (per approved plan)
 
-- bridge/local/query 工具的语义增强（仅 onchain_operations 接线）
-- 完整 FundRole 推断（仅基础六类）
-- EventSemantic 映射
-- 现有字段 description 重写
-- Loop Engineering 遥测采集（无 consent 需求已确认，但采集机制另立计划）
-- Phase 1 行业模板（自由职业+租赁）
-- Tauri 本地客户端
+- Semantic enhancement for bridge/local/query tools (onchain_operations only)
+- Full FundRole inference (basic six categories only)
+- EventSemantic mapping
+- Rewriting existing field descriptions
+- Loop Engineering telemetry collection (no-consent requirement confirmed, but collection mechanism is a separate plan)
+- Phase 1 industry templates (freelance + rental)
+- Tauri local client
 
-## 验证步骤
+## Verification Steps
 
-1. `npx tsc --noEmit`（在 mcp 目录）— 类型检查通过
-2. `pnpm build` — 构建成功（tsc + generate:schemas）
-3. `pnpm generate:schemas` — JSON schema 重生成
-4. 检查生成的 JSON schema 包含 `semantic` 字段、扩展的 error 字段（`error_code`/`retryable`/`recovery_hint`）
-5. `pnpm test` — 4 个 spec 全部通过
-6. 向后兼容验证：无 context 调用 `handleCallResult(result)` 返回的 CallOutput 无 `semantic` 字段（与之前一致）
+1. `npx tsc --noEmit` (in the mcp directory) — type check passes
+2. `pnpm build` — build succeeds (tsc + generate:schemas)
+3. `pnpm generate:schemas` — JSON schema regenerated
+4. Check generated JSON schema contains `semantic` field, extended error fields (`error_code`/`retryable`/`recovery_hint`)
+5. `pnpm test` — all 4 specs pass
+6. Backward compatibility verification: calling `handleCallResult(result)` without context returns a CallOutput without the `semantic` field (identical to before)
 
-## 任务清单（执行顺序）
+## Task Checklist (execution order)
 
-- [ ] **S-3a**: handler.ts error 分支接线（L35-45）— 调用 classifyError，注入 error_code/retryable/recovery_hint
-- [ ] **S-3b**: handler.ts tx-failure 分支接线（L54-67）— 同上
-- [ ] **S-3 验证**: `npx tsc --noEmit`
-- [ ] **S-2a**: semantic.ts 实现 INTENT_RULES + inferIntent
-- [ ] **S-2b**: semantic.ts 实现 inferStatus, objectTypeToRole, tagObjectRoles, tagFundRoles, NEXT_ACTION_RULES, inferNextActions, inferWarnings, composeSummary
-- [ ] **S-2c**: semantic.ts 实现 buildSemantic
-- [ ] **S-2d**: handler.ts 扩展签名（handleCallResult + context 参数）+ import buildSemantic/SemanticContext + tx-success 分支注入 semantic + submission 分支注入固定 semantic
-- [ ] **S-2 验证**: `npx tsc --noEmit`
-- [ ] **S-4a**: index.ts 16 个 case 传 context（service/machine/progress/repository/arbitration/contact/treasury/reward/allocation/permission/guard/personal/payment/demand/order/gen_passport）
-- [ ] **S-4b**: index.ts catch 块路由到 handleCallResult
-- [ ] **S-4 验证**: `npx tsc --noEmit`
-- [ ] **schema 重生成**: `pnpm generate:schemas`，验证 JSON schema 包含新字段
-- [ ] **vitest 配置**: package.json 添加 vitest devDep + test 脚本；新建 vitest.config.ts
+- [ ] **S-3a**: handler.ts error branch wiring (L35-45) — call classifyError, inject error_code/retryable/recovery_hint
+- [ ] **S-3b**: handler.ts tx-failure branch wiring (L54-67) — same as above
+- [ ] **S-3 verification**: `npx tsc --noEmit`
+- [ ] **S-2a**: semantic.ts implement INTENT_RULES + inferIntent
+- [ ] **S-2b**: semantic.ts implement inferStatus, objectTypeToRole, tagObjectRoles, tagFundRoles, NEXT_ACTION_RULES, inferNextActions, inferWarnings, composeSummary
+- [ ] **S-2c**: semantic.ts implement buildSemantic
+- [ ] **S-2d**: handler.ts extend signature (handleCallResult + context parameter) + import buildSemantic/SemanticContext + tx-success branch inject semantic + submission branch inject fixed semantic
+- [ ] **S-2 verification**: `npx tsc --noEmit`
+- [ ] **S-4a**: index.ts 16 cases pass context (service/machine/progress/repository/arbitration/contact/treasury/reward/allocation/permission/guard/personal/payment/demand/order/gen_passport)
+- [ ] **S-4b**: index.ts catch block routes to handleCallResult
+- [ ] **S-4 verification**: `npx tsc --noEmit`
+- [ ] **schema regeneration**: `pnpm generate:schemas`, verify JSON schema contains new fields
+- [ ] **vitest configuration**: package.json add vitest devDep + test script; create vitest.config.ts
 - [ ] **vitest spec 1**: classifyError.spec.ts
 - [ ] **vitest spec 2**: inferIntent.spec.ts
 - [ ] **vitest spec 3**: tagObjectRoles.spec.ts
 - [ ] **vitest spec 4**: buildSemantic.spec.ts
-- [ ] **最终验证**: `pnpm build` + `pnpm test` + 检查生成的 JSON schema
+- [ ] **final verification**: `pnpm build` + `pnpm test` + check generated JSON schema
