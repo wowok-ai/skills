@@ -9,6 +9,8 @@
 
 Each round follows: state the goal, ask the minimum questions needed, gather inputs (LLM translation only when free text is ambiguous), update the ODG in memory, persist checkpoint, advance.
 
+> **Tool Call Convention**: All tool references in this document (e.g., `project_operation`, `onchain_operations`) are sub-tools invoked via the single unified `wowok` tool. Translate every reference to `wowok({ tool: "<sub-tool-name>", data: {<params>} })`. See [wowok-tools](../wowok-tools/SKILL.md) for the full interface.
+
 ## Project-Based Deployment Integration
 
 The planner flow integrates with the MCP project-based deployment pipeline (5 stages). Each stage maps to specific R rounds:

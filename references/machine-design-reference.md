@@ -48,7 +48,7 @@ A **Machine** is a **directed graph** (allows cycles): Node set + NodePair migra
 | Step | Phase | Description |
 |------|-------|-------------|
 | **M1** | Flow & Node Design | Extract business process, design nodes (entry/normal/terminal/branch), Pair + threshold, Forward + permissions |
-| **M2** | Machine Creation (unpublished) | `onchain_operations(machine) CREATE publish:false`, verify node/forward completeness |
+| **M2** | Machine Creation (unpublished) | `wowok({ tool: "onchain_operations", data: { operation_type: "machine", publish: false } })` CREATE, verify node/forward completeness |
 | **M3** | Guard Creation & Binding | Guard design (table + root tree), CREATE Guard, `gen_passport` static test, MODIFY Machine to bind Guards to Forwards |
 | **M4** | Pre-Publish Audit | 8D puzzle completeness, 5D risk assessment, topology analysis, on-chain limit checks, machineNode2file backup, independent Progress test |
 | **M5** | Publish & Bind Service | User explicit confirmation, `publish:true` (nodes frozen), bind Machine to Service, publish Service |

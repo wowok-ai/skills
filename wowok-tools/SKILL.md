@@ -1,9 +1,10 @@
 ---
 name: wowok-tools
 description: |
-  WoWok MCP tool reference — canonical documentation for all 13 MCP tools.
-  Covers schema-inexpressible constraints, business rules, interaction patterns,
-  and design decisions not captured by JSON Schema.
+  WoWok MCP tool reference — canonical documentation for the single unified
+  `wowok` tool and its 17 sub-tools. Covers schema-inexpressible constraints,
+  business rules, interaction patterns, and design decisions not captured by
+  JSON Schema.
 
   Core value: prevent common AI failures (wrong tool selection, incorrect
   parameter formats, missing structural wrappers, wrong discriminated unions).
@@ -17,10 +18,33 @@ always: true
 
 # WoWok MCP Tool Reference
 
-Canonical reference for all 13 MCP tools. Covers patterns, constraints, and design decisions that **JSON Schema cannot express**. For detailed business workflows, see the Domain and Business Skills below.
+Canonical reference for the single unified `wowok` tool and its 17 sub-tools. Covers patterns, constraints, and design decisions that **JSON Schema cannot express**. For detailed business workflows, see the Domain and Business Skills below.
 
 > **Domain Skills**: [wowok-guard](../wowok-guard/SKILL.md) (validation logic), [wowok-messenger](../wowok-messenger/SKILL.md) (encrypted messaging), [wowok-machine](../wowok-machine/SKILL.md) (workflows), [wowok-safety](../wowok-safety/SKILL.md) (safety & naming)
 > **Business Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-provider](../wowok-provider/SKILL.md) (merchant), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (dispute resolution)
+
+---
+
+## Single-Tool Interface (Schema-Gated Execution)
+
+MCP `tools/list` returns **only one tool**: `wowok`. All operations go through it.
+
+**Call pattern**: `wowok({ tool: "<sub-tool-name>", data: {<sub-tool params>} })`
+
+When any skill (including this one) says "Call `onchain_operations`" or "Use `schema_query`", translate it to:
+```
+wowok({ tool: "onchain_operations", data: { operation_type: "service", ... } })
+wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations" } })
+```
+
+**Schema-gated execution**: If `data` doesn't match the sub-tool's schema, the response includes:
+- `result.status = "schema_mismatch"` — validation failed
+- `result.errors` — specific field errors
+- `result.hint` — instructions to fix and retry
+- `schema.input` — the correct JSON schema for the sub-tool
+- `schema.tool` — which sub-tool this schema belongs to
+
+**Schema caching**: Each sub-tool has a different schema. When you receive a schema in a mismatch response, cache it in your context for future calls to the same sub-tool. You should only need to see each sub-tool's schema once per conversation.
 
 ---
 
@@ -32,15 +56,15 @@ On-chain operations require gas. Transactions will fail if the account has insuf
 
 When assisting users with WoWok operations:
 
-- After a user creates a new account, proactively call `account_operation` → `faucet` to claim test tokens on their behalf
-- Before starting any on-chain workflow, check balance via `query_toolkit` → `account_balance`
+- After a user creates a new account, proactively call `wowok({ tool: "account_operation", data: { faucet: { ... } } })` to claim test tokens
+- Before starting any on-chain workflow, check balance via `wowok({ tool: "query_toolkit", data: { query_type: "account_balance", ... } })`
 - If balance is below 1 WOW, automatically request faucet without asking the user
 - If a transaction fails due to gas, retry after claiming more tokens
 
 ### Tool Reference
 
-- **Claim tokens**: `account_operation` → `faucet` (not `onchain_operations`)
-- **Check balance**: `query_toolkit` → `account_balance`
+- **Claim tokens**: `wowok({ tool: "account_operation", data: { faucet: { ... } } })` (not `onchain_operations`)
+- **Check balance**: `wowok({ tool: "query_toolkit", data: { query_type: "account_balance", ... } })`
 
 Each faucet claim provides approximately 5 WOW, sufficient for dozens of transactions.
 
@@ -118,11 +142,11 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 
 ---
 
-## The 13 Tools
+## The 17 Sub-Tools (all via `wowok({ tool, data })`)
 
 ### 1. `onchain_operations` — 16 Sub-Types
 
-> **Schema**: `schema_query({ name: "onchain_operations" })` for the full discriminated union. Per-type schemas: `onchain_operations_service`, `onchain_operations_machine`, etc.
+> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations" } })` for the full discriminated union. Per-type schemas: `onchain_operations_service`, `onchain_operations_machine`, etc.
 
 | `operation_type` | Schema-Inexpressible Constraints |
 |-----------------|----------------------------------|
@@ -208,16 +232,18 @@ Max 50 contents/entry, 300 chars each.
 ## Decision Tree
 
 ```
-Write state? → onchain_operations (choose operation_type)
+All calls via: wowok({ tool: "<sub-tool>", data: {<params>} })
+
+Write state? → tool: "onchain_operations" (choose operation_type in data)
 ├── No data wrapper? → only gen_passport
 ├── No submission?    → only payment, personal
 └── String (MODIFY) vs Object (CREATE)? → safety §1.1
 
-Read state?  → query_toolkit / onchain_table_data
-Communicate? → messenger_operation (encrypted)
-Local only?  → account_operation / local_mark_operation / local_info_operation
-Export?      → guard2file / machineNode2file
-Discover?    → schema_query / wowok_buildin_info / onchain_events
+Read state?  → tool: "query_toolkit" / "onchain_table_data"
+Communicate? → tool: "messenger_operation" (encrypted)
+Local only?  → tool: "account_operation" / "local_mark_operation" / "local_info_operation"
+Export?      → tool: "guard2file" / "machineNode2file"
+Discover?    → tool: "schema_query" / "wowok_buildin_info" / "onchain_events"
 ```
 
 ---
@@ -266,9 +292,11 @@ When explaining a specific technique to users, reference where it appears:
 
 | Trap | Fix |
 |------|-----|
+| **Calling sub-tool name directly** | MCP only exposes `wowok`. Use `wowok({ tool: "onchain_operations", data: {...} })`, not `onchain_operations({...})` |
+| **Schema validation error** | The response includes `schema.input` — read it, fix params, retry. Cache the schema for future calls to the same sub-tool. |
 | **Transaction fails, gas error** | → [Pre-Flight: Gas & Faucet](#pre-flight-gas--faucet). AI should auto-check balance + faucet. |
 | **Don't know how to build a service** | → [Examples Reference](#examples-reference). Match user intent → example, extract JSON templates. |
-| `gen_passport` called as standalone tool | It's not — use `onchain_operations` with `operation_type: "gen_passport"` |
+| `gen_passport` called as standalone tool | It's not — use `wowok({ tool: "onchain_operations", data: { operation_type: "gen_passport", ... } })` |
 | Missing `data` wrapper | Only `gen_passport` omits it; `payment`/`personal` omit `submission` |
 | String `object` passed expecting CREATE | String = existing (MODIFY), Object = new (CREATE) → [safety §1.1](../wowok-safety/SKILL.md) |
 | Missing `submission` on Guard call | See [Submission Loop](#submission-loop-two-phase) — two-phase pattern: call without `submission` first, collect data, re-call with it |

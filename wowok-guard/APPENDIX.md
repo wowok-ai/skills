@@ -9,6 +9,8 @@
 
 A 10-round dialogue for the Guard authoring journey: from "I need a validation rule" through "tested, bound, and live". Guards are CREATE-only and immutable — this dialogue is deliberately heavy on design (R1-R6) before any on-chain write (R7), because there is no edit phase after creation. The sequence covers the four canonical Guard contexts (buy_guard, machine Forward guard, Allocator guard, Arbitration voting_guard) but the same shape applies to reward, repository, and demand Guards.
 
+> **Tool Call Convention**: All tool references in this document are sub-tools invoked via the single unified `wowok` tool. Translate every reference to `wowok({ tool: "<sub-tool-name>", data: {<params>} })`. See [wowok-tools](../wowok-tools/SKILL.md) for the full interface.
+
 ### R1: Validation Intent Capture
 
 **AI Goal**: Articulate the business requirement the Guard will enforce, in plain language, before any technical design. Identify which of the §Quick Decision patterns fits.
@@ -263,7 +265,7 @@ Guard needs to query object B, but caller submits object A's ID:
 ├── A = Order, B = Service? ──→ convert_witness: TypeOrderService
 ├── A = Progress, B = Machine? ──→ convert_witness: TypeProgressMachine
 ├── A = Reward, B = Service? ──→ convert_witness: TypeRewardService
-├── Other source→target pairs? ──→ query wowok_buildin_info (info: "guard instructions") for the complete witness type catalog
+├── Other source→target pairs? ──→ query `wowok({ tool: "wowok_buildin_info", data: { info: "guard instructions" } })` for the complete witness type catalog
 └── No conversion needed (caller submits the exact object the Guard queries)? ──→ omit convert_witness
 ```
 
@@ -288,7 +290,7 @@ Guard logic needs to change:
 │   ├── Export current Guard? ──→ guard2file → JSON/Markdown
 │   ├── Edit file (table, root tree, rely)? ──→ offline edit
 │   ├── Review edited JSON with user? ──→ confirm
-│   ├── CREATE new Guard from file? ──→ onchain_operations(guard) with root.type="file"
+│   ├── CREATE new Guard from file? ──→ `wowok({ tool: "onchain_operations", data: { operation_type: "guard", root: { type: "file", ... } } })`
 │   ├── Test new Guard? ──→ gen_passport with mock submissions
 │   ├── Rebind to host object? ──→ MODIFY host (if host is mutable)
 │   │   └── Host is immutable (published Machine/Service)? ──→ must create new host object too

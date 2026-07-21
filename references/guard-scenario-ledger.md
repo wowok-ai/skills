@@ -207,7 +207,7 @@
 - **Iterable**: Yes (not bound to any object, can create new tests anytime)
 
 **Use Cases**:
-- Test Guard logic via `onchain_operations(gen_passport)` without binding to any Host Object
+- Test Guard logic via `wowok({ tool: "onchain_operations", data: { operation_type: "gen_passport", ... } })` without binding to any Host Object
 - Verify Guard behavior under mock submission
 - Verify expected-pass and expected-fail boundary scenarios
 - Protected by `guard_gen_passport_test` confirmation rule (standard level)
@@ -319,7 +319,7 @@ For iterable scenes (buy_guard, Reward.guard, Repository.write_guard, Arbitratio
 
 1. **Export old Guard**: `guard2file` exports JSON backup
 2. **Edit JSON**: Modify based on old JSON (preserve identifier order, update table/root)
-3. **Create new Guard**: `onchain_operations(guard) CREATE`
+3. **Create new Guard**: `wowok({ tool: "onchain_operations", data: { operation_type: "guard", ... } })` CREATE
 4. **Rebind**: MODIFY Host Object's binding_field to point to new Guard
 5. **gen_passport test**: Run `gen_passport` on the new Guard
 6. **Post-verification**: Verify new Guard is active

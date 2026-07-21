@@ -9,6 +9,8 @@
 
 A 10-round dialogue for the merchant operations journey: from "I want to set up a service" through "published, live, and accepting orders". This dialogue assumes the merchant has an account (per [wowok-onboard](../wowok-onboard/SKILL.md) R1) and may have a partial configuration. Each round maps to one R-item in the §PRE-FLIGHT checklist or one STEP in the §Service Build Lifecycle. The §Anti-Fabrication Rules are non-negotiable throughout — the AI never invents products, prices, workflow, or fund splits.
 
+> **Tool Call Convention**: All tool references in this document (e.g., `onchain_operations`, `query_toolkit`, `messenger_operation`) are sub-tools invoked via the single unified `wowok` tool. Translate every reference to `wowok({ tool: "<sub-tool-name>", data: {<params>} })`. See [wowok-tools](../wowok-tools/SKILL.md) for the full interface.
+
 ## Project-Based Deployment Integration
 
 The provider flow integrates with the MCP project-based deployment pipeline (5 stages). The relevant stages for the operations journey are:
@@ -320,7 +322,7 @@ Should I add a Compensation Fund?
 
 ```
 Merchant daily check-in:
-├── New orders? ──→ query_toolkit.onchain_events (NewOrderEvent) → fulfill per Machine workflow
+├── New orders? ──→ `wowok({ tool: "query_toolkit", data: { query_type: "onchain_events", ... } })` (NewOrderEvent) → fulfill per Machine workflow
 ├── Orders stuck at a node? ──→ query Progress → check Forward operators / Guard submissions → advance or contact customer
 ├── Customer messages? ──→ messenger_operation.watch_conversations (unreadOnly: true) → respond
 ├── Funds to claim? ──→ allocation.alloc_by_guard (anyone can trigger; verify fund flow)

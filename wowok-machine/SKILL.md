@@ -122,7 +122,7 @@ Machine
             └── guard (optional): condition that must pass
 ```
 
-> **Schema**: `schema_query({ action: "get", name: "onchain_operations_machine" })` — all field types, limits, valid values. This document focuses on design decisions **not captured** by the schema.
+> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_machine" } })` — all field types, limits, valid values. This document focuses on design decisions **not captured** by the schema.
 
 ### Forward Permission Model
 
@@ -188,7 +188,7 @@ Nine operations are available via the `node` field. Query schema for full parame
 - `exchange` swaps two node positions without delete/recreate. `rename` auto-updates all Pair references.
 - `add forward` supports the full `MachineForward` structure including `guard` with `retained_submission`.
 
-> **Schema**: `schema_query({ action: "get", name: "onchain_operations_machine" })` for full operation parameters.
+> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_machine" } })` for full operation parameters.
 
 ### File-Based Workflow
 
@@ -220,7 +220,7 @@ Two paths: **Service Order** (automatic when Order created on Service with bound
 
 Two-phase operations (`hold`/`unhold`) allow locking resources during multi-step operations; `adminUnhold` force-releases stale locks.
 
-> **Querying**: Progress state via `onchain_objects`, history via `onchain_table` / `onchain_table_item_progress_history`. Schema: `schema_query({ action: "get", name: "onchain_table_data" })`.
+> **Querying**: Progress state via `onchain_objects`, history via `onchain_table` / `onchain_table_item_progress_history`. Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_table_data" } })`.
 
 ### Runtime: Advancing the Workflow
 

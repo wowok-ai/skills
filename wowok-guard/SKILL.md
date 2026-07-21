@@ -320,7 +320,7 @@ The root tree is a computational expression whose terminal nodes read data and w
 
 Guard computational trees are built from typed nodes. Rather than listing all possible nodes (which evolves with the system), query the authoritative schema dynamically:
 
-**Tool**: `schema_query({ action: "get", name: "onchain_operations_guard" })`
+**Tool**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_guard" } })`
 
 This returns the complete `GuardNodeSchema` definition — every node type, its required fields, input/output types, and validation rules. Node categories include:
 
@@ -347,7 +347,7 @@ Use `onchain_operations` with `operation_type: "guard"`.
 - `root.type: "node"` — build the computation tree directly in the operation payload.
 - `root.type: "file"` — load the tree from a `guard2file`-exported JSON/Markdown file. Use this to iterate on existing Guards: export → edit file → create new Guard from file.
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_guard" })`
+**Schema Reference**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_guard" } })`
 
 ---
 
@@ -359,7 +359,7 @@ Before embedding a Guard into a live Machine, Service, or Arbitration, test it i
 
 **Tool**: `onchain_operations` with `operation_type: "gen_passport"`
 
-**Schema Reference**: `schema_query({ action: "get", name: "onchain_operations_gen_passport" })`
+**Schema Reference**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_gen_passport" } })`
 
 This tool verifies one or more Guards and, on success, generates an immutable Passport — a verified credential stored on-chain. Use it to:
 
@@ -390,7 +390,7 @@ Guards are immutable but iterable. The full cycle:
 1. guard2file <existing_guard> → JSON/Markdown file
 2. Edit file (table, root tree, rely)
 3. Review edited JSON with user → confirm
-4. onchain_operations(guard) with root.type="file" → new Guard created
+4. wowok({ tool: "onchain_operations", data: { operation_type: "guard", root: { type: "file", ... } } }) → new Guard created
 5. Update all references (Machine forwards, Service buy_guard, Arbitration voting_guard, etc.)
 ```
 

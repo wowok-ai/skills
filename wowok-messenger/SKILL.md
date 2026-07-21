@@ -25,7 +25,7 @@ always: false
 End-to-end encrypted messaging with tamper-proof audit trails.
 
 > **Role**: Any WoWok participant
-> **Schema**: `schema_query({ action: "get", name: "messenger_operation" })` — all 16 operations with full parameter types and constraints. This document focuses on **design decisions and strategy** not captured by the schema.
+> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "messenger_operation" } })` — all 16 operations with full parameter types and constraints. This document focuses on **design decisions and strategy** not captured by the schema.
 > **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (guard design), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (WTS evidence in disputes), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-provider](../wowok-provider/SKILL.md) (service provider perspective), [wowok-safety](../wowok-safety/SKILL.md) (safety)
 
 ---

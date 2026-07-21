@@ -244,9 +244,9 @@ See [Core Architecture > Key Flows](#arb-state-machine) above.
 ### Schema Access
 
 ```javascript
-schema_query({ action: "get", name: "onchain_operations_arbitration" })
-schema_query({ action: "get", name: "onchain_operations_order" })
-schema_query({ action: "get", name: "messenger_operation" })
+wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_arbitration" } })
+wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_order" } })
+wowok({ tool: "schema_query", data: { action: "get", name: "messenger_operation" } })
 ```
 
 ---

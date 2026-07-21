@@ -262,7 +262,7 @@ For complex objects with many fields (Service, Machine), use **incremental build
 | Guard instructions | `wowok_buildin_info` with `info: "guard instructions"` |
 | Value types | `wowok_buildin_info` with `info: "value types"` |
 
-**Query Schema**: `schema_query({ action: "get", name: "<schema_name>" })`
+**Query Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "<schema_name>" } })`
 
 **Related Skills**: [wowok-tools](../wowok-tools/SKILL.md) | [wowok-guard](../wowok-guard/SKILL.md) | [wowok-machine](../wowok-machine/SKILL.md) | [wowok-order](../wowok-order/SKILL.md) | [wowok-provider](../wowok-provider/SKILL.md) | [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | [wowok-messenger](../wowok-messenger/SKILL.md)
 

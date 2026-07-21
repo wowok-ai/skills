@@ -245,7 +245,7 @@ Clarify via Messenger: deliverables (E2 WIP), timeline (E3 nodes), refund/cancel
 
 ## Phase 3: Order Creation
 
-Schema: `schema_query({ action: "get", name: "onchain_operations_service" })`. Safety: [wowok-safety](../wowok-safety/SKILL.md).
+Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_service" } })`. Safety: [wowok-safety](../wowok-safety/SKILL.md).
 
 **Not in schema**:
 - Excess `buy.total_pay` auto-refunded. Agents cannot withdraw.
@@ -257,7 +257,7 @@ Post-creation: notify via Messenger with order ID.
 
 ## Phase 4: Order Operations
 
-Schema: `schema_query({ action: "get", name: "onchain_operations_order" })`.
+Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_order" } })`.
 
 ### Progress Advancement
 
@@ -277,7 +277,7 @@ Present all three dimensions. Never just the operation name.
 
 ## Phase 5: Arbitration
 
-Schema: `schema_query({ action: "get", name: "onchain_operations_arbitration" })`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_arbitration" } })`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
 Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confirm` → voting → (`order.arb_objection`) → `order.arb_claim_compensation`.
 
@@ -410,7 +410,7 @@ Toggle example: `config_operation` → `action: "toggle"`, `service: "order_moni
 
 ## Quick Reference
 
-Schemas: `schema_query({ action: "get", name: "<name>" })` for `onchain_operations_service`, `onchain_operations_order`, `onchain_operations_arbitration`, `messenger_operation`, `query_toolkit`, `onchain_table_data`, `wip_file`.
+Schemas: `wowok({ tool: "schema_query", data: { action: "get", name: "<name>" } })` for `onchain_operations_service`, `onchain_operations_order`, `onchain_operations_arbitration`, `messenger_operation`, `query_toolkit`, `onchain_table_data`, `wip_file`.
 
 ### Phase Dependency
 

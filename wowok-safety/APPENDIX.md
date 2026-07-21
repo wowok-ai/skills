@@ -9,6 +9,8 @@
 
 A guided 10-round dialogue for the safety verification journey — runs before ANY on-chain write operation. Each round has a specific AI Goal, Key Questions, Tool Calls, Success Criteria, Fallback, and Checkpoint. Checkpoints persist via `local_info_operation` so the verification can resume after interruption.
 
+> **Tool Call Convention**: All tool references in this document are sub-tools invoked via the single unified `wowok` tool. Translate every reference to `wowok({ tool: "<sub-tool-name>", data: {<params>} })`. See [wowok-tools](../wowok-tools/SKILL.md) for the full interface.
+
 > **Trigger**: This dialogue is automatically invoked when the user requests an on-chain write operation (transfer, publish, create, modify, etc.). It is the safety gate that all writes must pass through.
 
 ### R1 — Operation Intent Capture
@@ -309,24 +311,26 @@ What level of confirmation does this operation need?
 ### D3: LOCAL vs ON-CHAIN vs QUERY
 
 ```
+All sub-tools below are accessed via: wowok({ tool: "<sub-tool-name>", data: {<params>} })
+
 Classifying the operation:
 ├── LOCAL ONLY (no gas, no confirmation)
-│   ├── account_operation (gen, get, faucet, messenger, etc.)
-│   ├── local_mark_operation
-│   └── local_info_operation
+│   ├── tool: "account_operation" (gen, get, faucet, messenger, etc.)
+│   ├── tool: "local_mark_operation"
+│   └── tool: "local_info_operation"
 ├── ON-CHAIN (gas required, confirmation required)
-│   ├── onchain_operations (all 16 operation_types)
-│   ├── messenger_operation (some ops — sign, proof_message)
-│   └── wip_file (sign)
+│   ├── tool: "onchain_operations" (all 16 operation_types)
+│   ├── tool: "messenger_operation" (some ops — sign, proof_message)
+│   └── tool: "wip_file" (sign)
 ├── QUERY (read-only, no gas, no confirmation)
-│   ├── query_toolkit
-│   ├── onchain_table_data
-│   ├── onchain_events
-│   ├── guard2file
-│   ├── machineNode2file
-│   └── wowok_buildin_info
+│   ├── tool: "query_toolkit"
+│   ├── tool: "onchain_table_data"
+│   ├── tool: "onchain_events"
+│   ├── tool: "guard2file"
+│   ├── tool: "machineNode2file"
+│   └── tool: "wowok_buildin_info"
 └── ENCRYPTED (local encryption, no gas)
-    └── messenger_operation (watch/send messages — local ops)
+    └── tool: "messenger_operation" (watch/send messages — local ops)
 ```
 
 ### D4: Publish Readiness Check

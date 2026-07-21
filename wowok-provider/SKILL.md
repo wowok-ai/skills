@@ -91,20 +91,22 @@ STEP 0: Present checklist R1-R7 to user
 Once R1-R7 confirmed, execute in strict order. All operations use R1 (Account) as `env.account`.
 
 ```
+All Tool: references below are sub-tools invoked via wowok({ tool: "<name>", data: { operation_type: "<type>", ... } })
+
 STEP 1: Foundation
 ├── Permission — REUSE existing (strongly recommended)
-│     Tool: onchain_operations (permission) | Fields: name, type_parameter
+│     Tool: "onchain_operations" (permission) | Fields: name, type_parameter
 ├── Service (unpublished) — CREATE new
-│     Tool: onchain_operations (service) | Fields: name, type_parameter, permission
+│     Tool: "onchain_operations" (service) | Fields: name, type_parameter, permission
 └── Machine (unpublished) — CREATE new or REUSE template
-      Tool: onchain_operations (machine) | Fields: nodes, pairs, forwards
-      Discovery: query_toolkit (account_list, local_mark_list, onchain_objects)
-      Template: machineNode2file (export existing for editing)
+      Tool: "onchain_operations" (machine) | Fields: nodes, pairs, forwards
+      Discovery: "query_toolkit" (account_list, local_mark_list, onchain_objects)
+      Template: "machineNode2file" (export existing for editing)
 
 STEP 2: Trust Layer
 └── Guards — CREATE new or REUSE existing
-      Tool: onchain_operations (guard) | Fields: logic, instructions
-      Template: guard2file (export existing for editing)
+      Tool: "onchain_operations" (guard) | Fields: logic, instructions
+      Template: "guard2file" (export existing for editing)
       ⚠️ Design your Guard tables based on how the target object reads data:
          - buy_guard → pass/fail only, no data extraction
          - Allocator guard → pass/fail only
@@ -114,22 +116,22 @@ STEP 2: Trust Layer
 
 STEP 3: Business Logic (MODIFY)
 ├── Machine — bind Guards to forwards
-│     Tool: onchain_operations (machine)
+│     Tool: "onchain_operations" (machine)
 ├── Service — set Allocators
-│     Tool: onchain_operations (service) | Fields: order_allocators
+│     Tool: "onchain_operations" (service) | Fields: order_allocators
 ├── Arbitrations (optional) — REUSE existing Arb services
-│     Tool: onchain_operations (service) | Fields: arbitrations.list
+│     Tool: "onchain_operations" (service) | Fields: arbitrations.list
 ├── Compensation Fund (optional): compensation_fund_add + setting_locked_time_add (default 30 days, configurable)
-│     Tool: onchain_operations (service)
+│     Tool: "onchain_operations" (service)
 └── Reward (optional) — incentive pools
 
 STEP 4: Publication
 ├── Publish Machine → IMMUTABLE
-│     Tool: onchain_operations (machine) | publish: true
+│     Tool: "onchain_operations" (machine) | publish: true
 ├── Bind Machine to Service
-│     Tool: onchain_operations (service) | machine: "<machine_id>"
+│     Tool: "onchain_operations" (service) | machine: "<machine_id>"
 └── Publish Service → machine/allocators LOCKED
-      Tool: onchain_operations (service) | publish: true
+      Tool: "onchain_operations" (service) | publish: true
 
       ⚠️ Pre-Publish Verification:
       1. Re-check PRE-FLIGHT: all R1-R7 still confirmed?
@@ -233,7 +235,7 @@ Each `sharing[].who` field determines where funds go. Choose the correct type ba
 After the Progress reaches a terminal state, the fund allocation is NOT automatic — it must be triggered explicitly. **Anyone can call this operation**; the caller does not need to be the merchant or customer. The Guard verification determines which allocator's rules apply.
 
 ```
-Tool: onchain_operations (allocation)
+Tool: wowok({ tool: "onchain_operations", data: { operation_type: "allocation", ... } })
 Operation: alloc_by_guard
 Required submission: Order ID (matching the Guard's b_submission identifier)
 ```
@@ -249,8 +251,8 @@ Required submission: Order ID (matching the Guard's b_submission identifier)
 Immutable product commitment for arbitration evidence.
 
 ```
-Create:  wip_file → generate → markdown_text + images → outputPath
-Attach: onchain_operations (service) → sales.sales[{
+Create:  wowok({ tool: "wip_file", data: { op: "generate", ... } }) → markdown_text + images → outputPath
+Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", ... } }) → sales.sales[{
           name, price, stock, wip: "<URL>", wip_hash: "" (auto)
         }]
 ```
@@ -285,7 +287,7 @@ Attach: onchain_operations (service) → sales.sales[{
 | Messenger | `messenger_operation` |
 | Query | `query_toolkit` |
 
-**Export**: `machineNode2file`, `guard2file` | **Query Schema**: `schema_query({ action: "get", name: "<name>" })`
+**Export**: `machineNode2file`, `guard2file` | **Query Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "<name>" } })`
 
 ---
 

@@ -9,6 +9,8 @@
 
 Every round follows the same shape: state the goal, ask the key question(s), execute the MCP calls, verify success criteria, persist checkpoint, fall back on failure.
 
+> **Tool Call Convention**: All tool references in this document (e.g., `onchain_operations`, `query_toolkit`, `account_operation`) are sub-tools invoked via the single unified `wowok` tool. Translate every reference to `wowok({ tool: "<sub-tool-name>", data: {<params>} })`. See [wowok-tools](../wowok-tools/SKILL.md) for the full interface.
+
 ## Project-Based Deployment Integration
 
 The onboarding flow is integrated with the MCP project-based 5-stage deployment pipeline. Each stage gates progression to the next, with `project_operation` action calls providing deterministic validation:
