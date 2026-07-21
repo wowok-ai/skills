@@ -31,6 +31,16 @@ when_to_use:
 
 A **driving mode** is a curated bundle of: industry traits, default Permission indexes, default Machine node graph, default Guard templates, default Allocator strategy, a 10-round build script, an audit checklist, and a failure playbook. Modes are **presets, not constraints** — every underlying MCP operation remains available. Users can override any default or switch to `general` (free) mode at any time.
 
+> **Authoritative cross-reference**: This skill's mode definitions are aligned with the following internal references:
+> - [Guard Template Library](../references/guard-template-library.md) — Guard templates referenced by mode `Guards` column
+> - [Machine Template Library](../references/machine-template-library.md) — Machine shapes referenced by mode `Machine Shape` column
+> - [Machine Scenario Ledger](../references/machine-scenario-ledger.md) — 10 business scenarios per mode
+> - [Guard Scenario Ledger](../references/guard-scenario-ledger.md) — Guard usage scenarios per mode
+> - [Merchant Scenario Coordination §5](../references/merchant-scenario-coordination.md) — 6 industry modes × merchant perspective
+> - [On-chain Constants](../references/onchain-constants.md) — Permission index ranges and capacity limits
+>
+> When a mode's defaults disagree with these references, the **design references** in this directory are authoritative (P15 decision: bidirectional cross-reference, with design references as single source of truth for object semantics).
+
 ### What Driving Modes Solve
 
 The "object_type wall" — new users do not know which Machine topology, which Guards, which Allocator strategy fits their industry. Modes pre-answer these questions using best practices distilled from real usage (and refined by Loop Engineering over time).

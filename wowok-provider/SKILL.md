@@ -163,20 +163,34 @@ STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 
 ### Service Object Relationships
 
+> **Authoritative source**: [Object Collaboration Diagram](../references/object-collaboration.md) §1 (22-object collaboration DAG, 83 relationships).
+> This tree is a simplified view. Cross-reference the above for the full graph and [Object Boundary Conditions](../references/object-collaboration.md#boundary-conditions) for mutability rules.
+
 ```
 Service (merchant storefront)
-├── machine → Machine (workflow)
-├── order_allocators → Fund distribution rules
-├── arbitrations → Dispute resolution (optional)
-├── compensation_fund → Customer protection (optional)
-├── sales → Products with WIP files
-├── rewards → Incentive pools (optional)
-└── um → Contact (customer service)
+├── permission → Permission (required, mutable after publish)
+├── machine → Machine (required, IMMUTABLE after publish)
+├── order_allocators → Allocation[] (optional, mutable after publish)
+├── arbitrations → Arbitration[] (optional, mutable after publish, max 20)
+├── compensation_fund → Treasury (optional, mutable after publish)
+├── sales → Repository (optional, mutable after publish; products with WIP files)
+├── rewards → Reward[] (optional, mutable after publish)
+├── um → Contact (optional, mutable after publish; customer service)
+├── customer_required → Personal (optional, mutable after publish; customer data schema)
+└── buy_guard → Guard (optional, mutable after publish; gates order placement)
 
-Order (per purchase)
-├── builder → Customer
-├── progress → Workflow state
-└── allocation → Fund distribution engine
+Order (per purchase, runtime-created)
+├── builder → Customer (immutable after creation)
+├── service → Service snapshot (immutable after creation)
+├── machine → Machine (immutable after creation)
+├── progress → Progress (immutable after binding)
+├── arbitration → Arbitration (optional, immutable once set)
+└── allocation → Fund distribution engine (triggered via Progress.forward)
+
+Cross-object references (see [Object Collaboration Diagram §6](../references/object-collaboration.md#guard-and-machine-global-usage) for Guard/Machine global usage):
+- Guard is referenced by 9 object types (Service.buy_guard, Machine.forward.guard, Allocation.allocation_guard, Arbitration.voting_guard, Reward.claim_guard, Repository.write_guard, Treasury.external_guard, Demand.recommend_guard, Passport.guard)
+- Machine is referenced by 4 object types (Service.machine, Order.machine, Progress.machine, Order snapshot)
+- Permission is the central hub — 11 objects hold BuiltinPermissionIndex (see [Object Collaboration Diagram §5](../references/object-collaboration.md#permission-reverse-reference-table) for reverse-reference table)
 ```
 
 ### Allocators + Machine Integration
