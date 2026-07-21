@@ -2,24 +2,24 @@
 
 ## Context
 
-The WoWok MCP server returns raw Sui transaction responses. AI must perform 3-4 inference steps per call to understand "what happened, succeeded or not, what's next" — parsing `objectType` strings, correlating `objectChanges`/`events`/`balanceChanges`, and re-deriving business meaning every time. This burns context, causes errors, and blocks the Harness Expect/Verify loops ([02-Harness方案](file:///d:/wowok/wiki/market/GLM/02-Harness与Loop-Engineering升级方案.md)) and the Tauri client rendering ([05-行业打透方案 §6.4](file:///d:/wowok/wiki/market/GLM/05-行业打透与突破性架构方案.md)) from having a clean input.
+The WoWok MCP server returns raw Sui transaction responses. AI must perform 3-4 inference steps per call to understand "what happened, succeeded or not, what's next" — parsing `objectType` strings, correlating `objectChanges`/`events`/`balanceChanges`, and re-deriving business meaning every time. This burns context, causes errors, and blocks the Harness Expect/Verify loops and the Tauri client rendering from having a clean input.
 
-This change adds an optional `semantic` field to `CallOutput` that pre-translates business meaning (intent / status / one-line summary / object roles / fund roles / next_actions / warnings) plus structured error fields (`error_code` / `retryable` / `recovery_hint`). It is the foundation for the AI-understandability goals in [04-Output-Schema改进方案](file:///d:/wowok/wiki/market/GLM/04-Output-Schema改进方案.md) and the Loop Engineering flywheel ([05 §一](file:///d:/wowok/wiki/market/GLM/05-行业打透与突破性架构方案.md)) — rule tables are data-driven precisely so AI can evolve them.
+This change adds an optional `semantic` field to `CallOutput` that pre-translates business meaning (intent / status / one-line summary / object roles / fund roles / next_actions / warnings) plus structured error fields (`error_code` / `retryable` / `recovery_hint`). It is the foundation for the AI-understandability goals and the Loop Engineering flywheel — rule tables are data-driven precisely so AI can evolve them.
 
 This plan covers the critical path: schemas + classifier + builder + wiring for the `onchain_operations` flow (16 operation types) + JSON-schema regeneration + tests. Bridge / local / query tools are immediate follow-ups.
 
 ## Codebase facts the design rests on
 
-- **Single chokepoint**: `handleCallResult(result)` in [handler.ts](file:///d:/wowok/agent/mcp/src/schema/call/handler.ts) L29-132 builds every `CallOutput` for onchain/query/local tools via 6 branches (error / tx-success / tx-failure / submission / array / null-default).
-- **Intent context at call sites**: [index.ts](file:///d:/wowok/agent/mcp/src/index.ts) `handleOnchainOperations` L435-710 has a `switch(validated.operation_type)` over 16 cases; each calls `handleCallResult(result)` — it already knows `operation_type` + `validated.data` but doesn't pass them.
+- **Single chokepoint**: `handleCallResult(result)` in handler.ts (schema/call) L29-132 builds every `CallOutput` for onchain/query/local tools via 6 branches (error / tx-success / tx-failure / submission / array / null-default).
+- **Intent context at call sites**: index.ts `handleOnchainOperations` L435-710 has a `switch(validated.operation_type)` over 16 cases; each calls `handleCallResult(result)` — it already knows `operation_type` + `validated.data` but doesn't pass them.
 - **Missed bypass**: index.ts catch block (~L697-709) builds an error `CallOutput` directly, skipping `handleCallResult`. Must be patched or routed through it.
-- **Schema defs**: [base.ts](file:///d:/wowok/agent/mcp/src/schema/call/base.ts) L179-182 `CallOutputSchema = {result, message?}.strict()`; L108-112 `CallResponseErrorSchema`; L149-163 `CallResultSchema` discriminated union on `type`.
+- **Schema defs**: base.ts (schema/call) L179-182 `CallOutputSchema = {result, message?}.strict()`; L108-112 `CallResponseErrorSchema`; L149-163 `CallResultSchema` discriminated union on `type`.
 - **JSON-schema regen is mandatory**: `pnpm generate:schemas` runs `tsx scripts/generate-json-schemas.ts` (zod-to-json-schema) to emit the schemas MCP clients discover. Adding `semantic` requires re-running so clients see it.
-- **No test runner** in [package.json](file:///d:/wowok/agent/mcp/package.json) (only `tsc && generate:schemas`; uses `tsx`). Existing "tests" are inline `safeParse` calls.
+- **No test runner** in package.json (only `tsc && generate:schemas`; uses `tsx`). Existing "tests" are inline `safeParse` calls.
 
 ## Approach
 
-### 1. Schemas — [base.ts](file:///d:/wowok/agent/mcp/src/schema/call/base.ts)
+### 1. Schemas — base.ts (schema/call)
 
 Add (all fields `optional`, backward-compatible):
 - `ObjectRoleSchema` = `{ id, name?: string|null, role: enum(16 values + Other), relation?: {parent?, relation_type?}, immutable?: boolean }`
@@ -35,7 +35,7 @@ Add (all fields `optional`, backward-compatible):
 
 Descriptions on new fields follow the four-part spec (semantics / constraint / relation / example) in English.
 
-### 2. New module — `d:\wowok\agent\mcp\src\schema\call\semantic.ts`
+### 2. New module — semantic.ts (schema/call)
 
 **Data-driven rule tables** (TS const arrays with signal fns + confidence) — the form best for Loop Engineering evolution (add a rule = add an array entry, no control-flow edits, full type-checking):
 
@@ -59,7 +59,7 @@ Internals: `inferIntent` (iterate INTENT_RULES, first match ≥0.7), `inferStatu
 
 ~300 lines, one file. Split only if it exceeds ~400.
 
-### 3. Wire chokepoint — [handler.ts](file:///d:/wowok/agent/mcp/src/schema/call/handler.ts)
+### 3. Wire chokepoint — handler.ts (schema/call)
 
 Extend signature: `handleCallResult(result, context?: SemanticContext)`. **Per-branch enrichment** (each branch has different data, not a single end-call):
 - error branch + tx-failure branch: call `classifyError(enrichedError)` → inject `error_code/retryable/recovery_hint`
@@ -69,7 +69,7 @@ Extend signature: `handleCallResult(result, context?: SemanticContext)`. **Per-b
 
 `context` optional → no-context calls behave exactly as before (backward compat).
 
-### 4. Wire call sites — [index.ts](file:///d:/wowok/agent/mcp/src/index.ts)
+### 4. Wire call sites — index.ts (MCP main)
 
 Each of 16 cases: `handleCallResult(result, { operation_type: "<case>", data: validated.data })`. **Patch the catch block (~L697-709)** to route through `handleCallResult({error: errorMessage}, context)` or call `classifyError` inline so errors also get structured fields.
 
@@ -125,11 +125,11 @@ End-to-end checks after implementation:
 
 ## Critical files
 
-- [d:\wowok\agent\mcp\src\schema\call\base.ts](file:///d:/wowok/agent/mcp/src/schema/call/base.ts) — add schemas + optional fields + type exports
-- [d:\wowok\agent\mcp\src\schema\call\semantic.ts](file:///d:/wowok/agent/mcp/src/schema/call/semantic.ts) — NEW: buildSemantic, classifyError, data-driven rule tables
-- [d:\wowok\agent\mcp\src\schema\call\handler.ts](file:///d:/wowok/agent/mcp/src/schema/call/handler.ts) — extend handleCallResult signature + per-branch enrichment
-- [d:\wowok\agent\mcp\src\index.ts](file:///d:/wowok/agent/mcp/src/index.ts) — 16 call sites pass context + catch-block patch (L435-710, ~L697-709)
-- [d:\wowok\agent\mcp\package.json](file:///d:/wowok/agent/mcp/package.json) — add vitest devDep + scripts
-- [d:\wowok\agent\mcp\vitest.config.ts](file:///d:/wowok/agent/mcp/vitest.config.ts) — NEW
-- [d:\wowok\agent\mcp\tests\semantic\*.spec.ts](file:///d:/wowok/agent/mcp/tests/semantic/) — NEW: 4 spec files
-- [d:\wowok\agent\mcp\scripts\generate-json-schemas.ts](file:///d:/wowok/agent/mcp/scripts/generate-json-schemas.ts) — verify CallOutput included (likely already); run via `pnpm generate:schemas`
+- base.ts (schema/call) — add schemas + optional fields + type exports
+- semantic.ts (schema/call) — NEW: buildSemantic, classifyError, data-driven rule tables
+- handler.ts (schema/call) — extend handleCallResult signature + per-branch enrichment
+- index.ts (MCP main) — 16 call sites pass context + catch-block patch (L435-710, ~L697-709)
+- package.json (MCP) — add vitest devDep + scripts
+- vitest.config.ts (MCP) — NEW
+- tests/semantic/*.spec.ts — NEW: 4 spec files
+- scripts/generate-json-schemas.ts — verify CallOutput included (likely already); run via `pnpm generate:schemas`

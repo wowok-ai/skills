@@ -39,7 +39,7 @@ A **Machine** is a **directed graph** (allows cycles): Node set + NodePair migra
 |-----------|-------|---------|
 | Nature | Data computation tree (bool root) | Directed graph (nodes + migration, cycles allowed) |
 | Mutability | CREATE-only (immutable) | Mutable before publish, frozen after |
-| Risk types | Reentrancy / forgery / logic gaps | Structural integrity / cycle exit / Guard integration / permission博弈 / immutability |
+| Risk types | Reentrancy / forgery / logic gaps | Structural integrity / cycle exit / Guard integration / permission dynamics / immutability |
 | Confirmation | 1 confirmation before CREATE | 100% confirmation before publish (irreversible) |
 | Puzzle dimensions | 6 (A-F) | 8 (A-H) |
 
@@ -260,7 +260,7 @@ Field explanation rules for all node/pair/forward/guard fields. Node role identi
 | R-M2-07 | Cross-Machine cycle | CRITICAL | A depends on B, B depends on A |
 | R-M2-08 | Guard references unpublished object | HIGH | Guard table references unpublished object |
 
-### R-M3: Permission博弈 (8 rules)
+### R-M3: Permission Dynamics (8 rules)
 
 | ID | Risk | Severity | Description |
 |----|------|----------|-------------|
@@ -269,7 +269,7 @@ Field explanation rules for all node/pair/forward/guard fields. Node role identi
 | R-M3-03 | Permission rotation | HIGH | indices reordered after Permission update |
 | R-M3-04 | OrderHolder misuse | MEDIUM | `namedOperator: ""` on non-customer operation |
 | R-M3-05 | NamedOperator not assigned | HIGH | Progress created without namedOperator values |
-| R-M3-06 | Imbalanced permission博弈 | MEDIUM | Single party can unilaterally advance |
+| R-M3-06 | Imbalanced permission dynamics | MEDIUM | Single party can unilaterally advance |
 | R-M3-07 | Mixed permission OR misuse | MEDIUM | Both permissions set, OR semantics misunderstood |
 | R-M3-08 | permissionIndex < 1000 | CRITICAL | Uses system-reserved index range |
 

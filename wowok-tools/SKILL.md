@@ -266,8 +266,8 @@ When explaining a specific technique to users, reference where it appears:
 
 | Trap | Fix |
 |------|-----|
-| **Transaction fails, gas error** | → [Pre-Flight: Gas & Faucet](#-pre-flight-gas--faucet前置必读). AI should auto-check balance + faucet. |
-| **Don't know how to build a service** | → [Examples Reference](#examples-reference内置示例导航). Match user intent → example, extract JSON templates. |
+| **Transaction fails, gas error** | → [Pre-Flight: Gas & Faucet](#pre-flight-gas--faucet). AI should auto-check balance + faucet. |
+| **Don't know how to build a service** | → [Examples Reference](#examples-reference). Match user intent → example, extract JSON templates. |
 | `gen_passport` called as standalone tool | It's not — use `onchain_operations` with `operation_type: "gen_passport"` |
 | Missing `data` wrapper | Only `gen_passport` omits it; `payment`/`personal` omit `submission` |
 | String `object` passed expecting CREATE | String = existing (MODIFY), Object = new (CREATE) → [safety §1.1](../wowok-safety/SKILL.md) |

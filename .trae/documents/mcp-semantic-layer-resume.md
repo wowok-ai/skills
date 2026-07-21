@@ -8,7 +8,7 @@
 
 ## 当前状态分析（基于实际文件读取）
 
-### ✅ S-1 已完成 — `d:\wowok\agent\mcp\src\schema\call\base.ts`
+### ✅ S-1 已完成 — base.ts (schema/call)
 - `ObjectRoleSchema`（L109-122）：18 值 role enum + relation 子对象
 - `FundRoleSchema`（L125-131）：9 值 fund role enum
 - `NextActionSchema`（L134-140）：action/reason/tool/prerequisite/priority
@@ -19,8 +19,8 @@
 - `npx tsc --noEmit` 已通过
 
 ### 🔄 S-3 半完成
-- `d:\wowok\agent\mcp\src\schema\call\semantic.ts`：`SemanticContext` 接口、`ErrorCode` 类型、`ErrorClassification` 接口、`ERROR_RULES` 表（8 规则 + fallback）、`classifyError(errorMsg)` 函数 — **全部已实现**
-- `d:\wowok\agent\mcp\src\schema\call\handler.ts`：L7 已 `import { classifyError } from "./semantic.js"` — **import 完成**
+- `semantic.ts` (schema/call)：`SemanticContext` 接口、`ErrorCode` 类型、`ErrorClassification` 接口、`ERROR_RULES` 表（8 规则 + fallback）、`classifyError(errorMsg)` 函数 — **全部已实现**
+- `handler.ts` (schema/call)：L7 已 `import { classifyError } from "./semantic.js"` — **import 完成**
 - **未完成**：两个 error 分支（L35-45 error 分支、L54-67 tx-failure 分支）仍构建原始 `{ type: "error", error: enrichedError }`，未调用 classifyError、未注入 `error_code`/`retryable`/`recovery_hint`
 
 ### ⏳ S-2 未开始
@@ -29,7 +29,7 @@
 - `handleCallResult` 签名未扩展 context 参数
 
 ### ⏳ S-4 未开始
-- `d:\wowok\agent\mcp\src\index.ts` `handleOnchainOperations`（L435-710）：
+- `index.ts` (MCP main) `handleOnchainOperations`（L435-710）：
   - 16 个 case（L456-694）：service, machine, progress, repository, arbitration, contact, treasury, reward, allocation, permission, guard, personal, payment, demand, order, gen_passport — 每个调用 `handleCallResult(result)` 无 context
   - catch 块（L697-709）：直接构建 error CallOutput，绕过 handleCallResult（不获得 error 分类）
 
@@ -41,7 +41,7 @@
 
 ### 变更 1 — S-3 完成：handler.ts error 分支接线
 
-**文件**：`d:\wowok\agent\mcp\src\schema\call\handler.ts`
+**文件**：handler.ts (schema/call)
 
 **1a. Error 分支（当前 L35-45）**
 
@@ -82,13 +82,13 @@ if (safeResult && "error" in safeResult) {
 
 **为什么**：`handleCallResult` 是所有 onchain 工具构建 CallOutput 的单一 chokepoint。在此处注入一次，所有 16 个 case 自动获得结构化错误分类，驱动 Recover Loop 策略选择。
 
-**验证**：`npx tsc --noEmit` 通过。
+**验证**：`npx tsc --noEmit` 通过（在 MCP 目录）。
 
 ---
 
 ### 变更 2 — S-2 实现：buildSemantic + tx-success/submission 分支接线
 
-**文件**：`d:\wowok\agent\mcp\src\schema\call\semantic.ts`（在 classifyError 之后追加）
+**文件**：semantic.ts (schema/call)（在 classifyError 之后追加）
 
 **2a. INTENT_RULES 规则表 + inferIntent**
 
@@ -329,13 +329,13 @@ const semantic: SemanticSummary = {
 
 **为什么**：per-branch enrichment（非单次末尾调用），因为 tx-success 分支有 objectChanges/balanceChanges/events，submission 分支无交易数据但有固定语义。数据驱动规则表形式（TS const 数组 + signal fns）是 Loop Engineering 演化的最佳形式 — 加规则 = 加数组条目，无需改控制流。
 
-**验证**：`npx tsc --noEmit` 通过。
+**验证**：`npx tsc --noEmit` 通过（在 MCP 目录）。
 
 ---
 
 ### 变更 3 — S-4：16 个 call site 接线 + catch 块补丁
 
-**文件**：`d:\wowok\agent\mcp\src\index.ts`
+**文件**：index.ts (MCP main)
 
 **3a. 16 个 case**（L456-694）
 
@@ -361,13 +361,13 @@ const semantic: SemanticSummary = {
 
 **为什么**：16 个 case 一次性接线，使所有 onchain 操作获得语义层。catch 块路由确保参数验证错误、文件读取错误等也获得结构化分类（如 `invalid_parameter`）。
 
-**验证**：`npx tsc --noEmit` 通过。
+**验证**：`npx tsc --noEmit` 通过（在 MCP 目录）。
 
 ---
 
 ### 变更 4 — JSON schema 重生成
 
-**命令**（在 `d:\wowok\agent\mcp` 目录）：
+**命令**（在 MCP 目录）：
 ```bash
 pnpm generate:schemas
 ```
@@ -380,7 +380,7 @@ pnpm generate:schemas
 
 ### 变更 5 — vitest 配置 + 4 个 spec 文件
 
-**5a. package.json**（`d:\wowok\agent\mcp\package.json`）
+**5a. package.json**（MCP package.json）
 
 devDependencies 添加：
 ```json
@@ -393,7 +393,7 @@ scripts 添加：
 "test:watch": "vitest"
 ```
 
-**5b. vitest.config.ts**（新建 `d:\wowok\agent\mcp\vitest.config.ts`）
+**5b. vitest.config.ts**（新建 MCP vitest.config.ts）
 
 ```typescript
 import { defineConfig } from "vitest/config";
@@ -404,7 +404,7 @@ export default defineConfig({
 });
 ```
 
-**5c. 4 个 spec 文件**（新建于 `d:\wowok\agent\mcp\src\schema\call\__tests__\`）
+**5c. 4 个 spec 文件**（新建于 MCP __tests__ 目录）
 
 1. `classifyError.spec.ts` — 测试 8 个 error_code 模式匹配 + fallback 到 unknown
 2. `inferIntent.spec.ts` — 测试 16 个 operation_type → intent 映射 + signals 子意图区分

@@ -266,27 +266,27 @@ The structure populated by `customer_intelligence` service:
     "risk_score": 72,
     "risk_level": "medium_low",
     "recommendations": [
-      "要求商家配置 Arbitration 服务后再下单",
-      "通过 Messenger 协商退款条款"
+      "Require merchant to configure Arbitration service before ordering",
+      "Negotiate refund terms via Messenger"
     ],
     "reminders": [
       {
         "id": "evaluate_high_risk",
         "stage": "evaluate",
         "priority": "required",
-        "message": "🔴 综合风险分 45/100，强烈建议不购买"
+        "message": "🔴 Comprehensive risk score 45/100, strongly recommend not purchasing"
       },
       {
         "id": "evaluate_ambiguous_guard",
         "stage": "evaluate",
         "priority": "required",
-        "message": "🔴 检测到 2 个模糊 Guard，必须人工审查后才能继续"
+        "message": "🔴 Detected 2 ambiguous Guards, manual review required before proceeding"
       }
     ],
     "preference_match": {
       "score": 78,
-      "matches": ["价格低于均价 10%", "有仲裁", "有赔偿金"],
-      "mismatches": ["交付周期超出期望"]
+      "matches": ["Price 10% below market average", "Has arbitration", "Has compensation fund"],
+      "mismatches": ["Delivery timeline exceeds expectations"]
     }
   }
 }
@@ -299,32 +299,32 @@ The structure populated by `customer_intelligence` service:
 When the user mentions an industry, load the corresponding preference template and risk checks:
 
 **freelance** (free-agent services):
-- Ask: "需要 WIP hash 验证吗？里程碑节点配置了吗？"
+- Ask: "Is WIP hash verification needed? Are milestone nodes configured?"
 - Risk checks: WIP verified, milestone nodes, refund path, Messenger
 - Preference template: 30-day cycle, 4h response, require arb + comp
 
 **rental** (equipment/property rental):
-- Ask: "锁定期多久？赔偿金覆盖订单金额吗？"
+- Ask: "What is the lock duration? Does the compensation fund cover the order amount?"
 - Risk checks: compensation full, lock duration safe, arbitration, user-operable
 - Preference template: 7-day cycle, 8h response, conservative risk appetite
 
 **education** (courses/coaching):
-- Ask: "课程周期长，能接受 90 天交付吗？退款路径清楚吗？"
+- Ask: "The course cycle is long, can you accept 90-day delivery? Is the refund path clear?"
 - Risk checks: refund path, compensation, arbitration, long-cycle tolerance
 - Preference template: 90-day cycle, 24h response, conservative, flexible delivery
 
 **travel** (travel/booking services):
-- Ask: "紧急交付，2 小时内能响应吗？里程碑节点齐全吗？"
+- Ask: "Urgent delivery, can the seller respond within 2 hours? Are milestone nodes complete?"
 - Risk checks: urgent delivery, compensation full, refund path, Messenger
 - Preference template: 14-day cycle, 2h response, conservative, urgent delivery
 
 **subscription** (recurring services):
-- Ask: "订阅无锁定吗？用户可操作路径吗？"
+- Ask: "Is there no lock-in? Is there a user-operable path?"
 - Risk checks: no-lockin (no dead-end), refund path, user-operable, optional comp
 - Preference template: 30-day cycle, 24h response, aggressive risk, basic after-sales
 
 **retail** (physical goods):
-- Ask: "WIP 验证了吗？赔偿金覆盖订单吗？仲裁配置了吗？"
+- Ask: "Has WIP been verified? Does compensation cover the order? Is arbitration configured?"
 - Risk checks: WIP verified, compensation full, refund path, arbitration
 - Preference template: 7-day cycle, 8h response, balanced risk, full after-sales
 
@@ -394,14 +394,14 @@ After R9 (order creation), the post-purchase phase begins. Use `post-purchase.ts
 ```
 User wants refund or refund Allocator fired:
 ├── refunded_amount vs order_amount?
-│   ├── 100% refunded → "退款已完成" (info)
-│   ├── Partial refund → "退款不完整，差额 X" (recommended)
+│   ├── 100% refunded → "Refund completed" (info)
+│   ├── Partial refund → "Refund incomplete, shortfall X" (recommended)
 │   │   └── Next step: query order state + contact merchant via Messenger
-│   ├── 0 refund + user-initiated → "等待商家退款" (recommended)
+│   ├── 0 refund + user-initiated → "Waiting for merchant refund" (recommended)
 │   │   └── Next step: monitor via order_monitor service
-│   ├── 0 refund + refund path exists → "可通过 Allocator 触发退款" (recommended)
+│   ├── 0 refund + refund path exists → "Refund can be triggered via Allocator" (recommended)
 │   │   └── Next step: advance to refund node via order.progress
-│   └── 0 refund + no refund path → "无退款路径，需通过仲裁" (required)
+│   └── 0 refund + no refund path → "No refund path, arbitration required" (required)
 │       └── Next step: file arbitration dispute (see Phase 4)
 ```
 
@@ -410,14 +410,14 @@ User wants refund or refund Allocator fired:
 ```
 User reports quality problem:
 ├── WIP hash comparison
-│   ├── current_wip_hash != original_wip_hash → "WIP 不一致" (required)
+│   ├── current_wip_hash != original_wip_hash → "WIP mismatch" (required)
 │   │   └── Document: re-verify via wip_file, generate WTS evidence
-│   └── wip_hash missing → "要求商家提供 WIP hash 验证" (recommended)
+│   └── wip_hash missing → "Request merchant to provide WIP hash verification" (recommended)
 │
 ├── Evidence collection
-│   ├── evidence empty → "收集证据：截图、聊天记录、交付物样品" (required)
-│   ├── evidence < 3 items → "补充更多证据以增强仲裁胜算" (recommended)
-│   └── evidence ≥ 3 items → "证据充分，可考虑发起仲裁" (info)
+│   ├── evidence empty → "Collect evidence: screenshots, chat logs, delivery samples" (required)
+│   ├── evidence < 3 items → "Add more evidence to strengthen arbitration case" (recommended)
+│   └── evidence ≥ 3 items → "Evidence sufficient, consider filing arbitration" (info)
 │
 └── Next step: hand off to Phase 4 (arbitration support) if unresolved
 ```
@@ -427,12 +427,12 @@ User reports quality problem:
 ```
 Seller not responding on Messenger:
 ├── Days since last reply?
-│   ├── ≤ 3 days → "商家可能忙碌，等待回复" (info)
-│   ├── > 3 days → "持续无响应，发送催促消息" (recommended)
+│   ├── ≤ 3 days → "Merchant may be busy, waiting for reply" (info)
+│   ├── > 3 days → "Persistent non-response, send reminder message" (recommended)
 │   │   └── Next step: send Messenger reminder + document stall
-│   ├── > 7 days + has_arbitration → "建议发起仲裁" (required)
+│   ├── > 7 days + has_arbitration → "Recommend filing arbitration" (required)
 │   │   └── Next step: file arbitration dispute (see Phase 4)
-│   └── > 7 days + no arbitration → "无仲裁通道，资金可能冻结" (required)
+│   └── > 7 days + no arbitration → "No arbitration channel, funds may be frozen" (required)
 │       └── Next step: escalate to WoWok community / off-chain recourse
 │
 └── If order_monitor service is ON, these alerts fire automatically
@@ -443,19 +443,19 @@ Seller not responding on Messenger:
 ```
 Filing arbitration dispute:
 ├── arbitration_initiated?
-│   ├── NO → "建议发起仲裁申请" (required)
+│   ├── NO → "Recommend filing arbitration application" (required)
 │   │   └── Generate application template:
-│   │       title: "订单 {order_id} 交付争议申请"
+│   │       title: "Order {order_id} delivery dispute application"
 │   │       description: template auto-filled from puzzle + evidence
-│   │       evidence_required: [聊天记录, 交付物截图, WIP hash 对比]
+│   │       evidence_required: [Chat logs, Delivery screenshots, WIP hash comparison]
 │   │       claim: refund / compensation / specific performance
 │   │
 │   └── YES → check status
-│       ├── arb_window_days ≤ 3 → "仲裁窗口即将关闭" (required)
+│       ├── arb_window_days ≤ 3 → "Arbitration window closing soon" (required)
 │       │   └── Next step: expedite evidence submission
-│       ├── evidence empty → "补充证据" (required)
-│       ├── evidence < 3 → "补充更多证据以增强仲裁胜算" (recommended)
-│       └── evidence ≥ 3 → "证据充分，等待仲裁结果" (info)
+│       ├── evidence empty → "Submit evidence" (required)
+│       ├── evidence < 3 → "Add more evidence to strengthen arbitration case" (recommended)
+│       └── evidence ≥ 3 → "Evidence sufficient, waiting for arbitration result" (info)
 │
 └── Result interpretation guide:
     ├── State (3) Arbitrated → user can accept or object

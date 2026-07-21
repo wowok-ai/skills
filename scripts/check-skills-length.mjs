@@ -32,8 +32,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const SKILLS_ROOT = join(__dirname, "..");
-const MCP_ROOT = join(SKILLS_ROOT, "..", "agent", "mcp");
-const GLOSSARY_PATH = join(MCP_ROOT, "src", "knowledge", "glossary.ts");
+const GLOSSARY_PATH = join(SKILLS_ROOT, "references", "glossary.ts");
 
 // Thresholds per user decision
 const THRESHOLD_ERROR = 400; // must split
@@ -211,7 +210,6 @@ if (jsonOutput) {
     if (enforce && errorCount > 0) {
         console.error(`❌ ENFORCEMENT FAILURE: ${errorCount} file(s) exceed ${THRESHOLD_ERROR} lines.`);
         console.error("   Split required per Phase 2 Batch 5 Progressive Disclosure strategy.");
-        console.error("   See: wiki/market/GLM/11-Phase2-后续任务清单.md");
         process.exit(1);
     } else if (errorCount > 0) {
         console.log(`⚠️  ${errorCount} file(s) exceed ${THRESHOLD_ERROR} lines. Run with --enforce to fail CI.`);
