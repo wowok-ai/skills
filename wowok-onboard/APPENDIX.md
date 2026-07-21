@@ -9,6 +9,18 @@
 
 Every round follows the same shape: state the goal, ask the key question(s), execute the MCP calls, verify success criteria, persist checkpoint, fall back on failure.
 
+## Project-Based Deployment Integration
+
+The onboarding flow is integrated with the MCP project-based 5-stage deployment pipeline. Each stage gates progression to the next, with `project_operation` action calls providing deterministic validation:
+
+- **Stage 1 (Project Naming)** → R1-R2 — establish `project` namespace and `version` for all subsequent calls
+- **Stage 2 (Business Puzzle)** → R2 calls `project_operation` → `action: "analyze_intent"` to obtain the Object Dependency Graph (ODG), missing field list (puzzles), and `next_step` guidance that drives R3-R8 field completion
+- **Stage 3 (Risk Calibration)** → after R8 checkpoint, calls `project_operation` → `action: "aggregate_risks"` to evaluate risk across all puzzles; CRITICAL risks block progression
+- **Stage 4 (Deployment Doc)** → once risks pass, calls `project_operation` → `action: "generate_deployment_doc"` to produce the deployment document; D-errors block progression to R9
+- **Stage 5 (Substep Trace)** → R9-R10 calls `project_operation` → `action: "trace_substeps"` to validate substep linkage integrity (D-10 check) before execution via `onchain_operations`
+
+All `project_operation` calls return a `can_proceed` boolean and a `next_action` hint. The onboarding AI MUST honor the gate semantics: stop on `can_proceed: false`, fix the reported issues, and only proceed when `can_proceed: true`.
+
 ### R1: Welcome + Account Setup
 
 **AI Goal**: Confirm the user is new (or resuming), establish the working account, fund it via faucet if empty.
@@ -28,7 +40,7 @@ Every round follows the same shape: state the goal, ask the key question(s), exe
 
 **Fallback**: Faucet fails → instruct user to wait 60s and retry, or fund via `transfer` from another account they own. Account name collision → append `_v1`, `_v2` per wowok-safety §1.1.
 
-**Checkpoint**: Persist `{ round: R1, account: <name>, balance: <n> }` via `local_info_operation`.
+**Checkpoint**: Persist `{ round: R1, account: <name>, balance: <n>, project: <project_name>, version: <version> }` via `local_info_operation`. The `project` and `version` fields establish the Stage 1 Project Naming namespace and MUST be carried forward in every subsequent `project_operation` call (Stage 2-5) and referenced in checkpoints R2-R10.
 
 ---
 
@@ -42,6 +54,7 @@ Every round follows the same shape: state the goal, ask the key question(s), exe
 - Will you need to ship physical goods?
 
 **Tool Calls**:
+0. `project_operation` → `action: "analyze_intent"` with `project`, `version`, `user_intent`, `industry` — 获取 ODG + 缺失字段清单 + 下一步建议。MCP 返回的 puzzles 和 next_step 指导后续 R3-R8 的字段补全。
 1. Internally classify the user's answers into `traits` (`has_logistics`, `communication_heavy`, `pure_digital`, `long_cycle`, `deposit_required`, `multi_tier_allocation`).
 2. Match to a mode via [wowok-scenario](../wowok-scenario/SKILL.md) §Mode Selection Logic:
    - freelance (Phase 1) — pure digital, no deposit, milestone allocation
@@ -73,7 +86,7 @@ Every round follows the same shape: state the goal, ask the key question(s), exe
 1. `onchain_operations` → `operation_type: "service"` with:
    - `data.name`, `data.type_parameter`, `data.description`
    - `data.permission` left empty for now (Permission comes in R4) OR pass a Permission object shape that auto-creates (wowok-safety §1.1 — SDK auto-creates a Permission if object shape passed)
-   - `publish: false` (mandatory — Service stays draft)
+   - `publish: false` (mandatory — **DRAFT** creation, Service stays draft until R10 publish; this is a deliberate two-phase pattern: draft in R3-R8 allows iterative MODIFY, then irreversible publish in R10)
    - `env.account` = R1 account
 2. (Optional, physical goods) `wip_file` → `generate` to produce WIP file URL + hash for product metadata
 3. `local_mark_operation` → tag the new Service with a friendly name (e.g., `freelance_logo_v1`)
@@ -204,6 +217,18 @@ Every round follows the same shape: state the goal, ask the key question(s), exe
 
 **Checkpoint**: Persist `{ round: R8, allocators: [{name, id, trigger_guard}], refund_path_covered: true }`.
 
+**Stage 3 Gate: Risk Calibration**
+After R8 checkpoint, call `project_operation` → `action: "aggregate_risks"` with `project`, `version`, `puzzles` (from R2's analyze_intent).
+- If `can_proceed: false` (CRITICAL risks) → fix risks before proceeding
+- If `can_proceed: true` → proceed to Stage 4
+- The `next_action` field tells you the next step
+
+**Stage 4 Gate: Deployment Document**
+After risks pass, call `project_operation` → `action: "generate_deployment_doc"` with `project`, `version`, `business_intent`, `objects`, `edges`, `steps`, `risk_status`, `risk_critical_count`, `risk_high_count`.
+- If `can_proceed: false` (D-errors) → fix doc errors
+- If `can_proceed: true` → proceed to R9 (deployment execution)
+- The `next_action` field tells you the next step
+
 ---
 
 ### R9: Test Order (Dry Run)
@@ -215,6 +240,9 @@ Every round follows the same shape: state the goal, ask the key question(s), exe
 - Confirm test parameters: test amount, test deliverable hash.
 
 **Tool Calls**:
+0. `project_operation` → `action: "trace_substeps"` with `project`, `version`, `network`, `substeps` (from Stage 4 deployment doc) — 验证子步骤衔接完整性 (D-10 check).
+   - If `can_proceed: false` → fix substep issues
+   - If `can_proceed: true` → execute substeps via onchain_operations
 1. `account_operation` → `gen` (second account, the "buyer")
 2. `account_operation` → `faucet` for the buyer
 3. `onchain_operations` → `operation_type: "order"` CREATE — buyer places order on the Service draft
@@ -244,9 +272,9 @@ Every round follows the same shape: state the goal, ask the key question(s), exe
    - `machineNode2file` → export Machine, verify topology
    - `guard2file` → export all Guards, verify logic
    - `query_toolkit` → `onchain_objects` → re-check Permission, Service, Machine, Progress, Guards, Allocation all exist and are correctly bound
-2. `onchain_operations` → `operation_type: "machine"` with `publish: true` — Machine locked
+2. **Publish Machine FIRST** — `onchain_operations` → `operation_type: "machine"` with `publish: true` (PUBLISH, irreversible). Machine locked. This MUST happen before Service publish because the Service depends on a published Machine.
 3. `onchain_operations` → `operation_type: "service"` MODIFY to bind `data.machine = "<published_machine_id>"`
-4. `onchain_operations` → `operation_type: "service"` with `publish: true` — Service locked
+4. **Publish Service SECOND** — `onchain_operations` → `operation_type: "service"` with `publish: true` (PUBLISH, irreversible). Service locked. Order is mandatory: **Machine first, then Service** (Service depends on Machine).
 5. (Optional) `onchain_operations` → `operation_type: "service"` MODIFY to add `compensation_fund_add` and `setting_locked_time_add`
 6. Post-publish verification:
    - `query_toolkit` → `onchain_objects` (Service) → confirm `bPublished: true`, `machine` field is locked, `order_allocators` is locked

@@ -9,6 +9,16 @@
 
 A 10-round dialogue for the merchant operations journey: from "I want to set up a service" through "published, live, and accepting orders". This dialogue assumes the merchant has an account (per [wowok-onboard](../wowok-onboard/SKILL.md) R1) and may have a partial configuration. Each round maps to one R-item in the §PRE-FLIGHT checklist or one STEP in the §Service Build Lifecycle. The §Anti-Fabrication Rules are non-negotiable throughout — the AI never invents products, prices, workflow, or fund splits.
 
+## Project-Based Deployment Integration
+
+The provider flow integrates with the MCP project-based deployment pipeline (5 stages). The relevant stages for the operations journey are:
+
+- **Stage 3 (Risk Calibration)** → R5 — call `project_operation` → `action: "aggregate_risks"` to replace the manual pre-publish audit checklist with an MCP-driven risk assessment.
+- **Stage 4 (Deployment Doc)** → after R5 — call `project_operation` → `action: "generate_deployment_doc"` to produce the markdown deployment doc with D-01..D-18 scanner checks before publish.
+- **Stage 5 (Substep Trace)** → R6 — call `project_operation` → `action: "trace_substeps"` to verify publish substep continuity before the irreversible publish sequence.
+
+All `project_operation` calls use the unified `project` + `version` keys from the prior planning phase (wowok-planner R1). The `next_action` field returned by each call drives the stage transition.
+
 ### R1: PRE-FLIGHT Checklist Presentation
 
 **AI Goal**: Present the R1-R7 checklist (plus conditional C1-C3) and collect the user's intent for each item: REUSE existing, CREATE new, or PENDING. Do NOT proceed to any on-chain action until all items are confirmed.
@@ -103,6 +113,10 @@ A 10-round dialogue for the merchant operations journey: from "I want to set up 
 - Confirm: Allocator splits match your stated revenue model?
 
 **Tool Calls**:
+0. `project_operation` → `action: "aggregate_risks"` with `project`, `version`, `puzzles` (from prior planning) — MCP 内部完成风险评估, replacing the manual audit checklist.
+   - If `can_proceed: false` (CRITICAL risks) → block publish, fix risks
+   - If `can_proceed: true` → proceed to deployment doc generation
+   - The `next_action` field guides the next step
 1. `guard2file` → export all Guards, present for review.
 2. `machineNode2file` → export the Machine, present for review.
 3. `query_toolkit` → `onchain_objects` for the Service — re-check `machine`, `order_allocators`, `buy_guard`, `permission` all bound correctly.
@@ -114,6 +128,12 @@ A 10-round dialogue for the merchant operations journey: from "I want to set up 
 
 **Checkpoint**: Persist `{ round: R5, audit_pass: true, user_confirmed: true, guard_exports: [...], machine_export: <path> }`.
 
+**Stage 4 Gate: Deployment Document**
+After audit passes, call `project_operation` → `action: "generate_deployment_doc"` with `project`, `version`, `business_intent`, `objects`, `edges`, `steps`, `risk_status`, `risk_critical_count`, `risk_high_count`.
+- Returns markdown deployment doc + D-01..D-18 scanner checks
+- If `can_proceed: false` (D-errors) → fix doc errors before publish
+- If `can_proceed: true` → proceed to R6 (Publish)
+
 ### R6: Publish (Machine First, Then Service)
 
 **AI Goal**: Execute STEP 4: publish the Machine (irreversible), bind it to the Service, then publish the Service (irreversible). Both `machine`/`order_allocators` fields become immutable on Service publish.
@@ -123,11 +143,19 @@ A 10-round dialogue for the merchant operations journey: from "I want to set up 
 - Confirm the operating account has sufficient gas.
 
 **Tool Calls**:
+0. `project_operation` → `action: "trace_substeps"` with `project`, `version`, `network` (testnet first), `substeps` (from Stage 4 deployment doc) — 验证发布子步骤衔接完整性.
+   - If `can_proceed: false` → fix substep issues before publish
+   - If `can_proceed: true` → proceed with publish sequence (Machine first, then Service)
 1. `onchain_operations` → `operation_type: "machine"` with `publish: true` — Machine locked.
 2. `onchain_operations` → `operation_type: "service"` MODIFY to bind `data.machine = "<published_machine_id>"`.
 3. `onchain_operations` → `operation_type: "service"` with `publish: true` — Service `machine` and `order_allocators` locked.
 4. Post-publish verification: `query_toolkit` → `onchain_objects` for the Service — confirm `bPublished: true`, `machine` field locked, `order_allocators` locked.
 5. `onchain_events` → confirm Publish event fired.
+
+**Publish Order (Irreversibility Notes)**:
+- Machine publish is irreversible (immutable) — nodes, forwards, guards, thresholds all become immutable.
+- Service publish is irreversible (immutable) — `machine` and `order_allocators` fields become locked.
+- **Order**: publish Machine FIRST, then publish Service. Service publish requires the Machine to be published; binding `data.machine` to an unpublished Machine will revert.
 
 **Success Criteria**: Both Machine and Service `bPublished: true`. Service `machine` and `order_allocators` fields are immutable. Publish event recorded.
 

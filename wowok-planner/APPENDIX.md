@@ -9,6 +9,18 @@
 
 Each round follows: state the goal, ask the minimum questions needed, gather inputs (LLM translation only when free text is ambiguous), update the ODG in memory, persist checkpoint, advance.
 
+## Project-Based Deployment Integration
+
+The planner flow integrates with the MCP project-based deployment pipeline (5 stages). Each stage maps to specific R rounds:
+
+- **Stage 1 (Project Naming)** → R1 — establish the `project` and `version` identifiers used by all subsequent `project_operation` calls.
+- **Stage 2 (Business Puzzle)** → R1 — call `project_operation` → `action: "analyze_intent"` to replace internal Scenario Registry matching; the MCP side performs Scenario Registry matching + ODG skeleton generation + puzzle initialization in one call.
+- **Stage 3 (Risk Calibration)** → R9 — call `project_operation` → `action: "aggregate_risks"` to perform L1/L2/L3 risk assessment on the assembled puzzles.
+- **Stage 4 (Deployment Doc)** → after R9 — call `project_operation` → `action: "generate_deployment_doc"` to produce the markdown deployment doc with D-01..D-18 scanner checks.
+- **Stage 5 (Substep Trace)** → R10 — call `project_operation` → `action: "trace_substeps"` to verify substep continuity before handoff to the Harness.
+
+All `project_operation` calls use the unified `project` + `version` keys established in R1. The `next_action` field returned by each call drives the stage transition.
+
 ### R1: Intent Capture
 
 **AI Goal**: Capture the user's natural-language intent and classify it against the Scenario Registry.
@@ -20,7 +32,7 @@ Each round follows: state the goal, ask the minimum questions needed, gather inp
 
 **Tool Calls**:
 1. `query_toolkit` → `local_names` — check for any prior planning checkpoint to offer a resume path.
-2. (Internal) Match intent against the Scenario Registry §Intent Keywords. If two candidates score equally, ask one disambiguating question (LLM-translated to a typed choice).
+2. `project_operation` → `action: "analyze_intent"` with `project`, `version`, `user_intent`, `industry` (if known) — MCP 内部完成 Scenario Registry 匹配 + ODG 生成 + puzzle 初始化. Returns `puzzles`, `next_step`, `next_action`. If `next_action: "aggregate_risks"` indicates puzzles are complete, you can proceed directly to Stage 3.
 3. If no candidate matches → select `general` scenario (no failure — the fallback is intentional).
 
 **Success Criteria**: A `scenario` field is set on the ODG (one of `freelance`, `rental`, `digital_goods`, `travel_package`, `general`). The scenario's ODG template is loaded as the working skeleton.
@@ -193,6 +205,9 @@ Each round follows: state the goal, ask the minimum questions needed, gather inp
 - Confirm the fund-risk paths (deposit escrow, refund Allocator)?
 
 **Tool Calls**:
+0. `project_operation` → `action: "aggregate_risks"` with `project`, `version`, `puzzles` (from R1's analyze_intent) — MCP 内部完成 L1/L2/L3 风险评估. Returns `findings`, `can_proceed`, `next_action`.
+   - If `can_proceed: false` (CRITICAL risks) → record in ODG risk_assessment, block execution
+   - If `can_proceed: true` → proceed to Stage 4
 1. (Internal) Compute `reversible` per object (see §Reversibility Matrix).
 2. (Internal) Estimate `estimated_time` per phase from scenario template defaults (Tier 1 ≈ 10 min, Tier 2 ≈ 30 min, Tier 3 ≈ 60 min, excluding human response time).
 3. (Internal) List every object whose creation or publish is irreversible; require explicit per-item acknowledgment.
@@ -202,6 +217,12 @@ Each round follows: state the goal, ask the minimum questions needed, gather inp
 **Fallback**: User declines to acknowledge an irreversible action → loop back to R8, offer the alternative (e.g., defer publish, create as draft only). If no safe alternative exists → block handoff and surface the conflict.
 
 **Checkpoint**: Persist `{ round: R9, risk_assessment, acknowledgments: [...] }`.
+
+**Stage 4 Gate: Deployment Document**
+After risks pass, call `project_operation` → `action: "generate_deployment_doc"` with `project`, `version`, `business_intent`, `objects`, `edges`, `steps`, `risk_status`, `risk_critical_count`, `risk_high_count`.
+- Returns markdown deployment doc + D-01..D-18 scanner checks
+- If `can_proceed: false` (D-errors) → fix doc errors
+- If `can_proceed: true` → proceed to R10
 
 ---
 
@@ -214,6 +235,9 @@ Each round follows: state the goal, ask the minimum questions needed, gather inp
 - Which execution delegate should run the phases? (default: wowok-onboard for a fresh build; wowok-provider for extensions)
 
 **Tool Calls**:
+0. `project_operation` → `action: "trace_substeps"` with `project`, `version`, `network`, `substeps` (from Stage 4 deployment doc) — 验证子步骤衔接完整性.
+   - If `can_proceed: false` → fix substep issues before handoff
+   - If `can_proceed: true` → handoff to Harness/wowok-onboard for execution
 1. (Internal) Emit the Harness handoff packet (see §Handoff Protocol).
 2. `local_info_operation` → persist the final ODG under a stable `task_id` key so the Harness can read it.
 3. (Internal) Register per-phase verification hooks: after each phase, the Harness must re-query on-chain state and reconcile with the ODG before advancing.
