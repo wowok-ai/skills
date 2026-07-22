@@ -1,4 +1,4 @@
-import { Skill, SkillConfig, SkillRole, RoleSkills } from './types';
+import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
 
 /**
  * WoWok Skills organized by role
@@ -137,6 +137,16 @@ export const wowokSkills: SkillConfig = {
       role: 'shared',
       loading: 'on-demand',
       related: ['wowok-planner', 'wowok-provider', 'wowok-safety', 'wowok-guard', 'wowok-machine']
+    },
+
+    // === DISTILLATION REVIEW (GLM5 §6.4 MODE 2) ===
+    {
+      name: 'wowok-distill',
+      description: 'Distillation review orchestrator — guides merchants through reviewing and applying AI-generated improvement proposals from the Loop Engineering flywheel. Stateless conversation orchestrator: all data from MCP get_improvement_queue / apply_improvement / get_flywheel_config actions. Use when user asks about improvements, optimizations, flywheel proposals, or operational learnings.',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-tools', 'wowok-provider']
     }
   ]
 };
@@ -228,7 +238,67 @@ export function recommendSkills(intent: string): Skill[] {
   if (/\b(guard design|validation rules?|multi.sig|permission|authorization)\b/.test(lower)) {
     return [getSkillByName('wowok-guard')!];
   }
-  
+
+  // Distillation keywords (GLM5 §6.4)
+  if (/\b(improvement|optimization|flywheel|distillation|proposal|override|operational learnings?)\b/.test(lower)) {
+    return [getSkillByName('wowok-distill')!];
+  }
+
   // Default: return all on-demand skills
   return getSkillsByLoading('on-demand');
+}
+
+// ============================================================
+// GLM5 §6.6 — Skills Version Negotiation
+// ============================================================
+
+/**
+ * Negotiate skill behavior mode based on MCP server version vs skill version.
+ *
+ * Decision matrix (§6.6):
+ *  - MCP major > skill major → "passthrough" (skill only forwards MCP responses)
+ *  - MCP major < skill major → "legacy" (skill falls back to older content)
+ *  - Major versions match    → "full" (normal orchestration)
+ *
+ * This ensures skills degrade gracefully when the MCP server is upgraded
+ * but skills haven't been updated yet. Users still get MCP functionality
+ * (via passthrough), just without the narrative/orchestration layer.
+ *
+ * @param mcpVersion   MCP server version string (e.g. "1.2.0")
+ * @param skillVersion Skill version string (e.g. "1.0.0")
+ * @returns negotiation mode: 'full' | 'passthrough' | 'legacy'
+ */
+export function negotiateSkillMode(mcpVersion: string, skillVersion: string): SkillMode {
+  const mcpMajor = parseInt(mcpVersion.split('.')[0] || '0', 10);
+  const skillMajor = parseInt(skillVersion.split('.')[0] || '0', 10);
+
+  if (Number.isNaN(mcpMajor) || Number.isNaN(skillMajor)) {
+    // Can't parse version — default to full (best-effort)
+    return 'full';
+  }
+
+  if (mcpMajor > skillMajor) return 'passthrough';
+  if (mcpMajor < skillMajor) return 'legacy';
+  return 'full';
+}
+
+/**
+ * Negotiate mode for all registered skills against a given MCP version.
+ *
+ * Returns a map of skill name → mode. Useful for the client to know
+ * which skills are in passthrough/legacy mode and need AI fallback.
+ *
+ * @param mcpVersion MCP server version string
+ * @returns array of { skill, version, mode } for all skills
+ */
+export function negotiateAllSkills(mcpVersion: string): Array<{
+  skill: string;
+  version: string;
+  mode: SkillMode;
+}> {
+  return wowokSkills.skills.map((s) => ({
+    skill: s.name,
+    version: s.version,
+    mode: negotiateSkillMode(mcpVersion, s.version),
+  }));
 }

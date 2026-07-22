@@ -28,6 +28,7 @@ const SKILL_DIRS = [
   'wowok-scenario',
   'wowok-planner',
   'wowok-auditor',
+  'wowok-distill',
 ];
 
 const CLIENT_DIRS = {
@@ -160,14 +161,6 @@ function installSkills(targetDir, target) {
     console.log(`[wowok-skills]   installed: ${dir} → ${dest}`);
   }
 
-  // Copy references/ directory (shared reference docs linked by SKILL.md files)
-  const refsSrc = path.join(pkgRoot, 'references');
-  if (fs.existsSync(refsSrc)) {
-    const refsDest = path.join(targetDir, 'references');
-    copyDir(refsSrc, refsDest);
-    console.log(`[wowok-skills]   installed: references/ → ${refsDest}`);
-  }
-
   return count;
 }
 
@@ -181,13 +174,6 @@ function uninstallSkills(targetDir) {
       count++;
       console.log(`[wowok-skills]   removed: ${dirPath}`);
     }
-  }
-
-  // Remove references/ directory
-  const refsPath = path.join(targetDir, 'references');
-  if (fs.existsSync(refsPath)) {
-    removeDir(refsPath);
-    console.log(`[wowok-skills]   removed: ${refsPath}`);
   }
 
   return count;

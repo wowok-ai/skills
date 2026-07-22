@@ -22,7 +22,23 @@ when_to_use:
 # WoWok Service Provider Guide
 
 > **Role**: Service Provider (Merchant/Seller)
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-guard](../wowok-guard/SKILL.md) (validation rules), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-safety](../wowok-safety/SKILL.md) (safety), [wowok-tools](../wowok-tools/SKILL.md) (MCP tools)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-distill](../wowok-distill/SKILL.md) (distillation review)
+
+---
+
+## MCP Knowledge Layer
+
+The following rule tables have been pushed down to the MCP knowledge layer and are automatically applied during project operations. You do NOT need to manually check these — the MCP server enforces them.
+
+| Rule Category | MCP Knowledge Module | Applied By |
+|---------------|---------------------|------------|
+| Safety rules (confirmation, immutability, object reuse) | `knowledge/safety-rules.ts` | `aggregate_risks` + `onchain_operations` pre-publish |
+| Guard design patterns | `knowledge/guard-design-patterns.ts` | `aggregate_risks` (guard risk assessment) |
+| Machine topology rules | `knowledge/machine-risk.ts` | `aggregate_risks` (machine risk assessment) |
+| Scenario mode defaults | `knowledge/scenario-modes.ts` | `analyze_intent` (pass `industry` parameter) |
+| Tool reference (gas, faucet, wrappers) | `knowledge/tools-reference.ts` | All tool calls automatically |
+
+**How to use**: Call `project_operation` with `action: "aggregate_risks"` after completing your puzzle — the MCP server will automatically apply all relevant safety rules and return risk findings.
 
 ---
 
@@ -112,7 +128,7 @@ STEP 2: Trust Layer
          - Allocator guard → pass/fail only
          - Machine forward guard → if retained_submission is used, ensure b_submission:true entries match expected types
          - Reward guard → pass/fail only
-      Full design reference: [wowok-guard](../wowok-guard/SKILL.md)
+      Guard design patterns: MCP `knowledge/guard-design-patterns.ts` (auto-applied via `aggregate_risks`)
 
 STEP 3: Business Logic (MODIFY)
 ├── Machine — bind Guards to forwards
@@ -165,8 +181,7 @@ STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 
 ### Service Object Relationships
 
-> **Authoritative source**: [Object Collaboration Diagram](../references/object-collaboration.md) §1 (22-object collaboration DAG, 83 relationships).
-> This tree is a simplified view. Cross-reference the above for the full graph and [Object Boundary Conditions](../references/object-collaboration.md#boundary-conditions) for mutability rules.
+> **Boundary conditions**: Use MCP `project_operation` with action `get_reversibility` to query the full 22-object lifecycle reversibility matrix (mutability, prerequisites, capacity limits, irreversibility). Key rules: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible.
 
 ```
 Service (merchant storefront)
@@ -189,10 +204,10 @@ Order (per purchase, runtime-created)
 ├── arbitration → Arbitration (optional, immutable once set)
 └── allocation → Fund distribution engine (triggered via Progress.forward)
 
-Cross-object references (see [Object Collaboration Diagram §6](../references/object-collaboration.md#guard-and-machine-global-usage) for Guard/Machine global usage):
+Cross-object references:
 - Guard is referenced by 9 object types (Service.buy_guard, Machine.forward.guard, Allocation.allocation_guard, Arbitration.voting_guard, Reward.claim_guard, Repository.write_guard, Treasury.external_guard, Demand.recommend_guard, Passport.guard)
 - Machine is referenced by 4 object types (Service.machine, Order.machine, Progress.machine, Order snapshot)
-- Permission is the central hub — 11 objects hold BuiltinPermissionIndex (see [Object Collaboration Diagram §5](../references/object-collaboration.md#permission-reverse-reference-table) for reverse-reference table)
+- Permission is the central hub — 11 objects hold BuiltinPermissionIndex
 ```
 
 ### Allocators + Machine Integration
@@ -261,6 +276,97 @@ Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", .
 
 - Add: `compensation_fund_add` | Lock: `setting_locked_time_add` (default 30 days = 2592000000ms, configurable via `setting_lock_duration_add`)
 - **Withdraw**: Pause Service → Wait lock duration → `compensation_fund_receive`
+
+---
+
+## Project Iteration: Fork vs In-Place
+
+When a merchant wants to modify an existing service (change workflow, add allocators, update guards), the AI must determine whether to modify the current version (in-place) or fork a new version.
+
+### Decision Rule
+
+| Scenario | Strategy | MCP Action |
+|----------|----------|------------|
+| Service NOT yet published | **In-place** — modify the current version directly | `onchain_operations` (modify) |
+| Service IS published | **Fork** — create a new version, preserve original as read-only | `project_operation` → `fork_project` |
+
+### Fork Workflow
+
+When the service is already published and the user wants to make structural changes:
+
+```
+STEP 1: Check if fork is needed
+├── Call: project_operation({ action: "get_reversibility", query_object_type: "service", query_lifecycle_state: "published" })
+├── Result: struct_reversible="immutable" → must fork
+└── Call: project_operation({ action: "get_project_status", project, version })
+    → If has_published_object=true → fork required
+
+STEP 2: Fork the project
+├── Call: project_operation({ action: "fork_project", project: "<prefix>", version: "v1", fork_to_version: "v2" })
+├── This creates a new version v2 with:
+│   - Copy of stage.json (reset to stage 1)
+│   - Copy of manifest.json (new version, needs_recalibration=true)
+│   - Copy of deployment/ docs (for reference)
+│   - No on-chain objects copied (they're immutable on-chain)
+└── The original v1 remains as a read-only historical snapshot
+
+STEP 3: Modify in the new version
+├── Work on v2 using the normal 5-stage flow
+├── Reuse on-chain objects from v1 (reference by address)
+├── Create new objects for changed parts
+└── Publish v2 when ready — v1 continues running uninterrupted
+```
+
+### When to Recommend Forking
+
+- User says "I want to change my workflow" → check if published → recommend fork
+- User says "I want to add a new product line" → if same Machine can handle it, in-place modify Service.sales; if needs new Machine, fork
+- User says "I want to change fund distribution" → if Service not published, in-place; if published, fork (allocators are frozen after publish)
+
+---
+
+## Distillation Review
+
+The MCP server runs an offline flywheel that collects operational signals from your deployments and generates improvement proposals. Periodically review these proposals to optimize your service.
+
+### When to Review
+
+- After publishing a service and running it for a while
+- When the user asks "any improvements?" or "what did the system learn?"
+- As part of routine service maintenance
+
+### How to Review
+
+Use the [wowok-distill](../wowok-distill/SKILL.md) skill for guided review, or call MCP actions directly:
+
+```
+STEP 1: Check for pending proposals
+├── Call: project_operation({ action: "get_improvement_queue", queue_filter_status: "pending" })
+├── Review each proposal: title, priority, confidence, description
+└── If no proposals → inform user "No pending improvements. The flywheel is idle."
+
+STEP 2: Apply or reject
+├── To apply: project_operation({ action: "apply_improvement", proposal_id: "<id>", review_status: "approved" })
+├── To reject: project_operation({ action: "apply_improvement", proposal_id: "<id>", review_status: "rejected" })
+└── Applied proposals write overrides to ~/.wowok/overrides/ (config changes) or patches/ (source changes)
+
+STEP 3: Verify
+├── Call: project_operation({ action: "get_flywheel_config" })
+├── Check: applied_count increased, pending_count decreased
+└── Overrides are hot-loaded — next operation uses the new config immediately
+```
+
+### Override Categories
+
+Only these categories can be overridden (no arbitrary changes):
+
+| Category | What It Controls | Example |
+|----------|-----------------|---------|
+| risk-thresholds | Risk assessment cutoffs | max_retries, min_deposit |
+| descriptions | AI guidance text | industry descriptions |
+| industry-profiles | Industry trait profiles | rental traits, freelance traits |
+| scenario-defaults | Default parameters per scenario | default allocators, machine nodes |
+| recovery-priorities | Error recovery order | which failures to fix first |
 
 ---
 

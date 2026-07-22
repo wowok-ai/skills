@@ -31,15 +31,29 @@ when_to_use:
 
 A **driving mode** is a curated bundle of: industry traits, default Permission indexes, default Machine node graph, default Guard templates, default Allocator strategy, a 10-round build script, an audit checklist, and a failure playbook. Modes are **presets, not constraints** — every underlying MCP operation remains available. Users can override any default or switch to `general` (free) mode at any time.
 
-> **Authoritative cross-reference**: This skill's mode definitions are aligned with the following internal references:
-> - [Guard Template Library](../references/guard-template-library.md) — Guard templates referenced by mode `Guards` column
-> - [Machine Template Library](../references/machine-template-library.md) — Machine shapes referenced by mode `Machine Shape` column
-> - [Machine Scenario Ledger](../references/machine-scenario-ledger.md) — 10 business scenarios per mode
-> - [Guard Scenario Ledger](../references/guard-scenario-ledger.md) — Guard usage scenarios per mode
-> - [Merchant Scenario Coordination §5](../references/merchant-scenario-coordination.md) — 6 industry modes × merchant perspective
-> - [On-chain Constants](../references/onchain-constants.md) — Permission index ranges and capacity limits
->
-> When a mode's defaults disagree with these references, the **design references** in this directory are authoritative (P15 decision: bidirectional cross-reference, with design references as single source of truth for object semantics).
+### On-Chain Capacity Limits (Inline Reference)
+
+Mode defaults respect these on-chain constants. When a mode's suggested count exceeds a limit, the SDK will reject the operation.
+
+| Constant | Value | Scope |
+|----------|-------|-------|
+| `MAX_NODE_COUNT_SDK` | 100 | Max nodes per Machine (SDK limit; on-chain allows 200) |
+| `MAX_FORWARD_COUNT` | 20 | Max global forwards per Machine |
+| `MAX_FORWARD_ORDER_COUNT` | 20 | Max forwards per node pair |
+| `MAX_NODE_PAIR_COUNT` | 40 | Max pairs per node |
+| `USER_DEFINED_PERM_INDEX_START` | 1000 | Custom permission_index start (0-999 reserved for built-in) |
+| `MAX_PERM_FOR_ENTITY` | 1000 | Max permissions per Entity |
+| `MAX_ADMIN_COUNT` | 500 | Max admins per Permission object |
+| `MAX_AGENT_COUNT` | 10 | Max agents per Order |
+| `MAX_DISPUTE_COUNT` | 10 | Max concurrent disputes per Order |
+| `MAX_SHARING_COUNT` | 100 | Max sharing entries per allocator |
+| `MAX_VOTING_GUARD_COUNT` | 50 | Max voting guards per Arbitration |
+| `MAX_POLICY_COUNT` | 50 | Max policies per Repository |
+| `MAX_ID_COUNT_ONCE` | 100 | Max IDs per Repository operation |
+| `MAX_REWARD_COUNT` | 20 | Max rewards per Demand/Repository |
+| `MAX_CONTEXT_REPOSITORY_COUNT` | 30 | Max context repositories per Progress |
+| `MAX_NAMED_OPERATOR_COUNT` | 60 | Max named operators per Forward |
+| `MAX_NAMED_OPERATOR_ADDRESS_COUNT` | 80 | Max addresses per named operator |
 
 ### What Driving Modes Solve
 

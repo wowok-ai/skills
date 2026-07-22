@@ -32,7 +32,6 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const SKILLS_ROOT = join(__dirname, "..");
-const GLOSSARY_PATH = join(SKILLS_ROOT, "references", "glossary.ts");
 
 // Thresholds per user decision
 const THRESHOLD_ERROR = 400; // must split
@@ -87,22 +86,8 @@ function getStatus(lines) {
     return "OK";
 }
 
-/** Load glossary terms from glossary.ts (regex extraction). */
-function loadGlossaryTerms() {
-    if (!existsSync(GLOSSARY_PATH)) {
-        return { terms: [], available: false };
-    }
-    const content = readFileSync(GLOSSARY_PATH, "utf-8");
-    // Match: term: "..." or id: "..." inside CONCEPT_GLOSSARY entries
-    const terms = new Set();
-    const termMatches = content.matchAll(/term:\s*["']([^"']+)["']/g);
-    for (const m of termMatches) terms.add(m[1].toLowerCase());
-    return { terms: Array.from(terms), available: true };
-}
-
-/** Check for glossary drift — detect deprecated/variant terms in Skills files. */
-function checkGlossaryDrift(filePath, glossaryTerms) {
-    if (!glossaryTerms.length) return [];
+/** Glossary drift check uses hardcoded deprecated-term patterns (no external file dependency). */
+function checkGlossaryDrift(filePath) {
     const content = readFileSync(filePath, "utf-8").toLowerCase();
     const drifts = [];
 
@@ -165,7 +150,6 @@ if (jsonOutput) {
             info: infoCount,
             ok: okCount,
             glossaryDrifts: driftCount,
-            glossaryAvailable: glossary.available,
         },
         results,
     }, null, 2));
@@ -175,7 +159,6 @@ if (jsonOutput) {
     console.log("═══════════════════════════════════════════════════");
     console.log(`  Thresholds: ERROR >${THRESHOLD_ERROR} | WARN >${THRESHOLD_WARN} | INFO >${THRESHOLD_INFO} | OK ≤${THRESHOLD_INFO}`);
     console.log(`  Skills root: ${relative(SKILLS_ROOT, SKILLS_ROOT) || "."}`);
-    console.log(`  Glossary:    ${glossary.available ? `${glossary.terms.length} terms` : "not available"}`);
     console.log("═══════════════════════════════════════════════════\n");
 
     // Sort by line count descending

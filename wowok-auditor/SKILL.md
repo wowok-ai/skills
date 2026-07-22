@@ -26,9 +26,23 @@ writes on-chain; it queries (`query_toolkit`, `onchain_events`), exports
 (`guard2file`, `machineNode2file`), evaluates rule tables, and emits a
 pass / warn / fail report. A FAIL blocks the publish in R10.
 
-> **Role**: Auditor (read-only). Sibling to [wowok-safety](../wowok-safety/SKILL.md) (pre-write gate) — safety runs on every write; auditor runs only on publish.
+> **Role**: Auditor (read-only). The pre-write safety gate now lives in the MCP knowledge layer (`knowledge/safety-rules.ts`), applied on every write; this auditor runs only on publish.
 > **Layer**: L3 Skill, knowledge base for L4 Verify Loop.
-> **Related Skills**: [wowok-safety](../wowok-safety/SKILL.md) (gate), [wowok-guard](../wowok-guard/SKILL.md) (Guard authoring), [wowok-machine](../wowok-machine/SKILL.md) (Machine design), [wowok-onboard](../wowok-onboard/SKILL.md) (publish flow), [wowok-tools](../wowok-tools/SKILL.md) (schema reference).
+> **Related Skills**: [wowok-machine](../wowok-machine/SKILL.md) (Machine design), [wowok-onboard](../wowok-onboard/SKILL.md) (publish flow).
+
+---
+
+## MCP Knowledge Layer
+
+The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
+
+| Content | MCP Knowledge Module | Applied Via |
+|---------|---------------------|-------------|
+| Safety rules (confirmation levels, immutability rules, object reuse rules) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`, `ConfirmLevel`) | Pre-publish checks + `project_operation.aggregate_risks` |
+| Machine-executable audit rules | `knowledge/audit-rules.ts` (`AUDIT_RULES`, `auditService`) | `project_operation.aggregate_risks` |
+| Guard completeness / Machine soundness / fund-flow risks | `knowledge/guard-risk.ts`, `machine-risk.ts`, per-object risk modules | `project_operation.aggregate_risks` (via per-object assessors) |
+
+This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completeness, Machine soundness, fund flow, publish readiness), and the **checklist structure** as the human-readable knowledge base for the L4 Harness Verify Loop. The MCP layer runs the machine-executable rule evaluation.
 
 ---
 

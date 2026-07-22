@@ -24,7 +24,21 @@ when_to_use:
 
 Guides a new merchant from zero to first published Service in 10 rounds. Each round collects one core decision, calls specific MCP operations, and verifies success before advancing.
 
-> **Related Skills**: [wowok-scenario](../wowok-scenario/SKILL.md) (industry modes), [wowok-tools](../wowok-tools/SKILL.md) (MCP reference), [wowok-provider](../wowok-provider/SKILL.md) (post-onboard operations), [wowok-safety](../wowok-safety/SKILL.md) (immutability rules), [wowok-guard](../wowok-guard/SKILL.md) (Guard design), [wowok-machine](../wowok-machine/SKILL.md) (workflow design)
+> **Related Skills**: [wowok-provider](../wowok-provider/SKILL.md) (post-onboard operations), [wowok-machine](../wowok-machine/SKILL.md) (workflow design)
+
+---
+
+## MCP Knowledge Layer
+
+The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
+
+| Content | MCP Knowledge Module | Applied Via |
+|---------|---------------------|-------------|
+| Scenario mode details (per-industry Permission/Machine/Guard/Allocator defaults) | `knowledge/scenario-modes.ts` (`SCENARIO_MODES`, `matchScenarioMode`, `inferScenarioTraits`) | `project_operation.analyze_intent` — auto-applied when `industry` parameter is passed |
+| Safety rules (immutability, confirmation, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.aggregate_risks` |
+| Guard / Machine design rules | `knowledge/guard-design-patterns.ts`, `machine-risk.ts` | `project_operation.aggregate_risks` |
+
+This Skill keeps the **R1-R10 onboarding conversation scripts** (in APPENDIX.md) and the **overall onboarding flow**. Pass the user's industry to `analyze_intent` and the MCP layer auto-fills the scenario defaults — no need to look up per-industry presets manually.
 
 ---
 
@@ -35,7 +49,7 @@ The onboarding skill dismantles the "16 operation_type × 14 object_type" wall. 
 ### What This Skill Does
 
 - Converts "I want to open a shop" into a 10-round guided build plan
-- Loads industry defaults from [wowok-scenario](../wowok-scenario/SKILL.md) to pre-fill parameters
+- Industry defaults auto-applied via `project_operation.analyze_intent` (pass `industry` parameter; defaults sourced from MCP `knowledge/scenario-modes.ts`)
 - Enforces dependency order: Permission → Service → Machine → Progress → Guard → Allocation → Order → Publish
 - Persists checkpoints after each round via `local_info_operation` so users can resume
 - Hands off to [wowok-provider](../wowok-provider/SKILL.md) once the Service is published

@@ -26,7 +26,7 @@ Design, build, and operate automated workflow templates.
 
 > **Role**: Service Provider or Workflow Designer
 > **Key Tools**: `onchain_operations` with `operation_type: "machine"`
-> **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (Guards), [wowok-provider](../wowok-provider/SKILL.md) (Service binding), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-messenger](../wowok-messenger/SKILL.md) (privacy), [wowok-safety](../wowok-safety/SKILL.md) (safety), [wowok-tools](../wowok-tools/SKILL.md) (schema reference)
+> **Related Skills**: [wowok-provider](../wowok-provider/SKILL.md) (Service binding), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-messenger](../wowok-messenger/SKILL.md) (privacy)
 
 ---
 
@@ -36,75 +36,19 @@ Design, build, and operate automated workflow templates.
 
 Machines are **immutable after `publish: true`**; Guards are **CREATE-only**. Design the complete workflow before publishing.
 
-## Semantic Layer (Knowledge Modules)
+## MCP Knowledge Layer
 
-The Machine knowledge system provides 8 TypeScript modules that encode the canonical design knowledge for Machine generation. These modules power the L4 Harness Plan Loop and are the **source of truth** for scene/template selection, pattern matching, risk evaluation, topology analysis, and the fail-closed publish gate.
+The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
 
-> **Design reference**: [Machine Design Reference](../references/machine-design-reference.md) — covering architecture, core elements, puzzle model, translation patterns, risk rules, and publish flow. Verification notes (06 §14) are embedded in code as `MACHINE_VERIFICATION_NOTES`.
+| Content | MCP Knowledge Module | Applied Via |
+|---------|---------------------|-------------|
+| Node design rules (node type specs, forward guard design patterns, topology limits) | `knowledge/machine-risk.ts` (`MACHINE_RISK_RULES`), `machine-topology.ts`, `machine-translation.ts` | `project_operation.analyze_intent` (business puzzle) + `project_operation.aggregate_risks` (via `assessMachineRisks`) |
+| Machine scene/template selection | `knowledge/machine-ledger.ts`, `machine-templates.ts` | `project_operation.analyze_intent` |
+| Forward Guard design patterns | `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`) | `project_operation.aggregate_risks` (via `assessGuardRisks`) |
+| Safety rules (immutability, confirmation) | `knowledge/safety-rules.ts` | Pre-publish checks + `project_operation.aggregate_risks` |
+| Publish gate (4-layer fail-closed: checklist → risk → user → environment) | `knowledge/machine-confirm.ts` (`PUBLISH_CHECKLIST`, `confirmPublish`) | `project_operation.aggregate_risks` + pre-publish gate |
 
-### Module API Reference
-
-| Module | Entry Points | Purpose |
-|--------|--------------|---------|
-| `machine-ledger.ts` | `MACHINE_SCENES`, `inferSceneFromFlow(flow)`, `findScene(id)` | 10 industry scenes + keyword-based scene inference |
-| `machine-templates.ts` | `MACHINE_TEMPLATES`, `getTemplateById(id)`, `fillTemplate(id, params)`, `forkTemplate(id, overrides)`, `walkDecisionTree(answers)` | 10 starter templates + parameter fill + Q1-Q9 decision tree |
-| `machine-translation.ts` | `SEMANTIC_TO_MACHINE_RULES`, `MACHINE_CONSTRAINT_RULES`, `matchSemanticPattern(text)`, `identifyExecutionMode(threshold, fwdCount)`, `identifyTopology(pairs)`, `explainForwardPermission(fwd)` | 12 semantic patterns + 28 on-chain constraints (creation/structure/node_operation/publish/runtime) |
-| `machine-topology.ts` | `analyzeTopology(nodes, pairs)`, `identifyTopologyPattern(topology)`, `formatTopologySummary(topology)`, `MAX_NODE_COUNT=200`, `MAX_NODE_PAIR_COUNT=40`, `MAX_FORWARD_COUNT=20` | DAG analysis: entry/terminal/orphaned/dead-branch/cycle, on-chain limit checks |
-| `machine-risk.ts` | `MACHINE_RISK_RULES` (39 rules), `assessMachineRisks(machine, ctx)`, `getRiskRulesByCategory(cat)`, `getRiskSummary(assessment)` | 5 risk dimensions (R-M1 structural, R-M2 guard, R-M3 permission, R-M4 immutability, R-M5 environment) |
-| `machine-puzzle.ts` | `initPuzzleFromIntent(intent)`, `initPuzzleFromTemplate(id)`, `checkPuzzleCompleteness(puzzle)`, `recommendNextStep(puzzle)`, `derivePuzzleFromMachineJson(json)`, `generateConfirmationText(puzzle)` | 8-dimension information model (A-H): business_flow, node_design, guard_acceptance, permission_model, threshold_weight, branch_topology, overall_objective, risk_assessment |
-| `machine-confirm.ts` | `PUBLISH_CHECKLIST` (10 items C-01..C-10), `CONFIRMATION_QUESTIONS` (6 items Q1-Q6), `runStaticChecklist(machine)`, `integrateRiskAssessment(machine, ctx)`, `parseUserConfirmation(input)`, `verifyEnvironment(machine, ctx, isMainnet)`, `confirmPublish(machine, ctx, isMainnet, userInput)`, `progressiveCheck(machine, scope)`, `overrideBlockWithReason(result, reason)`, `generateFullConfirmationText(...)` | 4-layer fail-closed gate: checklist → risk → user → environment. **CRITICAL risks cannot be overridden.** |
-| `machine-context.ts` | `injectMachineContext(intent, mode, options)`, `suggestWorkflow(intent)`, `buildPromptFromContext(bundle)`, `getMachineKnowledgeSnapshot()`, `getRelatedGuardScenes(sceneId)`, `getVerificationNotes(mode?)`, `CONTEXT_PRESETS.{newUserIntent, midDesignReview, prePublishFull, crossMachine, guardIntegration, allocationIntegration}` | Aggregator module. **8 injection modes** select curated subset of knowledge based on user task. Use this as the main entry point. |
-
-### The 8 Context Injection Modes
-
-The user's current task determines what context to surface (never dump everything):
-
-| Mode | When to Use | What It Surfaces |
-|------|-------------|------------------|
-| `initial_design` | User just described intent | Matched scene + top 3 templates + initial puzzle |
-| `mid_design_review` | User is mid-design | Missing puzzle dimensions + structure/node_op constraints |
-| `pre_publish_check` | User about to publish | Full risk assessment + progressive checklist (R5 subset) + verification notes |
-| `post_publish_runtime` | Machine already published | Runtime-only constraints + environment risks |
-| `intent_match` | Lightweight intent inference | Top 2 templates + creation constraints (no verification notes) |
-| `cross_machine` | Cross-Machine dependency design | P-M-CROSS-MACHINE pattern + structure/publish constraints |
-| `guard_integration` | Deep-dive on Guard binding | Guard bridge to `guard-ledger.ts` + R-M2 risks |
-| `allocation_integration` | Deep-dive on Allocator at terminals | P-M-ALLOCATION-INTEGRATED pattern + Allocator-related risks |
-
-### Recommended Usage Pattern
-
-```typescript
-// 1. First user message — lightweight workflow suggestion
-const suggestion = suggestWorkflow(userIntent);
-// suggestion.matched_scene, suggestion.suggested_templates, suggestion.initial_puzzle, suggestion.next_step
-
-// 2. Mid-design — inject context to surface missing info
-const bundle = injectMachineContext(intent, 'mid_design_review', { existing_puzzle: puzzle });
-
-// 3. Pre-publish — full ConfirmGate
-const gate = confirmPublish(machineJson, projectContext, isMainnet, userConfirmationInput);
-if (gate.status !== 'approved') {
-    // STOP — do not call onchain_operations with publish: true
-    console.log(gate.block_reason);
-}
-
-// 4. Or use the preset wrapper for common cases
-const preset = CONTEXT_PRESETS.prePublishFull(intent, machineJson, projectContext);
-const prompt = buildPromptFromContext(preset);  // inject into AI prompt
-```
-
-### Verification Notes (06 §14)
-
-Five topics were verified at the code level. These notes are embedded in `MACHINE_VERIFICATION_NOTES` and surfaced whenever the consumer's mode touches them:
-
-| Topic | Judgment | Verified Semantic |
-|-------|----------|-------------------|
-| `bReplace` | YES | Acts at pairs-list level of an existing node (NOT whole-Machine). `false`=merge, `true`=replace that node's pairs list. |
-| `um` | PARTIAL | Messenger Contact reference (off-chain metadata). Omitting has zero on-chain impact. |
-| `consensus_repositories` | PARTIAL | Declarative-only field. Not consumed by on-chain flow. Hint for off-chain tooling. |
-| `namedOperator_assignment` | PARTIAL | Move `progress::new` does NOT accept namedOperator. MCP/SDK translates to separate `namedOperator_add` tx (permission index 221). |
-| `cross_machine_dependency` | PARTIAL | Indirect via `progress::new -> assert_published`. Use `convert_witness` TypeOrderProgress (100) / TypeOrderProgressSession (103). |
-
-> **Test coverage**: 8 `.spec.ts` files covering machine-ledger, machine-templates, machine-translation, machine-topology, machine-risk, machine-puzzle, machine-confirm, and machine-context — over 400 tests, all passing.
+This Skill keeps the **workflow conversation guidance**, **business flow design patterns**, and **machine lifecycle scripts**. The MCP layer handles node-design rule evaluation, scene/template selection, and risk aggregation.
 
 ---
 
@@ -140,7 +84,7 @@ Machine
 
 A Guard validates the Forward's execution condition. **Retained submissions**: when `retained_submission` is set on a Guard, submitted values are stored in Progress history, uniquely located by `(current_node, next_node, forward_name)`. Later nodes query these values from history.
 
-> **Guard construction**: See [wowok-guard](../wowok-guard/SKILL.md) for table design, computation trees, and query instructions.
+> **Guard construction**: Forward Guard design patterns (table design, computation trees, query instructions) now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), auto-applied via `project_operation.aggregate_risks`. Query available Guard instructions via `wowok_buildin_info`.
 
 ### Threshold Mechanics
 
@@ -286,7 +230,7 @@ Decompose complex workflows into multiple Machines connected by Guard-based vali
 3. "Does any step depend on an external process completing first?"
 4. "Which party creates the sub-order, and which party verifies it?"
 
-> **Guard construction**: Cross-Machine Guards use `convert_witness` with Progress query instructions. See [wowok-guard](../wowok-guard/SKILL.md). Query available Guard instructions via `wowok_buildin_info`.
+> **Guard construction**: Cross-Machine Guards use `convert_witness` with Progress query instructions. Design rules now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), applied via `project_operation.aggregate_risks`. Query available Guard instructions via `wowok_buildin_info`.
 
 ### Dual-Signature Consensus
 

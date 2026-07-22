@@ -18,7 +18,21 @@ when_to_use:
 
 Build trust through fair dispute resolution. Arbitration services enable neutral third parties to resolve conflicts between customers and merchants, earning fees while establishing on-chain reputation.
 
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer disputes), [wowok-provider](../wowok-provider/SKILL.md) (service arbitration config), [wowok-guard](../wowok-guard/SKILL.md) (voting_guard design), [wowok-machine](../wowok-machine/SKILL.md) (workflow analysis), [wowok-messenger](../wowok-messenger/SKILL.md) (evidence exchange), [wowok-safety](../wowok-safety/SKILL.md) (safety)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer disputes), [wowok-provider](../wowok-provider/SKILL.md) (service arbitration config), [wowok-machine](../wowok-machine/SKILL.md) (workflow analysis), [wowok-messenger](../wowok-messenger/SKILL.md) (evidence exchange)
+
+---
+
+## MCP Knowledge Layer
+
+The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
+
+| Content | MCP Knowledge Module | Applied Via |
+|---------|---------------------|-------------|
+| Guard design rules (structural layers, data source classification, voting_guard table design) | `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`) | `project_operation.aggregate_risks` (via `assessGuardRisks`) |
+| Safety rules (confirmation levels, immutability, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.aggregate_risks` |
+| Arbitration-specific risks | `knowledge/arb-risk.ts` (`assessArbitrationRisks`) | `project_operation.aggregate_risks` |
+
+This Skill keeps the arbitration **conversation flow**, **evidence collection** scripts, and **dispute resolution** guidance — the MCP layer handles the rule evaluation.
 
 ---
 
@@ -133,11 +147,10 @@ Customer dispute creates Arb directly at (1). State (0) entered only via `reset`
   - `FixedValue(u32)`: Equal weight for all qualified voters
   - `GuardIdentifier(u8)`: Dynamic weight from credential (e.g., reputation score, token balance)
 - Max 50 guards — enables tiered voting (experts + community, token-holders + NFT-holders)
-- **Guard table design**: When using `GuardIdentifier`, the referenced index must be a `b_submission: true` entry of **numeric type** (U8–U256). Its value is cast to u32 as the voter's weight. The `name` field of that entry should explain its purpose to Passport applicants.
 
 **Voting Flow**: Voter selects a voting guard → System verifies voter's Passport against that guard → Calculates weight based on guard's rule → Applies weight to selected propositions. One vote per voter per case.
 
-> **Guard Design Reference**: Voting guards follow the same construction as all Guards. See [wowok-guard](../wowok-guard/SKILL.md) for table design, computation trees, and the full type requirements by object.
+> **Guard Design Reference**: Voting guard construction rules (table design, computation trees, `GuardIdentifier` submission-type requirements) now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), auto-applied via `project_operation.aggregate_risks`. Test voting logic with `gen_passport` before finalizing.
 
 ---
 
