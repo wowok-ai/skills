@@ -78,16 +78,7 @@ The selection algorithm maps the user's business description to industry traits,
 
 ### Trait Extraction
 
-```typescript
-type IndustryTraits = {
-  has_logistics: boolean;        // physical goods to ship?
-  communication_heavy: boolean;  // lots of back-and-forth before delivery?
-  pure_digital: boolean;         // deliverable is a file / digital artifact?
-  long_cycle: boolean;           // multi-week or multi-month engagement?
-  deposit_required: boolean;     // collect refundable deposit?
-  multi_tier_allocation: boolean; // pay multiple parties per segment?
-};
-```
+Industry traits used for mode selection: `has_logistics` (physical goods to ship?), `communication_heavy` (lots of back-and-forth before delivery?), `pure_digital` (deliverable is a file/digital artifact?), `long_cycle` (multi-week or multi-month engagement?), `deposit_required` (collect refundable deposit?), `multi_tier_allocation` (pay multiple parties per segment?).
 
 ### Selection Matrix
 
@@ -116,13 +107,7 @@ When two modes specify different Permission indexes for the same role, user deci
 
 ## Phase 1 Mode Details (Freelance & Rental)
 
-> The full detail for Phase 1 priority modes (Freelance & Rental) — including industry traits, Machine templates, Guard templates, Allocator strategies, 10-round build scripts, audit checklists, and failure playbooks — has been extracted to [MODE-DETAILS.md](./MODE-DETAILS.md) for on-demand loading.
->
-> **Load MODE-DETAILS.md when:**
-> - User selects `freelance` or `rental` mode
-> - wowok-onboard R3-R8 needs Machine/Guard/Allocator defaults
-> - User asks "what does the freelance/rental mode include?"
-> - Pre-publish audit needs mode-specific checklist
+> **Mode defaults** (traits, machine_shape, guards, allocator, key_risk, build_notes) are provided by MCP `project_operation` action `analyze_intent` — pass `industry` parameter and the MCP auto-fills scenario defaults from `knowledge/scenario-modes.ts`. The AI does NOT need to look up per-industry presets manually.
 
 ### Quick Reference (mode summaries)
 
@@ -131,22 +116,41 @@ When two modes specify different Permission indexes for the same role, user deci
 | `freelance` | 7 nodes (ordered→...→completed/refunded) | 5 (buy/deliver/accept/withdraw/refund) | 2 (100% provider / 100% refund) | Customer never accepts delivery |
 | `rental` | 10 nodes (reserved→...→deposit_refunded/deducted) | 5 (deposit/return/inspect/refund/damage) | 3 (rent / refund / deduct) | Owner claims damage without pre-rental WIP |
 
+### Freelance Audit Checklist (pre-publish BLOCKERS)
+
+- `accept_guard` exists + `gen_passport` tested — BLOCKER (no acceptance = funds stuck)
+- `refund_guard` + 100% refund Allocator — BLOCKER (no refund = dispute deadlock)
+- Machine has terminal nodes for both `completed` and `refunded` — BLOCKER (dead-end = stuck funds)
+- `withdraw_guard` only triggers at `Progress.current=completed` — BLOCKER (prevents premature payout)
+- `deliver_guard` validates WIP hash — recommended
+
+### Freelance Failure Playbooks
+
+- Customer never accepts: `accept_guard` includes timeout auto-accept forward (threshold met by `namedOperator:""` after N days)
+- Wrong deliverable hash: `deliver_guard` enforces WIP match → re-generate WIP, re-submit via `progress.hold:false`
+- No arbiter assigned: Permission must include `permissionIndex:1500`, bind Arbitration via `service.arbitrations.list` before publish
+
+### Rental Audit Checklist (pre-publish BLOCKERS)
+
+- `deposit_guard` validates `Order.balance ≥ deposit_amount` — BLOCKER (renter runs off with item)
+- `refund_guard` + 100% refund Allocator — BLOCKER (no refund = deposit theft)
+- `damage_guard` requires pre+post WIP hash diff — BLOCKER (no evidence = arbitrary deduction)
+- Machine has both `deposit_refunded` and `deposit_deducted` terminals — BLOCKER
+- Pre-rental WIP generated + hash stored — BLOCKER (can't prove damage without pre-hash)
+- Rental period timeout forward on `in_use` node — recommended
+
+### Rental Failure Playbooks
+
+- Renter never returns: timeout forward to `damage_confirmed`, `deposit_deduct` Allocator fires
+- No pre-rental WIP: impossible post-publish — audit checklist blocks this at publish time
+- Owner refuses inspect: timeout forward auto-passes `inspect_guard`, `refund_guard` fires, deposit returns
+- Double-spend dispute: Machine topology ensures mutually exclusive forwards (first-Pair-wins), `escalate_arbiter` routes to Arbitration
+
 ---
 
 ## Education Mode (Phase 2 — Outline)
 
-### Industry Traits
-
-```typescript
-const educationTraits: IndustryTraits = {
-  has_logistics: false,
-  communication_heavy: true,
-  pure_digital: false,
-  long_cycle: true,
-  deposit_required: true,  // tuition pre-pay
-  multi_tier_allocation: false,
-};
-```
+**Traits**: communication_heavy, long_cycle, deposit_required (tuition pre-pay), not pure_digital.
 
 ### Mode Outline
 
@@ -156,29 +160,11 @@ const educationTraits: IndustryTraits = {
 - **Key trait**: `setting_locked_time` on Service prevents institution from changing rules mid-semester (regulatory compliance)
 - **GTM angle**: targets "tutoring institutions run away with prepaid tuition" pain point; policy-driven adoption
 
-### Phase 2 Build Status
-
-- Machine template: drafted, needs 1 pilot institution test
-- Guards: `attendance_guard` needs WIP hash for session content commitment
-- Allocator: per-session release needs threshold-based trigger
-- Audit checklist: pending real-world pilot
-
 ---
 
 ## Travel Mode (Phase 2 — Outline)
 
-### Industry Traits
-
-```typescript
-const travelTraits: IndustryTraits = {
-  has_logistics: false,
-  communication_heavy: true,
-  pure_digital: false,
-  long_cycle: true,
-  deposit_required: true,  // deposit + final payment
-  multi_tier_allocation: true,  // agency → hotel → guide → driver
-};
-```
+**Traits**: communication_heavy, long_cycle, deposit_required (deposit + final payment), multi_tier_allocation (agency → hotel → guide → driver).
 
 ### Mode Outline
 
@@ -188,29 +174,11 @@ const travelTraits: IndustryTraits = {
 - **Key trait**: multi-tier Allocation is WoWok's unique advantage over traditional travel platforms
 - **GTM angle**: targets "paid in full then service shrinks" pain point
 
-### Phase 2 Build Status
-
-- Machine template: drafted, needs multi-tier Allocation pilot
-- Guards: `segment_guard` needs standardized WIP templates per segment type (hotel, transport, activity)
-- Allocator: multi-tier waterfall needs guard chaining validation
-- Audit checklist: pending real-world pilot
-
 ---
 
 ## Subscription Mode (Phase 3 — Outline)
 
-### Industry Traits
-
-```typescript
-const subscriptionTraits: IndustryTraits = {
-  has_logistics: false,
-  communication_heavy: false,
-  pure_digital: true,
-  long_cycle: true,
-  deposit_required: false,
-  multi_tier_allocation: false,
-};
-```
+**Traits**: pure_digital, long_cycle, not deposit_required, not communication_heavy.
 
 ### Mode Outline
 
@@ -219,13 +187,6 @@ const subscriptionTraits: IndustryTraits = {
 - **Default Allocator**: each charge → 100% to creator; unearned periods → refund to subscriber
 - **Key trait**: pure digital, native WoWok soil; directly attacks "auto-renew trap" and "platform takes 30%" pain points
 - **GTM angle**: independent creators (Indie Hackers, niche SaaS, paid newsletters)
-
-### Phase 3 Build Status
-
-- Machine template: planned
-- Guards: `charge_guard` needs periodic trigger mechanism (off-chain scheduler + on-chain Guard)
-- Allocator: per-period release straightforward
-- Audit checklist: pending design review
 
 ---
 
@@ -242,14 +203,7 @@ Any user can switch from a driving mode to `general` (free) mode at any time. Th
 
 ### How to Switch
 
-```
-User says: "switch to general mode" or "configure manually"
-├── Stop applying mode defaults to remaining rounds
-├── Surface the IndustryModeSchema shape as a blank template
-├── User provides: Permission indexes, Machine nodes, Guards, Allocators manually
-├── wowok-onboard R3-R8 still execute, but with empty defaults
-└── wowok-machine / wowok-guard / wowok-provider become primary references
-```
+When user says "switch to general mode" or "configure manually": stop applying mode defaults to remaining rounds, surface the `IndustryModeSchema` shape as a blank template, let user provide Permission indexes/Machine nodes/Guards/Allocators manually. wowok-onboard R3-R8 still execute with empty defaults; wowok-machine / wowok-guard / wowok-provider become primary references.
 
 ### Warning
 
@@ -266,11 +220,8 @@ User can switch back to a driving mode after using general mode:
 
 ---
 
-## Appendices (Progressive Disclosure)
+## Tier Layering
 
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Tier Layering — expertise-tier based guidance
-> - IndustryModeSchema — schema reference
-> - Quick Reference — lookup table
->
-> Load APPENDIX.md when the user needs tier-specific guidance, schema reference, or quick lookup.
+- **Novice**: Full driving mode — mode defaults fill all rounds, user only confirms
+- **Advanced**: Customize defaults — user overrides specific fields (e.g., Allocator split), audit checklist still runs
+- **Expert**: General mode — no defaults, raw MCP operations, wowok-machine/guard/provider become primary references

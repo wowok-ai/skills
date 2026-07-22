@@ -142,90 +142,95 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 
 ---
 
-## The 17 Sub-Tools (all via `wowok({ tool, data })`)
+## Sub-Tool Schema-Inexpressible Constraints
 
-### 1. `onchain_operations` — 16 Sub-Types
+> MCP schemas define field types/validation. The constraints below are business rules NOT expressible in schemas — AI must know them before calling.
 
-> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations" } })` for the full discriminated union. Per-type schemas: `onchain_operations_service`, `onchain_operations_machine`, etc.
+### `onchain_operations` (18 sub-types)
 
-| `operation_type` | Schema-Inexpressible Constraints |
+| `operation_type` | Key Constraints (not in schema) |
 |-----------------|----------------------------------|
-| `service` | `machine` field must reference a **published** Machine. Allocators evaluated in array order (first-Guard-wins). Publish locks `machine`/`order_allocators`; `sales`/`discount`/`description` remain mutable. |
-| `machine` | Nodes immutable after publish. Forward requires ≥1 of `namedOperator`/`permissionIndex` (both empty = SDK error). Weight `u16` (0–65535), threshold `u32`. `""` = entry node. Full lifecycle → [wowok-machine](../wowok-machine/SKILL.md). |
-| `progress` | Two-phase advancement: `hold: true` (lock) → `hold: false` (submit). `adminUnhold: true` force-releases others' locks. SDK fetches Machine internally when resolving `object_address`. |
-| `arbitration` | MAX 20 propositions, 520 voters. Non-Finished withdrawal triggers 30-day mandatory wait. Verdict (state 2→3) is **irreversible** by arbitrator — only customer can object via `order.arb_objection`. Voting weight from Guard `b_submission:true` must be numeric (U8–U256→u32). Full workflow → [wowok-arbitrator](../wowok-arbitrator/SKILL.md). |
-| `guard` | Two creation modes: `root.type: "node"` (inline) or `"file"` (from JSON/Markdown). MAX 4 `rely` dependencies. Guards with `rep: false` **excluded** from other Guards' `rely` lists. Global system addresses (`0xaab` EntityRegistrar, `0xaaa` EntityLinker) require table entries. Full design → [wowok-guard](../wowok-guard/SKILL.md). |
-| `gen_passport` | MAX 20 Guards/call (AND-ed — all must pass). Omit `info` to auto-fetch submissions from Guards. Passport frozen after creation (immutable credential). Usage → [wowok-guard](../wowok-guard/SKILL.md). |
-| `order` | Builder-owned: agents can operate but **cannot withdraw** — only builder receives funds. `order.progress` with Guard requires Passport (mandatory, not bypassable). Arbitration via `order.arb_confirm`/`arb_objection` (not via `arbitration` directly). `arb_claim_compensation` once-only, from Service's compensation fund. Full flow → [wowok-order](../wowok-order/SKILL.md). |
-| `payment` | `type_parameter` required (e.g., `"0x2::wow::WOW"`). Irreversible — no refund mechanism. |
-| `personal` | **Permanently public** — no private field exists. Warn users before writing sensitive data. |
-| `demand` | Guard-gated: `guards` filter which presenters can submit solutions. Separate from Service. |
-| `treasury` | Guardable deposits (`external_deposit_guard`) and withdrawals (`external_withdraw_guard`). Each entry creates a Payment record in history table for auditability. |
-| `repository` | Composite key: `name + entity` (address or number). Guardable writes validate both writer eligibility and data content. |
-| `reward` | `guard_add` AmountType: `Fixed` (equal) or `GuardU64Identifier` (dynamic from submission). `guard_expiration_time` freezes the Guard list; `null` to remove. |
-| `allocation` | Auto-executes on Progress advancement; modes evaluated in order (Amount → Rate → Surplus), first-Guard-wins per mode. |
-| `contact` | Bridge between Service (`um` field) and Messenger: holds `ims[]` (messenger addresses). |
-| `permission` | Indices 0–65535 (0–999 reserved for protocol; custom ≥1000). SDK rejects custom below 1000. Reuse across objects. |
+| `service` | `machine` must be **published**. Allocators: array order = priority (first-Guard-wins). Publish locks `machine`/`order_allocators`; `sales`/`discount`/`description` stay mutable. |
+| `machine` | Nodes immutable after publish. Forward needs ≥1 of `namedOperator`/`permissionIndex` (both empty = SDK error). `""` = entry node. → [wowok-machine](../wowok-machine/SKILL.md) |
+| `progress` | Two-phase: `hold:true` (lock) → `hold:false` (submit). `adminUnhold:true` force-releases. SDK auto-fetches Machine when resolving `object_address`. |
+| `arbitration` | MAX 20 propositions, 520 voters. Verdict (2→3) **irreversible** — only customer can `order.arb_objection`. Non-Finished withdrawal = 30-day wait. → [wowok-arbitrator](../wowok-arbitrator/SKILL.md) |
+| `guard` | `root.type:"node"` (inline) or `"file"` (JSON/MD). MAX 4 `rely`. `rep:false` Guards excluded from others' `rely`. System addresses `0xaab`/`0xaaa` need table entries. → [wowok-guard](../wowok-guard/SKILL.md) |
+| `gen_passport` | MAX 20 Guards/call (AND-ed). Omit `info` to auto-fetch. Passport = frozen immutable credential. |
+| `order` | Agents can operate but **cannot withdraw** — only builder. `order.progress`+Guard requires Passport. Arb via `order.arb_confirm`/`arb_objection` (not `arbitration` directly). `arb_claim_compensation` once-only. → [wowok-order](../wowok-order/SKILL.md) |
+| `payment` | `type_parameter` required. **Irreversible** — no refund. |
+| `personal` | **Permanently public** — warn users before writing sensitive data. |
+| `demand` | Guard-gated: `guards` filter presenters. Separate from Service. |
+| `treasury` | Guardable deposits/withdrawals. Each entry creates Payment record for audit. |
+| `repository` | Composite key: `name + entity`. Guard validates writer + content. |
+| `reward` | `guard_add`: `Fixed` (equal) or `GuardU64Identifier` (dynamic). `guard_expiration_time` freezes Guard list; `null` removes. |
+| `allocation` | Auto-executes on Progress advance. Order: Amount → Rate → Surplus, first-Guard-wins per mode. |
+| `contact` | Bridge: Service `um` ↔ Messenger `ims[]`. IM mutations need permission index 453; no events (poll `ims[]`). |
+| `permission` | 0–999 reserved; custom ≥1000. SDK rejects <1000. Reusable across objects. |
+| `proof` | Immutable (freeze_object). `proof_type=1` reserved for WTS; >100 for custom. Large data → Repository + `about_address`, not inline. |
+| `gen_proof` | Convenience wrapper: creates Proof without `namedNew`. Same immutability rules. Use `proof` with `namedNew` when naming is needed. |
 
-### WIP Hash Dispute-Prevention Mechanism
+**WIP hash anti-bait**: Capture `sale.wip_hash` when browsing; pass in `buy.items[].wip_hash`. Two-layer: SDK verifies file hash off-chain, Move asserts on-chain. Merchant swap = order fails.
 
-When a customer browses products, the AI agent MUST capture the `wip_hash` from the Service query result (the `sale.wip_hash` field for each product). When creating an order, pass the captured hash in `buy.items[].wip_hash`.
+### Other Tools (compact)
 
-This is a two-layer protection:
-1. **Off-chain** (SDK `verify_wip`): downloads the WIP file and verifies its hash matches the captured hash — detects WIP file tampering.
-2. **On-chain** (Move contract `assert!(sale.wip_hash == i.wip_hash)`): confirms the Service's sale hasn't been updated between browse and purchase time.
-
-If the merchant swaps the WIP file or changes `sale.wip_hash` after the customer browses, the order will fail — the customer is protected from bait-and-switch.
-
----
-
-### 2. `query_toolkit` — Read (Local + On-Chain)
-
-9 query types. Schema-inexpressible: `token_list` is **cached** (populated on first query). `account_balance` dual-mode: `balance=true` for totals, `coin={cursor,limit}` for paginated coin objects. `onchain_objects` batches 50/request internally. `local_names` resolves to account names AND local marks simultaneously.
-
-### 3. `onchain_table_data` — Dynamic Table Queries
-
-12 query types. **Global** (no `parent`): `entity_registrar`, `entity_linker`. All others require `parent`. `onchain_table_item_generic` accepts arbitrary key types — universal fallback for custom objects.
-
-### 4. `account_operation` — Wallet (ALL LOCAL)
-
-`faucet` only testnet/localnet. `gen` with `m` enables Messenger. `signData` supports UTF-8/base64/hex. `get` with `balance_required` splits existing coins (no minting). Private keys never leave the device.
-
-**Mainnet operations**: `faucet` is unavailable on mainnet. To fund new accounts, use `transfer` from an existing account with sufficient balance:
-```
-{"transfer": {"amount": 1000000000, "name_or_address_from": "", "name_or_address_to": "new_account", "network": "mainnet"}}
-```
-- 1 WOW (10^9 base units) per account is sufficient for dozens of transactions
-- `name_or_address_from: ""` uses the default account
-
-### 5. `local_mark_operation` — Address Book (ALL LOCAL)
-
-Max 50 tags/entry (64 chars each). `replaceExistName:true` steals existing names — prefer versioned names (`_v1`, `_v2`).
-
-### 6. `local_info_operation` — Private Data (ALL LOCAL)
-
-Max 50 contents/entry, 300 chars each.
+| Tool | Key Constraints |
+|------|----------------|
+| `query_toolkit` | `token_list` cached (first query populates). `account_balance`: `balance=true` for totals, `coin={cursor,limit}` for paginated. `onchain_objects` batches 50/req. `local_names` resolves accounts + marks. |
+| `onchain_table_data` | 12 types. Global (no `parent`): `entity_registrar`, `entity_linker`. `onchain_table_item_generic` = universal fallback. |
+| `account_operation` | `faucet` testnet/localnet only. Mainnet funding: `transfer` from existing account (1 WOW = 10^9 base units). `gen` with `m` enables Messenger. Private keys never leave device. |
+| `local_mark_operation` | Max 50 tags/entry (64 chars). `replaceExistName:true` steals names — prefer `_v1`/`_v2`. |
+| `local_info_operation` | Max 50 contents/entry, 300 chars each. |
+| `messenger_operation` | Stranger: 1 msg before reply (~480 chars). Guard block → rejection includes guard list; sender needs Passport. WTS: `generate` needs continuous sequences. → [wowok-messenger](../wowok-messenger/SKILL.md) |
+| `wip_file` | `verify`: hash → signatures stepwise. `wip2html`: single file or directory. |
+| `guard2file` | Read-only export to JSON/Markdown. |
+| `machineNode2file` | Read-only; exports complete topology. |
+| `onchain_events` | 6 event types; cursor `{eventSeq, txDigest}`. |
+| `wowok_buildin_info` | 5 info types. Guard instructions filter by `name`/`return_type`/`param_count`. **Never use Value type 19**. |
+| `schema_query` | `list` returns empty if schemas not generated → `npm run generate:schemas`. |
 
 ---
 
-### 7. `messenger_operation` — Encrypted Messaging
+## Supporting Objects — When to Use
 
-**Stranger rules** (not in schema): 1 message before reply required (max ~480 chars); reply auto-adds stranger to friends; cool-down window after rejection.
+> MCP handles risk assessment + confirmation rules automatically. This section covers business decisions NOT in schemas — WHEN and WHY to choose each object type.
 
-**Guard flow** (not in schema): When guard blocks a stranger message, rejection reply includes guard list — sender must obtain valid Passport to resend.
+### Proof vs WIP
 
-**WTS** (not in schema): `generate` requires continuous sequences (gaps break chain). `verify` → `sign` → `wts2html` pipeline. `proof_message` anchors to blockchain. Full design → [wowok-messenger](../wowok-messenger/SKILL.md).
+| Aspect | Proof (on-chain) | WIP (off-chain file) |
+|--------|-----------------|---------------------|
+| Purpose | Cryptographic attestation (merkle root, server signature, timestamp) | Product description + images for arbitration evidence |
+| Immutability | `freeze_object` — permanent on-chain record | File hash anchored on-chain; file stored off-chain |
+| Size | `MAX_PROOF_SIZE` (compact digests only) | Unlimited (file-based) |
+| Use when | Need on-chain timestamp + signature verification | Need product evidence for order disputes |
 
----
+`gen_proof` = convenience (no `namedNew` wrapper). `proof` with `namedNew` = named object for reuse by reference. For large data, store in Repository and set `about_address` to the Repository ID.
 
-| # | Tool | Schema-Inexpressible |
-|---|------|---------------------|
-| 8 | `wip_file` | `verify` checks hash → signatures stepwise. `wip2html` accepts single file or directory. |
-| 9 | `guard2file` | Read-only export to JSON/Markdown. |
-| 10 | `machineNode2file` | Read-only; exports complete topology. |
-| 11 | `onchain_events` | 6 event types; paginated via cursor `{eventSeq, txDigest}`. |
-| 12 | `wowok_buildin_info` | 5 info types. Guard instructions filter by `name`/`return_type`/`param_count`. **Never use Value type 19** (internal, SDK rejects). |
-| 13 | `schema_query` | `list` returns empty if schemas not generated → run `npm run generate:schemas`. |
+### Treasury vs Allocation
+
+| Aspect | Treasury | Allocation |
+|--------|----------|------------|
+| Purpose | Team fund management (deposit/withdraw with audit trail) | Order fund distribution (auto-trigger on Progress advance) |
+| Trigger | Manual deposit/withdraw (Guard-gated) | Automatic when Progress reaches configured node |
+| Guard | External guard on withdrawals | Allocation guard on distribution rules |
+| Use when | Holding pooled funds, compensation funds, team wallets | Splitting order payments among recipients |
+
+Compensation fund = Treasury bound to Service. Each Treasury entry creates a Payment record for audit. Withdrawal requires Guard verification.
+
+### Reward (Incentive Pools)
+
+Guard-gated claim pools: `claim_guard` verifies eligibility before payout. `guard_add` modes: `Fixed` (equal split among claimants) or `GuardU64Identifier` (dynamic amount from Guard table index). `guard_expiration_time` freezes the Guard list (set `null` to remove freeze). Use cases: customer loyalty rewards, referral bonuses, airdrop campaigns, attendance rewards. Query claim history via `query_toolkit` → `onchain_table_item_reward_record`.
+
+### Demand (Customer-Posted Requests)
+
+Demand is the **inverse** of Service: customer posts a request + optional reward pool, providers submit offers. Guard-gated: `guards` filter which providers can present. `recommend_guard` filters presenter submissions. Separate `operation_type: "demand"` — NOT `service`. Use when: customer needs competitive bids (custom work, bulk procurement, reverse-auction marketplace). Pair with Reward to incentivize providers.
+
+### Repository (On-Chain Database)
+
+Composite key: `name + entity`. Guard validates writer identity + content integrity. `id_from_submission` (must be Address) and `data_from_submission` (must match Repository's `value_type`) extract structured data from Guard submissions. Use cases: supply-chain tracking, multi-party attestation, dynamic pricing data, KYC registries. MAX 50 policies per Repository, 100 IDs per operation. Guard design: see [wowok-guard](../wowok-guard/SKILL.md) §"Where Guards Attach".
+
+### Contact (Service.um Bridge)
+
+Contact is the on-chain bridge: `Service.um` → `Contact` → `ims[]` (Messenger endpoints). Create BEFORE Service publish when `customer_required` is set. Contact can also bind to `Permission.um` (bidirectional dependency — clear `Permission.um` via `permission_um_set(null)` before deleting Contact). IM list mutations (`im_add`/`im_remove`) require permission index 453; no events emitted (poll `ims[]` field). Full Messenger integration: see [wowok-messenger](../wowok-messenger/SKILL.md).
 
 ---
 
@@ -250,41 +255,7 @@ Discover?    → tool: "schema_query" / "wowok_buildin_info" / "onchain_events"
 
 ## Examples Reference
 
-The deployment package includes 5 complete examples in the `examples/` directory. These serve as reference implementations to help explain concepts and demonstrate patterns to users.
-
-### Matching User Intent to Examples
-
-When a user describes their needs, reference the appropriate example to illustrate the approach:
-
-| User Intent | Example | Complexity | Key Techniques Demonstrated |
-|-------------|---------|------------|----------------------------|
-| Simple service with time-lock | Insurance | ⭐ Low | Two-node workflow, convert_witness, time-lock Guard |
-| E-commerce store setup | MyShop | ⭐⭐ Medium | Four-node workflow, Permission indexes, Messenger integration, discounts |
-| Complex multi-path order flow | MyShop_Advanced | ⭐⭐⭐ High | 11+ nodes, dual-signature (threshold=2), Merkle Root verification, Reward pool |
-| Weather/data validation service | Travel | ⭐⭐⭐ High | Repository queries, convert_number_address, supply chain sub-orders |
-| Signature/authorization service | ThreeBody_Signature | ⭐ Low | Buy Guard for access control, Machine-Service binding |
-
-### Finding Examples by Technique
-
-When explaining a specific technique to users, reference where it appears:
-
-| Technique | Example | Location |
-|-----------|---------|----------|
-| convert_witness: 100 (Order to Progress) | Insurance, Travel | Insurance Step 2 |
-| Repository data query Guard | Travel | Step 3.1 |
-| Dual-signature (threshold=2) | MyShop_Advanced | Lost/Return nodes |
-| Reward pool with Guard verification | MyShop_Advanced | reward_wonderful_v2 Guards |
-| Buy Guard (restricting purchasers) | ThreeBody_Signature | Step 2 |
-| Discount coupons | MyShop | Step 8 |
-| Arbitration with voting_guard | MyShop_Advanced | Step 9 |
-| Time-lock Guard | Insurance, Travel | Step 2 / Step 3.2 |
-
-### How to Use Examples with Users
-
-1. **Assess complexity** — Match user requirements to the appropriate complexity level
-2. **Reference the example** — Show users the relevant example path and explain which techniques it demonstrates
-3. **Extract patterns** — Use JSON snippets from examples as templates to help users understand the structure
-4. **Reference test results** — Each example includes `*_TestResults.md` with real testnet execution results for troubleshooting
+5 examples in `examples/` directory: **Insurance** (⭐ time-lock Guard), **MyShop** (⭐⭐ e-commerce, Messenger, discounts), **MyShop_Advanced** (⭐⭐⭐ 11+ nodes, dual-sig, Merkle Root, Reward), **Travel** (⭐⭐⭐ Repository Guard, supply chain), **ThreeBody_Signature** (⭐ Buy Guard). Each includes `*_TestResults.md` with real testnet data. Match user intent → example complexity → extract JSON patterns.
 
 ---
 
@@ -305,13 +276,3 @@ When explaining a specific technique to users, reference where it appears:
 | Arbitration called directly | Customer path: `order.arb_confirm` / `order.arb_objection`. Order is the interface |
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

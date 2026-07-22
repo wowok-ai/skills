@@ -38,7 +38,7 @@ The following content has been pushed down to the MCP knowledge layer and is app
 | Safety rules (immutability, confirmation, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.aggregate_risks` |
 | Guard / Machine design rules | `knowledge/guard-design-patterns.ts`, `machine-risk.ts` | `project_operation.aggregate_risks` |
 
-This Skill keeps the **R1-R10 onboarding conversation scripts** (in APPENDIX.md) and the **overall onboarding flow**. Pass the user's industry to `analyze_intent` and the MCP layer auto-fills the scenario defaults — no need to look up per-industry presets manually.
+This Skill keeps the **overall onboarding flow** and **R1-R10 build order** (see below). Pass the user's industry to `analyze_intent` and the MCP layer auto-fills the scenario defaults — no need to look up per-industry presets manually.
 
 ---
 
@@ -67,13 +67,29 @@ A published Service with: published Machine, bound Progress, validated Guards, c
 
 ---
 
-## Appendices (Progressive Disclosure)
+## MCP 5-Stage Pipeline Integration
 
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts / Onboarding Flow (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
-> - Handoff Protocol — handoff triggers and packet format
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, tier-specific guidance, or handoff context.
+The onboarding flow is gated by the MCP project-based 5-stage deployment pipeline. Each stage gates progression — the AI MUST honor `can_proceed: false` by stopping and fixing reported issues:
+
+| Stage | Rounds | MCP Action | Gate |
+|-------|--------|------------|------|
+| 1. Project Naming | R1-R2 | Establish `project` + `version` namespace | — |
+| 2. Business Puzzle | R2 | `analyze_intent` (pass `industry`) → ODG + missing fields + `next_step` | — |
+| 3. Risk Calibration | After R8 | `aggregate_risks` → risk assessment across all puzzles | CRITICAL risks block |
+| 4. Deployment Doc | After risks pass | `generate_deployment_doc` → deployment doc with D-01..D-18 checks | D-errors block R9 |
+| 5. Substep Trace | R9-R10 | `trace_substeps` → validate substep linkage (D-10 check) | Linkage errors block publish |
+
+## R1-R10 Build Order
+
+| Round | Object | MCP Operation | Key Decision |
+|-------|--------|---------------|--------------|
+| R1 | Account | `account_operation.gen` + `faucet` | New or reuse? |
+| R2 | Industry mode | `project_operation.analyze_intent` (pass `industry`) | Which driving mode? |
+| R3 | Service | `onchain_operations.service` CREATE | Name, type_parameter, description |
+| R4 | Permission | `onchain_operations.permission` CREATE/REUSE | Indexes 1000/1500 (customer uses `namedOperator:""`) |
+| R5 | Machine | `onchain_operations.machine` CREATE | Nodes, forwards (mode defaults from MCP) |
+| R6 | Progress | `onchain_operations.progress` CREATE + bind | Mirror Machine nodes |
+| R7 | Guards | `onchain_operations.guard` CREATE + `gen_passport` test | 5 Guard templates (mode defaults from MCP) |
+| R8 | Allocation | `onchain_operations.allocation` CREATE + `service.order_allocators` | Fund split (mode defaults from MCP) |
+| R9 | Test order | `onchain_operations.order` CREATE + `progress` advance + `allocation.alloc_by_guard` | Full flow dry run |
+| R10 | Publish | `onchain_operations.machine` publish + `service` publish | Pre-publish audit must PASS |

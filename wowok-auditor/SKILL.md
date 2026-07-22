@@ -112,13 +112,3 @@ This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completen
 | Backup export | `machineNode2file` + `guard2file` backups persisted | WARN: no backup |
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

@@ -25,7 +25,7 @@ always: false
 End-to-end encrypted messaging with tamper-proof audit trails.
 
 > **Role**: Any WoWok participant
-> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "messenger_operation" } })` — all 16 operations with full parameter types and constraints. This document focuses on **design decisions and strategy** not captured by the schema.
+> All 16 operations with full parameter types and constraints are in the MCP schema (`messenger_operation`). This document focuses on **design decisions and strategy** not captured by the schema.
 > **Related Skills**: [wowok-guard](../wowok-guard/SKILL.md) (guard design), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (WTS evidence in disputes), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-provider](../wowok-provider/SKILL.md) (service provider perspective), [wowok-safety](../wowok-safety/SKILL.md) (safety)
 
 ---
@@ -64,6 +64,14 @@ Before any communication:
 ### Account Limit
 
 A single device supports up to 1000 messenger accounts. Exceeding this returns "Maximum 1000 messenger accounts allowed". Use `account_operation → messenger { m: null }` to disable unused accounts.
+
+### Contact Object (On-Chain Bridge)
+
+The on-chain **Contact** object (`operation_type: "contact"`) is the bridge between a Service and Messenger: `Service.um` → Contact → `ims[]` (Messenger endpoint addresses). Customers query the Contact's `ims[]` to find where to send messages.
+
+**When to create**: Before Service publish, when `customer_required` is set (Service.um must point to a Contact). Reuse an existing Contact if you serve multiple Services with the same support channel.
+
+**Lifecycle**: Contact is mutable (unlike Proof/Guard). `im_add`/`im_remove` require permission index 453 (CONTACT_IM). No events emitted on IM mutations — poll `ims[]` field. If Contact is bound to `Permission.um` via `permission_um_set`, clear that binding BEFORE deleting the Contact (else dangling pointer). Full business guidance: [wowok-tools](../wowok-tools/SKILL.md) §"Contact (Service.um Bridge)".
 
 ---
 
@@ -109,12 +117,7 @@ Three independently managed lists. Schema covers all operations — here are the
 
 ## Anti-Spam Strategy
 
-The four-layer protection model evaluates every incoming message:
-
-```
-Blacklist → Friends List → Guard Verification → Stranger Rules
-   (reject)     (accept)      (accept if passport valid)    (one-message limit)
-```
+The four-layer protection model evaluates every incoming message: Blacklist (reject) → Friends List (accept) → Guard Verification (accept if passport valid) → Stranger Rules (one-message limit).
 
 This section covers **how to configure these layers intelligently** for different user profiles — configuration combinations, not just field descriptions.
 
@@ -193,15 +196,7 @@ A WTS file is a **tamper-proof, self-verifying export** of a continuous conversa
 
 ### The Workflow
 
-When a dispute requires evidence:
-
-```
-1. generate_wts  → export messages by time/messageId/seqIndex range
-2. sign_wts      → add your Falcon512 signature (both parties can sign)
-3. verify_wts    → validate hash chain, continuity, and all signatures
-4. wts2html      → (optional) convert to human-readable HTML
-5. send_file     → submit signed WTS to the arbitrator via messenger
-```
+When a dispute requires evidence: (1) `generate_wts` → export messages by time/messageId/seqIndex range; (2) `sign_wts` → add your Falcon512 signature (both parties can sign); (3) `verify_wts` → validate hash chain, continuity, and all signatures; (4) `wts2html` → (optional) convert to human-readable HTML; (5) `send_file` → submit signed WTS to the arbitrator via messenger.
 
 > **Key design decision**: Include the **full conversation** when generating WTS for arbitration — not just favorable messages. The arbitrator needs to see who said what, who acknowledged what, and the exact sequence. Selective exports undermine your credibility.
 
@@ -219,41 +214,11 @@ When a dispute requires evidence:
 
 ## Messenger Across Roles
 
-This section shows **how Messenger fits into each participant's workflow** — not detailed SOP (see the role-specific skills for complete workflows), but the Messenger-specific touchpoints.
+**Customer**: Pre-order inquiry (`send_message` to provider) → submit required info (`customer_required` fields) → track progress (`watch_messages`) → raise dispute (`generate_wts` + `sign_wts` + `send_file` to arbitrator). Full workflow: [wowok-order](../wowok-order/SKILL.md).
 
-### Customer
+**Service Provider**: Monitor inquiries (`watch_conversations` with `unreadOnly` or `listFilterMode: "stranger"`) → respond to customers (reply auto-adds to friends) → request customer info → document agreements (creates evidence trail) → dispute defense (`generate_wts` + `sign_wts` + `send_file`). Full workflow: [wowok-provider](../wowok-provider/SKILL.md).
 
-| Touchpoint | Messenger Operation | When |
-|------------|-------------------|------|
-| Pre-order inquiry | `send_message` to service provider | Before order creation — ask about service details, pricing, custom requirements |
-| Submit required info | `send_message` with delivery address, phone, etc. | After order creation — the Service's `customer_required` fields dictate what to send |
-| Track progress | `watch_messages` with provider | During order fulfillment — receive status updates |
-| Raise dispute | `generate_wts` + `sign_wts` + `send_file` to arbitrator | When resolution fails — submit evidence |
-
-> **Full workflow**: See [wowok-order](../wowok-order/SKILL.md) for the complete customer journey.
-
-### Service Provider
-
-| Touchpoint | Messenger Operation | When |
-|------------|-------------------|------|
-| Monitor inquiries | `watch_conversations` with `unreadOnly` or `listFilterMode: "stranger"` | Daily — check for new customer messages |
-| Respond to customers | `send_message` (reply auto-adds to friends) | As needed — timely response builds trust |
-| Request customer info | `send_message` asking for `customer_required` fields | After order creation if not yet provided |
-| Document agreements | `send_message` confirming terms, changes, custom work | Immediately after agreement — creates evidence trail |
-| Dispute defense | `generate_wts` + `sign_wts` + `send_file` | When a customer escalates — prove good-faith communication |
-
-> **Full workflow**: See [wowok-provider](../wowok-provider/SKILL.md) for the complete service provider journey.
-
-### Arbitrator
-
-| Touchpoint | Messenger Operation | When |
-|------------|-------------------|------|
-| Receive evidence | `watch_messages` or `watch_conversations` | When parties submit WTS files |
-| Verify evidence | `verify_wts` on received files | Before reviewing — ensure evidence integrity |
-| Communicate with parties | `send_message` for clarification requests | During dispute review |
-| Sign attestation | `sign_wts` on verified evidence | After verification — arbitrator endorses authenticity |
-
-> **Full workflow**: See [wowok-arbitrator](../wowok-arbitrator/SKILL.md) for the complete arbitration process.
+**Arbitrator**: Receive evidence (`watch_messages`/`watch_conversations`) → verify evidence (`verify_wts`) → communicate with parties (`send_message` for clarifications) → sign attestation (`sign_wts` on verified evidence). Full workflow: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
 ---
 
@@ -267,13 +232,3 @@ This section shows **how Messenger fits into each participant's workflow** — n
 - **Stale passports**: `passportValiditySeconds` too short causes frequent re-verification failures. Match duration to your Guard's data volatility.
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

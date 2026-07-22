@@ -146,13 +146,3 @@ When user asks about field meanings:
 | [wowok-messenger](../wowok-messenger/SKILL.md) | Encrypted communication |
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

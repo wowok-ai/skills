@@ -7,11 +7,14 @@ import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT
 
 /**
  * Skill directory names (must match folder names in package)
+ * Must stay in sync with scripts/install.js SKILL_DIRS
  * Ordered by role for clarity:
  * - Customer: wowok-order
  * - Provider: wowok-provider, wowok-machine
  * - Arbitrator: wowok-arbitrator
- * - Shared: wowok-guard, wowok-tools, wowok-safety
+ * - Shared: wowok-guard, wowok-tools, wowok-safety, wowok-output
+ * - Onboarding: wowok-onboard, wowok-scenario, wowok-planner, wowok-auditor
+ * - Distillation: wowok-distill
  */
 const SKILL_DIRS = [
   'wowok-order',
@@ -27,6 +30,7 @@ const SKILL_DIRS = [
   'wowok-scenario',
   'wowok-planner',
   'wowok-auditor',
+  'wowok-distill',
 ];
 
 /**
@@ -144,7 +148,7 @@ function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>
     return [targetArg as Exclude<ClientTarget, 'all'>];
   }
   console.error(`Invalid target: ${targetArg}`);
-  console.error(`Valid targets: claude, codex, agents, codebuddy, all`);
+  console.error(`Valid targets: claude, codex, agents, codebuddy, cursor, copilot, all`);
   process.exit(1);
 }
 

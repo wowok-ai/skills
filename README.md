@@ -1,6 +1,6 @@
 # WoWok Skills
 
-WoWok AI Skills for Claude Code, OpenAI Codex, Trae IDE, CodeBuddy, and other AI assistants — Helping AI use WoWok MCP tools correctly.
+WoWok AI Skills for Claude Code, OpenAI Codex, Trae IDE, CodeBuddy, Cursor, and GitHub Copilot — Helping AI use WoWok MCP tools correctly.
 
 ## Supported AI Clients
 
@@ -13,7 +13,7 @@ WoWok AI Skills for Claude Code, OpenAI Codex, Trae IDE, CodeBuddy, and other AI
 | **Cursor IDE** | `.cursor/rules/` | `.mdc` (frontmatter adapted) |
 | **GitHub Copilot** | `.github/prompts/` | `.prompt.md` (plain markdown) |
 
-> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. Codex follows the [Agent Skills](https://agentskills.io) open standard natively. All other clients use the native SKILL.md format directly.    
+> **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. Codex follows the [Agent Skills](https://agentskills.io) open standard natively. All other clients use the native SKILL.md format directly.
 
 
 ## How It Works
@@ -36,8 +36,8 @@ WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 
 | Mode | Skills | Behavior |
 |------|--------|----------|
-| **Always** | `wowok-tools`, `wowok-safety` | Metadata always in prompt (~100 tokens each). AI auto-loads full content when needed. |
-| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-guard`, `wowok-machine` | AI matches description to task. Only loaded when relevant. |
+| **Always** | `wowok-tools`, `wowok-safety`, `wowok-output` | Metadata always in prompt (~100 tokens each). AI auto-loads full content when needed. |
+| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-guard`, `wowok-machine`, `wowok-onboard`, `wowok-scenario`, `wowok-planner`, `wowok-auditor`, `wowok-distill` | AI matches description to task. Only loaded when relevant. |
 
 ## Quick Start
 
@@ -68,7 +68,7 @@ npm install -g @wowok/skills
 WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 
 # All supported clients:
-WOWOK_SKILLS_TARGETS=claude,codex,agents,codebuddy npm install -g @wowok/skills
+WOWOK_SKILLS_TARGETS=claude,codex,agents,codebuddy,cursor,copilot npm install -g @wowok/skills
 ```
 
 This copies skills to the respective `~/.*/skills/` directories. They will be available in your next session.
@@ -87,6 +87,12 @@ wowok-skills init --target codex
 
 # Trae IDE:
 wowok-skills init --target agents
+
+# Cursor IDE:
+wowok-skills init --target cursor
+
+# GitHub Copilot:
+wowok-skills init --target copilot
 
 # All clients:
 wowok-skills init --target all
@@ -160,17 +166,29 @@ const providerSkill = getSkillByName('wowok-provider');
 
 ## Available Skills
 
-| Skill | Purpose | Role | Loading |
-|-------|---------|------|---------|
-| `wowok-provider` | Service provider guide (create Service, Machine, Allocators, handle orders) | Service Provider (Merchant) | On-demand |
-| `wowok-arbitrator` | Arbitration service guide (create Arbitration, handle disputes, voting) | Arbitrator | On-demand |
-| `wowok-order` | Order lifecycle management (place orders, track progress, arbitration) | Customer | On-demand |
-| `wowok-messenger` | Encrypted messaging (E2E communication, WTS evidence, conversation management) | All Roles | On-demand |
-| `wowok-guard` | Guard design mastery (programmable trust rules) | All Roles | On-demand |
-| `wowok-machine` | Machine workflow design (state machines, progress tracking) | Service Provider | On-demand |
-| `wowok-output` | Output processing (address resolution, name mapping, amount formatting) | All Roles | Always |
-| `wowok-tools` | MCP tool usage mastery (13 tools, schema references) | All Roles | Always |
-| `wowok-safety` | Safety protocol (dry-run → confirm → execute) | All Roles | Always |
+### Always Loaded (3 skills — foundational layer)
+
+| Skill | Purpose | Role |
+|-------|---------|------|
+| `wowok-tools` | MCP tool reference — 17 sub-tools, schema-gated execution, schema-inexpressible constraints, supporting objects decision guide | All Roles |
+| `wowok-safety` | Safety protocol — dry-run → confirm → execute, immutability rules, confirmation checkpoints | All Roles |
+| `wowok-output` | Output processing — address resolution, name mapping, amount formatting, data visualization | All Roles |
+
+### On-Demand (11 skills — contextually loaded)
+
+| Skill | Purpose | Role |
+|-------|---------|------|
+| `wowok-provider` | Service provider guide — create Service, Machine, Allocators, handle order fulfillment, fork project iteration | Service Provider (Merchant) |
+| `wowok-arbitrator` | Arbitration service — create Arbitration, handle disputes, organize voting, manage fees | Arbitrator |
+| `wowok-order` | Customer order lifecycle — pre-purchase due diligence (E1-E10), consensus building, order creation, progress advancement, arbitration | Customer |
+| `wowok-messenger` | Encrypted messaging — E2E communication, WTS evidence, anti-spam strategy, Contact object lifecycle | All Roles |
+| `wowok-guard` | Guard design mastery — programmable trust rules, 4 data source classifications, verifier constraint levels, 33 creation/runtime constraints | All Roles |
+| `wowok-machine` | Machine workflow design — state machines, node/pair/forward graph, immutability rules, dependency-first build order | Service Provider |
+| `wowok-onboard` | First-touch onboarding — 10-round dialogue from zero to first published Service, MCP 5-stage pipeline integration | New Users |
+| `wowok-scenario` | Industry mode templates — freelance, rental, education, travel, subscription presets with audit checklists and failure playbooks | All Roles |
+| `wowok-planner` | Planning skill — converts natural language intent into Object Dependency Graph (ODG), 5 scenario templates | All Roles |
+| `wowok-auditor` | Pre-publish audit — Guard completeness, Machine soundness, fund flow correctness, 32 audit checks | All Roles |
+| `wowok-distill` | Distillation review — guides merchants through reviewing AI-generated improvement proposals from the Loop Engineering flywheel | Service Provider |
 
 ## Related Projects
 

@@ -64,13 +64,7 @@ User says "just make something up" → REFUSE and explain why each item matters.
 
 ### Information Collection Protocol
 
-```
-STEP 0: Present checklist R1-R6 to user
-├── Each item: "Reuse or create new? Provide details."
-├── Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]
-└── ⛔ GATE: ALL R1-R6 must be [confirmed] before any on-chain action
-    └── NOT confirmed → STOP. Ask. Do NOT suggest creating arbitration.
-```
+Present checklist R1-R6 to user. Each item: "Reuse or create new? Provide details." Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]. ⛔ GATE: ALL R1-R6 must be [confirmed] before any on-chain action — NOT confirmed → STOP. Ask. Do NOT suggest creating arbitration.
 
 All subsequent on-chain operations use R1 (Account) as `env.account`.
 
@@ -181,19 +175,7 @@ Customer dispute creates Arb directly at (1). State (0) entered only via `reset`
 
 ### Revenue Flow
 
-```
-Customer pays fee
-      │
-      ▼
-  Arb.fee (locked per case)
-      │
-      │ arb_withdraw()
-      ▼
-  Arbitration.balance
-      │
-      ├──→ Allocation (revenue sharing)
-      └──→ Treasury (controlled withdrawal)
-```
+Customer pays fee → locked in `Arb.fee` per case → `arb_withdraw()` transfers to `Arbitration.balance` → distributed via Allocation (revenue sharing) or Treasury (controlled withdrawal).
 
 ### Compensation System
 
@@ -230,20 +212,6 @@ Providers list approved Arbitrations in their Service. Customers choose from thi
 
 ## Quick Reference
 
-### Essential Operations
-
-| Operation | State | Purpose |
-|-----------|-------|---------|
-| `confirm` | (1)→(2) | Start voting, set deadline |
-| `reset` | (1)→(0), (4)→(0) | Request revision (requires feedback) |
-| `vote` | (2) | Cast weighted votes |
-| `arbitration` | (2)→(3) | Finalize verdict (**irreversible**) |
-| `arb_withdraw` | (5), (3), (4) | Extract fee (30-day wait if not finished) |
-
-### Common Workflows
-
-See [Core Architecture > Key Flows](#arb-state-machine) above.
-
 ### Critical Constraints
 
 - Max 20 propositions per case
@@ -253,14 +221,6 @@ See [Core Architecture > Key Flows](#arb-state-machine) above.
 - ⛔ Guard is **immutable after creation** — test before finalizing
 - ⛔ `arbitration` verdict is **irreversible** by arbitrator — only customer can object
 - ⛔ `feedback` is **permanently public on-chain** — use Messenger for privacy-sensitive communication
-
-### Schema Access
-
-```javascript
-wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_arbitration" } })
-wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_order" } })
-wowok({ tool: "schema_query", data: { action: "get", name: "messenger_operation" } })
-```
 
 ---
 
@@ -286,15 +246,3 @@ wowok({ tool: "schema_query", data: { action: "get", name: "messenger_operation"
 | **Unverified evidence** | Ruling based on invalid claims | Always verify WTS first |
 
 ---
-
----
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

@@ -49,11 +49,7 @@ Every Guard is built from three layers, each with a distinct role:
 | **Computation** | `root` | A computational tree of GuardNode types that computes the final boolean result by combining data sources, comparisons, arithmetic, and logic | Yes |
 | **Composition** | `rely` (optional) | References to other Guards; the current Guard's result is AND-ed or OR-ed with dependencies, enabling modular Guard composition | Yes |
 
-**The table is the contract with callers**: It tells them exactly what data they must provide at runtime (`b_submission: true`) versus what the Guard already knows (`b_submission: false`). Every `identifier` node in the computation tree references exactly one table entry.
-
-**The root is the question**: It must return Bool. Intermediate nodes return numbers, strings, addresses, or vectors. Guard is **strongly typed** — the type system is strictly enforced at creation time. Type mismatches (e.g., passing a string to a numeric comparison node) will cause validation errors and prevent Guard creation.
-
-**The rely is composition**: Up to 4 dependent Guards. When `rely.logic_or` is false (default), all dependencies must pass (AND). When true, any passing is sufficient (OR). A Guard can only depend on Guards with `rep: true` — `rep` indicates the Guard's `repository.data` queries (query 1167) do not depend on runtime submissions, so results are deterministic and the Guard can serve as a dependency. Guards with `rep: false` cannot appear in `rely` lists. Violations are caught by the contract layer at creation time.
+**The table is the contract with callers**: It declares what data they must provide at runtime (`b_submission: true`) versus what the Guard already knows (`b_submission: false`). Every `identifier` node references exactly one table entry. **The root is the question**: It must return Bool; intermediate nodes return numbers/strings/addresses/vectors. Guard is **strongly typed** — type mismatches cause creation failure. **The rely is composition**: Up to 4 dependent Guards (AND by default, OR if `logic_or: true`). A Guard can only depend on Guards with `rep: true` (deterministic `repository.data` queries independent of runtime submissions). `rep: false` Guards cannot appear in `rely` lists — violations caught at creation time.
 
 ### Data Source 4 Classification — The Foundation of Guard Semantics
 
@@ -66,102 +62,32 @@ A Guard is fundamentally a **data computation tree**: deterministic data (on-cha
 | **Type 3** | SubmittedObject | `query` + `identifier` (`b_submission: true`, no witness) | TYPE_QUERY + TYPE_CONSTANT | Medium (requires constraint rules) | User submits Order address for field query |
 | **Type 4** | SystemContext | `context` (Signer/Clock/Guard) | TYPE_SIGNER / TYPE_CLOCK / TYPE_GUARD | Highest | Identity verification, time-locks |
 
-**Key insights**:
-1. **Type 1 and Type 3 are isomorphic at the native layer** — both use TYPE_QUERY+TYPE_CONSTANT; the only difference is the `b_submission` flag (false vs true)
-2. **Type 2 can overlay on Type 1 or Type 3** — the source object can be a constant (Type 1) or a submission (Type 3), then witness derives the target object
-3. **Type 4 is fully independent** — does not depend on the table
-4. **Except for Type 4, all data must be declared in the table** — the table is the complete data contract between Guard and caller
+**Key insights**: Type 1 and Type 3 are isomorphic at the native layer (both TYPE_QUERY+TYPE_CONSTANT; difference is `b_submission` flag). Type 2 overlays on Type 1 or Type 3 (source object can be constant or submission, then witness derives target). Type 4 is fully independent (no table dependency). Except for Type 4, all data must be declared in the table — the table is the complete data contract: deterministic data (`b_submission: false`, type+value baked at creation) + submitted data (`b_submission: true`, type only, value from caller at runtime — **must have constraint rules designed, otherwise empty data is meaningless**).
 
-**The table as data contract**: The table declares:
-- **Deterministic data** (`b_submission: false`): type + value, baked at creation, immutable
-- **Submitted data** (`b_submission: true`): type only (1-byte placeholder), value provided by caller at runtime — **must have constraint rules designed, otherwise empty data is meaningless**
-
-**Guard essence**: A deterministic data set (Type 1 + Type 4) + submitted data (Type 3, must have constraint rules and defined types) → derived through finite operation rules → a single boolean result. The semantics are deterministic — you only need to fill in the "data object source meaning" and "field meaning" (e.g., "the permission address of service A", "the current node time of workflow B").
+**Guard essence**: A deterministic data set (Type 1 + Type 4) + submitted data (Type 3, must have constraint rules and defined types) → derived through finite operation rules → a single boolean result. You only need to fill in the "data object source meaning" and "field meaning" (e.g., "the permission address of service A", "the current node time of workflow B").
 
 ### Verifier Constraint Levels — Designing Who Can Pass
 
-When a Guard uses `context(Signer)`, the designer chooses how strictly to constrain the verifier's identity. Three levels exist, trading off **security** against **convenience**. Evaluating designer intent and dismantling the semantic execution plan across these levels is a core capability — choose the right level for each scene.
+Three levels trade off **security** vs **convenience** when using `context(Signer)`:
 
-#### Level 1 — Strict Single-Identity Binding (avoid unless justified)
+**Level 1 — Single-Identity** (`logic_equal[context(Signer), identifier[N](fixed_address)]`): Only ONE address passes. ⚠️ Avoid — if address unavailable (key loss, rotation), Guard permanently blocks. Risk rule `R-C4-04` flags this.
 
-**Pattern**: `logic_equal[context(Signer), identifier[N](fixed_address)]`
+**Level 2 — Identity-Set** (recommended): `logic_or` of multiple identity checks. Key distinction:
+- **Address-returning queries** (`order.owner`, `permission.owner`, `service.permission`): wrap in `logic_equal[query, context(Signer)]`
+- **Bool-returning queries** (suffix "has": `order.agent has`, `permission.admin has`): use directly as `logic_or` child, pass `context(Signer)` as parameter
+- **Dynamic permission** (RECOMMENDED): caller submits permission address; Guard verifies `service.permission == submitted_perm` then checks `permission.owner`/`permission.admin has`. Survives permission rotation.
 
-- **Maximally secure**: only ONE address can pass
-- **Maximally inconvenient**: if that address is unavailable (key loss, personnel change, rotation), the Guard permanently blocks the operation — Guards are **immutable** after publish
-- **Use only when**: the role is permanently tied to one address AND the designer explicitly accepts the lock-in risk
-- **Risk rule**: `R-C4-04` (info) flags this pattern with a convenience reminder
-- **Example**: `logic_equal[context(Signer), identifier[5](myshop_merchant)]`
+**Level 3 — Scene-Combined** (verify if Signer binding is even needed):
 
-> ⚠️ **Avoid Level 1 unless you understand the lock-in risk.** Prefer Level 2 (identity-set) or Level 3 (scene-combined) whenever possible.
+| Scene | Signer needed? | Why |
+|-------|---------------|-----|
+| Allocators + `sharing.who=Entity` | NO | Funds to fixed recipient (R-C3-06 safe) |
+| Allocators + `sharing.who=Signer` | YES (Level 2) | Funds to caller — must bind |
+| Machine `forward` guard | MAYBE | `permissionIndex`/`namedOperator` may suffice |
+| `buy_guard` | Usually NO | Customer is caller; whitelist/credentials suffice |
+| `voting_guard` | NO | Weight from EntityRegistrar, not Signer (R-C3-02) |
 
-#### Level 2 — Identity-Set Binding (recommended for role-based access)
-
-**Pattern**: `logic_or` of multiple identity checks — Signer is ANY of a valid set.
-
-**Key semantic insight — Address vs Bool return types**:
-Guard queries that verify identity fall into two categories based on their return type, and this determines how they participate in a `logic_or`:
-
-| Return Type | Query Examples | Construction in `logic_or` |
-|-------------|---------------|---------------------------|
-| **Address** | `1562 order.owner`, `1002 permission.owner`, `1488 service.permission` | Must wrap each in `logic_equal[query, context(Signer)]` to produce a Bool |
-| **Bool** (suffix "has") | `1567 order.agent has`, `1004 permission.admin has`, `1006 permission.entity has` | Use **directly** as a `logic_or` child — they already return a verdict; pass `context(Signer)` as a parameter |
-
-**Example — Order-holder identity set** (Signer is owner OR agent):
-```json
-{
-  "type": "logic_or",
-  "nodes": [
-    {
-      "type": "logic_equal",
-      "nodes": [
-        {"type": "query", "query": 1562, "object": {"identifier": 0}, "parameters": []},
-        {"type": "context", "context": "Signer"}
-      ]
-    },
-    {
-      "type": "query",
-      "query": 1567,
-      "object": {"identifier": 0},
-      "parameters": [{"type": "context", "context": "Signer"}]
-    }
-  ]
-}
-```
-Here `1562` returns Address → wrapped in `logic_equal`; `1567` returns Bool → used directly with `context(Signer)` as its parameter.
-
-**Example — Service-provider identity set** (Signer is permission.owner OR has admin):
-
-Three sub-patterns with increasing flexibility:
-
-1. **Static permission address** (simplest, breaks if Service rotates permission):
-   Query `1002`/`1004` against a table-constant permission address. If the Service changes its permission (like a company changing its board), the Guard must be rebuilt.
-
-2. **Dynamic permission address** (survives rotation — **RECOMMENDED**):
-   The caller submits a permission address; the Guard verifies `query(1488: service.permission) == submitted_perm`, then checks `1002`/`1004` against the submitted permission. This survives permission rotation without rebuilding the Guard.
-
-3. **Repository-based address set** (most flexible, most complex — **only for extreme flexibility needs**):
-   The permission address set is stored in a Repository and queried dynamically. This allows runtime configuration of the authorized set, but adds significant complexity.
-
-> 💡 **`logic_or` wrapping of the Signer check suppresses R-C4-04** — this is the recommended Level 2 alternative to Level 1 strict binding.
-
-#### Level 3 — Scene-Combined Constraint (verify whether Signer binding is even needed)
-
-Before adding any Signer binding, evaluate the Guard's usage scene. **Many scenes do not need Signer binding at all** — the scene itself ensures safety through other mechanisms.
-
-| Scene | Is Signer binding needed? | Why |
-|-------|--------------------------|-----|
-| Service `order_allocators` + `sharing.who=Entity` | **NO** | Funds flow to a fixed Treasury/address regardless of caller — `sharing.who` already guarantees recipient safety (R-C3-06 safe) |
-| Service `order_allocators` + `sharing.who=Signer` | **YES (Level 2 dynamic)** | Funds flow to caller — must bind Signer to authorized recipient (e.g., `order.owner`) |
-| Machine `forward` guard | **MAYBE** | Forward's `permissionIndex`/`namedOperator` already verifies operator permission; Signer binding only needed if submitted data must belong to operator |
-| Service `buy_guard` | **Usually NO** | The customer is the caller; identity checks via whitelist/credentials suffice |
-| Reward `guard` | **Depends** | If claim is one-time (record count), no Signer binding needed; if claim amount is submitted, bind Signer |
-| Arbitration `voting_guard` | **NO** (weight from query, not Signer) | Weight must come from on-chain EntityRegistrar, not submission (R-C3-02) |
-
-**Decision flow**:
-1. Does the scene's host object already verify the operator? (e.g., Machine forward) → Signer binding may be redundant
-2. Does `sharing.who` route funds to a fixed recipient? → Signer binding unnecessary (R-C3-06 safe)
-3. Does the resource flow matter more than who triggers it? → Focus on flow safety, not caller identity
-4. Only if resources flow to the caller AND no other layer verifies identity → add Level 2 Signer binding
+**Decision**: If host object already verifies operator OR `sharing.who` routes to fixed recipient → no Signer binding needed. Only add Level 2 when resources flow to caller AND no other layer verifies identity.
 
 #### One Guard One Purpose Principle
 
@@ -318,20 +244,9 @@ The root tree is a computational expression whose terminal nodes read data and w
 
 ### Discovering Available Node Types
 
-Guard computational trees are built from typed nodes. Rather than listing all possible nodes (which evolves with the system), query the authoritative schema dynamically:
+Query the authoritative `GuardNodeSchema` via `schema_query` (name: `onchain_operations_guard`) — it returns every node type, required fields, input/output types, and validation rules. Categories include: data source nodes (`identifier`, `context`, `query`), logic/arithmetic nodes (`logic_*`, `calc_number_*`), string/conversion/vector nodes (`calc_string_*`, `convert_*`, `vec_*`), and record query nodes (`query_reward_record_*`, `query_progress_history_*`).
 
-**Tool**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_guard" } })`
-
-This returns the complete `GuardNodeSchema` definition — every node type, its required fields, input/output types, and validation rules. Node categories include:
-
-- **Data source nodes**: `identifier`, `context`, `query` — read values from the Guard table, transaction context, or on-chain objects
-- **Logic & Arithmetic nodes**: `logic_*`, `calc_number_*` — combine values into boolean decisions and compute numeric results
-- **String, Conversion & Vector nodes**: `calc_string_*`, `convert_*`, `vec_*` — manipulate strings, transform types, search arrays
-- **Record query nodes**: `query_reward_record_*`, `query_progress_history_*` — search on-chain historical data
-
-**Key principle**: Every node declares its return type and the types it expects from children. The schema enforces these constraints at Guard creation time — type mismatches cause creation to fail. All numeric comparisons normalize to U256, enabling cross-type comparisons without explicit conversion.
-
-**Query instructions**: For the `query` node, discover available instructions via `wowok_buildin_info` with info `"guard instructions"`. Use the `filter` parameter to narrow results by name, return type, parameter count, or object type — more effective than browsing raw ID ranges.
+**Key principle**: Every node declares its return type and the types it expects from children. The schema enforces these constraints at Guard creation time — type mismatches cause creation to fail. All numeric comparisons normalize to U256, enabling cross-type comparisons without explicit conversion. For the `query` node, discover available instructions via `wowok_buildin_info` ("guard instructions") with `filter` to narrow by name/return type/parameter count/object type.
 
 ---
 
@@ -339,88 +254,23 @@ This returns the complete `GuardNodeSchema` definition — every node type, its 
 
 Guard creation is a **single atomic operation** — it either succeeds (the Guard is frozen on-chain) or fails (nothing is created). There is no intermediate draft state, no editing phase, and no deletion mechanism.
 
-### Operation
-
-Use `onchain_operations` with `operation_type: "guard"`.
-
-**Two creation modes**:
-- `root.type: "node"` — build the computation tree directly in the operation payload.
-- `root.type: "file"` — load the tree from a `guard2file`-exported JSON/Markdown file. Use this to iterate on existing Guards: export → edit file → create new Guard from file.
-
-**Schema Reference**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_guard" } })`
+Use `onchain_operations` (`operation_type: "guard"`) with `root.type: "node"` (inline tree) or `root.type: "file"` (load from `guard2file`-exported JSON/MD — use this to iterate on existing Guards: export → edit → create new).
 
 ---
 
 ## Phase 5: Test, Export, and Query
 
-### Test Independently with Gen Passport
+**Test**: `gen_passport` verifies one or more Guards (AND-ed) and generates an immutable Passport on success. Omit `info` to auto-fetch submissions, or provide explicitly for custom test inputs.
 
-Before embedding a Guard into a live Machine, Service, or Arbitration, test it in isolation.
+**Query**: `query_toolkit` → `onchain_objects` for any Guard. Results include `_guard_node_comments` (human-readable annotations per node). Guards are public consensus — all parties can inspect validation rules.
 
-**Tool**: `onchain_operations` with `operation_type: "gen_passport"`
-
-**Schema Reference**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_gen_passport" } })`
-
-This tool verifies one or more Guards and, on success, generates an immutable Passport — a verified credential stored on-chain. Use it to:
-
-- **Test edge cases**: What happens with empty submissions, boundary values, or unusual addresses?
-- **Debug failures**: If the Guard rejects valid data, the error helps identify type mismatches or missing table entries.
-
-The Passport itself is useful beyond testing — it serves as a reusable on-chain credential for offline verification, transaction condition checking, and multi-guard validation. A single Passport can satisfy multiple Guards in a single transaction.
-
-**Multi-Guard behavior**: When verifying multiple Guards, they are AND-ed — all must pass for the Passport to be generated. Each Guard's submission is passed independently.
-
-**Optional `info` field**: If you omit `info` (submission data), the system attempts to auto-fetch existing submissions from the Guard. Provide `info` explicitly when testing with custom inputs.
-
-**Passport query**: Once generated, query the Passport object via `query_toolkit` → `onchain_objects` to inspect its data, validated Guards, and timestamp.
-
-### Query On-Chain Guards
-
-**Tool**: `query_toolkit` with `query_type: "onchain_objects"`
-
-Guards are **public consensus**. Once bound to objects (Service, Machine, Arbitration), they become the trusted executor of rights and obligations. All parties can inspect the exact validation rules — this transparency is the foundation of trustless interaction. Query Guards before engaging with any protected operation.
-
-Query results include `_guard_node_comments` — human-readable annotations for each computation node automatically injected by the system. Use these to quickly verify that the Guard's logic matches the intended design without manually decoding the node tree.
-
-### Guard Iteration Workflow
-
-Guards are immutable but iterable. The full cycle:
-
-```
-1. guard2file <existing_guard> → JSON/Markdown file
-2. Edit file (table, root tree, rely)
-3. Review edited JSON with user → confirm
-4. wowok({ tool: "onchain_operations", data: { operation_type: "guard", root: { type: "file", ... } } }) → new Guard created
-5. Update all references (Machine forwards, Service buy_guard, Arbitration voting_guard, etc.)
-```
+**Iteration**: `guard2file` → edit JSON/MD → create new Guard via `root.type:"file"` → update all references.
 
 ---
 
 ## Guard Data Flow: How Objects Read Guard Data
 
-Guards are not just validators — they are **data sources**. When bound to objects, Guards provide structured data that the object reads and uses for decision-making. This section explains how different object types interact with Guard data.
-
-### Arbitration: Voting Weight from Guard
-
-Arbitration uses `usage_guard` for eligibility (pass/fail) and `voting_guard` for vote weight — either fixed or dynamically read from a Guard table submission index (`GuardIdentifier`). Table must have a numeric entry at the `GuardIdentifier` index; the value becomes the voter's weight (cast to u32).
-
-### Demand: ServiceGuard with Identifier Mapping
-
-Demand's `ServiceGuard` validates recommendations. If `service_identifier` is set, the Guard submission value at that index is passed to the service for validation; if unset, only Guard pass/fail is checked.
-
-### Machine: Forward Guard with Retained Submission
-
-Machine's forward `guard` validates state transitions. If `retained_submission` is set, those submission values are stored in Progress for audit or subsequent validation.
-
-### Repository: Policy Write Guard with Data Extraction
-
-Repository's `write_guard` validates writes. If `id_from_submission` is set, reads entity ID from that submission index — **the index must be Address type**. If `data_from_submission` is set, reads data value from that index — **the value type must match the Repository's declared value_type**. Guard table must include entries for the data being extracted.
-
-**Important — impack_list semantics in verify phase**: When a Guard queries Repository data (query 1167 `repository.data`) with a policy that has a `quote_guard` set, the verification checks whether the quote_guard address is in the `impack_list`. However, `impack_list` is **always empty during the `verify_guard` phase** — `Passport.new()` initializes `impack:vector[]` and the verify loop never modifies it; `impack` is only populated in `result_for_permission` (after verify completes). This means a Repository query with `quote_guard = Some(addr)` will always fail with `IMPACK_GUARD_NOT_FOUND` in the gen_passport flow; only `quote_guard = None` passes. Verify the quote_guard mechanism's design intent before relying on it.
-
----
-
-**Key Principle**: Design your Guard table based on what data the target object needs to read. Objects don't just validate — they consume Guard submissions as structured data inputs.
+Guards are validators AND data sources. When bound, objects read structured data for decisions. Design your Guard table based on what data the target object needs to read — objects don't just validate, they consume Guard submissions as structured data inputs.
 
 ### Type Requirements by Object
 
@@ -434,6 +284,10 @@ Each object extracts Guard data with precise type expectations. Mismatches cause
 | **Repository** | `id_from_submission` | Index must be `b_submission: true` | **Must be Address** |
 | **Repository** | `data_from_submission` | Index must be `b_submission: true` | **Must match Repository's value_type** |
 
+**Notes**: Arbitration uses `usage_guard` for eligibility (pass/fail) and `voting_guard` for weight (fixed or dynamic via `GuardIdentifier`). Demand's `ServiceGuard` passes the submission value at `service_identifier` to the service for validation (if unset, only pass/fail checked). Machine's `retained_submission` stores submission values in Progress for audit. Repository's `id_from_submission`/`data_from_submission` extract structured data from Guard submissions.
+
+**⚠️ Critical — impack_list semantics in verify phase**: When a Guard queries Repository data (query 1167 `repository.data`) with a policy that has a `quote_guard` set, the verification checks whether the quote_guard address is in the `impack_list`. However, `impack_list` is **always empty during the `verify_guard` phase** — `Passport.new()` initializes `impack:vector[]` and the verify loop never modifies it; `impack` is only populated in `result_for_permission` (after verify completes). This means a Repository query with `quote_guard = Some(addr)` will always fail with `IMPACK_GUARD_NOT_FOUND` in the gen_passport flow; only `quote_guard = None` passes. Verify the quote_guard mechanism's design intent before relying on it.
+
 ---
 
 ## Best Practices
@@ -442,67 +296,15 @@ Each object extracts Guard data with precise type expectations. Mismatches cause
 
 > The full constraint system has **33 rules: 22 creation-phase + 11 runtime-phase**. The 22 creation-phase constraints below are all enforced by SDK + native `validate_guard_data`; runtime constraints are enforced by native `verify_guard`.
 
-#### Creation-Phase Constraints (22 items, enforced by SDK + native `validate_guard_data`)
+#### Creation-Phase Constraints (22 rules, all enforced by SDK + `validate_guard_data`)
 
-**Root (1 item)**
-
-1. **ROOT_01 — Root must return Bool**: The outermost node of the tree must produce Bool. Logic and comparison nodes return Bool; arithmetic, conversion, and string operation nodes do not. Ensure your tree terminates at a logic or comparison node — the creation validation will reject non-Bool roots.
-
-**Table (5 items)**
-
-2. **TABLE_01 — Identifier uniqueness**: Every `identifier` in the table must be unique (0–255). Duplicate identifiers cause creation failure. SDK uses `lodash.groupBy` to detect duplicates.
-
-3. **TABLE_02 — Identifier referential integrity**: Every `identifier` node in the computation tree must match an entry in the table. Missing entries cause creation failure — validate your tree against your table before submitting.
-
-4. **TABLE_03 — Constant value non-empty**: When `b_submission=false`, the `value` field must be non-empty. These values are baked into the Guard immutably at creation time.
-
-5. **TABLE_04 — Table size limits**: Maximum 256 table entries (identifiers 0–255), and the total serialized table size must not exceed 40000 bytes (BCS). Enforced by Move `guard::new`.
-
-6. **TABLE_05 — Submission value is 1-byte type code**: When `b_submission=true`, the `value` field is only a 1-byte type code placeholder (the actual value is provided at runtime). Enforced by native `deserialize_constants`.
-
-**Query (4 items)**
-
-7. **QUERY_01 — Query instruction ID valid**: Query instruction IDs are system-defined. Always discover them through `wowok_buildin_info` with info `"guard instructions"`. Invalid IDs cause creation failure.
-
-8. **QUERY_02 — Parameter count matches**: The parameter count and types in your query node must match the instruction exactly — off-by-one parameter counts are a common failure.
-
-9. **QUERY_03 — Return type compatible**: The query node's return type must be compatible with the parent node's expected input. A `logic_equal` comparing a String to a U64 fails validation. Use explicit conversion nodes (`convert_string_number`, `convert_number_string`) when types differ. Numeric comparisons use `logic_as_u256_*` variants which auto-widen to U256.
-
-10. **QUERY_04 — Object identifier is Address type**: The table entry referenced by a query node's `object.identifier` must have `value_type: Address`. SDK `buildNode` validates this at L603-609.
-
-**Witness (3 items)**
-
-11. **WITNESS_01 — Witness type valid (100-108)**: The `convert_witness` value must be one of the 9 valid witness types (100-108). Invalid witness types cause creation failure.
-
-12. **WITNESS_02 — Witness target matches query objectType**: The witness's target object type must match the query instruction's expected object type. For example, `TypeOrderProgress` (100) derives a Progress, so the query must target a Progress object. SDK `buildNode` validates this at L613-619.
-
-13. **WITNESS_03 — Witness source matches table object_type**: If the table entry has an `object_type` declared (auto-filled by SDK), it must match the witness's source object type. For example, `TypeOrderProgress` (100) expects an Order source, so the table entry's `object_type` must be Order. SDK `buildNode` validates this at L622-631. **Missing convert_witness** is a related failure: when accessing Progress data from an Order ID, the query node needs `convert_witness` with the appropriate witness type. Without it, the runtime looks for a Progress at the Order's address — which does not exist as a Progress object.
-
-**Rely (3 items)**
-
-14. **RELY_01 — Dependency count ≤ 4**: A Guard can depend on at most 4 other Guards (`MAX_DEPENDED_COUNT`). SDK `reliesAdd` enforces this limit.
-
-15. **RELY_02 — Dependencies must have rep=true**: A Guard's `rely` entries must reference Guards with `rep: true` — meaning their `repository.data` queries do not depend on runtime submissions. Guards that depend on a Repository via submitted addresses (`rep: false`) cannot serve as dependencies. Move `guard::relies_add` catches violations at creation time.
-
-16. **RELY_03 — No self-reference**: A Guard cannot depend on itself. SDK `reliesAdd` prevents self-referential rely entries.
-
-**Binding (3 items)**
-
-17. **BINDING_01 — voting_guard GuardIdentifier must be numeric**: When using `GuardIdentifier` for Arbitration `voting_guard`, the referenced table entry must have a numeric `value_type` (U8–U256). The system checks this when the VotingGuard is added to the Arbitration — if the identifier does not exist or is non-numeric, the operation reverts with `E_GUARD_IDENTIFIER_NOT_NUMBER`.
-
-18. **BINDING_02 — Repository id_from_submission must be Address**: When a Repository `write_guard` uses `id_from_submission`, the referenced table entry must have `value_type: Address`. Move Repository enforces this at binding time.
-
-19. **BINDING_03 — Repository data_from_submission type must match**: When a Repository `write_guard` uses `data_from_submission`, the referenced table entry's `value_type` must match the Repository's declared `value_type`. Move Repository enforces this at binding time.
-
-**Input (2 items)**
-
-20. **INPUT_01 — Root bytecode non-empty**: The serialized root computation tree must not be empty. SDK `newGuard` validates this before submission.
-
-21. **INPUT_02 — Root bytecode size ≤ MAX_INPUT_SIZE**: The serialized root computation tree must not exceed `MAX_INPUT_SIZE`. SDK `newGuard` validates this before submission.
-
-**Immutable (1 item)**
-
-22. **IMMUTABLE_01 — Guard becomes immutable after creation**: Once `guard::create` is called, the Guard's `immutable` flag is set to `true` and no further modifications are possible. This is the foundation of the immutability contract — to change a Guard, export via `guard2file`, create a new Guard, and update all references.
+**Root**: Must return Bool (logic/comparison nodes only).
+**Table**: Unique identifiers (0–255), tree-to-table referential integrity, non-empty constants, max 256 entries / 40KB BCS, submission entries = 1-byte type code.
+**Query**: Discover valid IDs via `wowok_buildin_info` ("guard instructions"); parameter count/types must match; return type must be compatible with parent (use `convert_string_number`/`convert_number_string` for type mismatches; `logic_as_u256_*` for numeric comparisons); `object.identifier` must be Address type.
+**Witness**: 100–108 only; target type must match query's expected object; source type must match table's `object_type`. **Missing `convert_witness`** when accessing Progress from Order ID = runtime failure (looks for Progress at Order's address).
+**Rely**: Max 4; must have `rep:true`; no self-reference.
+**Binding**: `voting_guard` identifier must be numeric (U8–U256); Repository `id_from_submission` must be Address; `data_from_submission` type must match Repository's `value_type`.
+**Immutable**: Guard frozen after `guard::create` — to change, export via `guard2file` and create new.
 
 #### Practical Tips (not strict constraints, but strongly recommended)
 
@@ -524,126 +326,10 @@ These constraints are checked at Guard verification time (gen_passport or actual
 - **RUN_TX_01**: The Passport's `tx_hash` must match the current transaction.
 - **RUN_RELY_01**: Rely guards must have been added to the passport.
 
-### Readability Conventions — Prefer String Names Over Numeric IDs
+### Readability Convention — Prefer String Names
 
-> **Built-in MCP convention**: Whenever the schema accepts BOTH a numeric ID and a human-readable string name for the same field, **always prefer the string name** in examples, documentation, and AI-generated JSON. Numeric IDs are accepted for backward compatibility and compact machine output, but string names are the canonical form for any human-readable artifact.
+**Always use string names** (not numeric IDs) for `query` (`"order.service"` not `1563`), `value_type` (`"Address"` not `1`), `convert_witness` (`"OrderProgress"` not `100`), and `context` (`"Signer"`). Matching is case-insensitive. SDK deserialization (`guard2file`/`query_objects`) returns all constants as strings. Discover valid query names via `wowok_buildin_info` with info `"guard instructions"`.
 
-This convention is grounded in the user-experience principle: *"Wherever the interface supports it, optimize from the user's understanding as the starting point."* A reader who sees `"query": "order.service"` understands the intent immediately; `"query": 1563` requires an extra lookup against the `GUARDQUERY` registry.
-
-#### Fields Affected
-
-| Field | String form (preferred) | Numeric form (avoid) | Source of truth |
-|-------|-------------------------|----------------------|-----------------|
-| `query` | `"order.service"` | `1563` | `GUARDQUERY` registry (375 entries, exported by `@wowok/wowok`) |
-| `value_type` | `"Address"`, `"U64"`, `"String"` | `1`, `6`, `2` | `ValueType` enum |
-| `context` | `"Signer"`, `"Clock"`, `"Guard"` | (numeric not accepted) | `Context` enum |
-| `convert_witness` | `"OrderProgress"`, `"OrderMachine"` | `100`, `101` | `WitnessType` enum (SDK `parseWitnessType` / `witnessTypeToString`) |
-
-#### Why String Names
-
-1. **Self-documenting JSON** — `"query": "order.service"` reads as intent; `1563` is opaque.
-2. **Stable across registry renumbering** — names are part of the public contract; numeric IDs are an implementation detail.
-3. **Case-insensitive matching** — `isValidGuardQueryName` lowercases both sides, so `"Order.Service"` and `"order.service"` are equivalent. Use the canonical lowercase form in examples.
-4. **Lint-friendly** — string names survive refactoring; numeric IDs silently rot when an ID is deprecated.
-
-#### Canonical Name Examples
-
-The most common queries used in allocator Guards (R-C3-05 / R-C3-06 protection):
-
-| Numeric ID | Canonical name | Returns | Typical use |
-|------------|----------------|---------|-------------|
-| `1253` | `progress.current` | String | Verify order is at a named node (with `convert_witness: 100`) |
-| `1563` | `order.service` | Address | Cross-service theft protection (R-C3-05) |
-| `1562` | `order.owner` | Address | Signer binding for refunds (R-C3-06 Level 2 dynamic) |
-| `1272` | `progress.current_time` | U64 | Time-lock comparisons |
-| `1488` | `service.permission` | Address | Verify Service's Permission object |
-| `1002` | `permission.owner` | Address | Signer == permission owner (Level 1 fixed) |
-| `1004` | `permission.admin has` | Bool | Caller is in admin set (Level 2 identity-set) |
-| `1567` | `order.agent has` | Bool | Verify caller is an order agent |
-
-#### WitnessType String Names
-
-The `convert_witness` field accepts both numeric IDs (100-108) and string names. String matching is case-insensitive and accepts both the full enum name (`"TypeOrderProgress"`) and the shortened form without the `"Type"` prefix (`"OrderProgress"`). The shortened form is preferred for readability.
-
-| Numeric ID | Shortened name (preferred) | Full enum name | Source → Target |
-|------------|----------------------------|----------------|-----------------|
-| `100` | `"OrderProgress"` | `"TypeOrderProgress"` | Order → Progress |
-| `101` | `"OrderMachine"` | `"TypeOrderMachine"` | Order → Machine |
-| `102` | `"OrderService"` | `"TypeOrderService"` | Order → Service |
-| `103` | `"ProgressMachine"` | `"TypeProgressMachine"` | Progress → Machine |
-| `104` | `"ArbOrder"` | `"TypeArbOrder"` | Arb → Order |
-| `105` | `"ArbArbitration"` | `"TypeArbArbitration"` | Arb → Arbitration |
-| `106` | `"ArbProgress"` | `"TypeArbProgress"` | Arb → Progress |
-| `107` | `"ArbMachine"` | `"TypeArbMachine"` | Arb → Machine |
-| `108` | `"ArbService"` | `"TypeArbService"` | Arb → Service |
-
-SDK functions: `parseWitnessType(input)` converts string→number; `witnessTypeToString(type)` converts number→string (returns the shortened form). The SDK's Guard deserialization (`parseQueryNode`) already returns `convert_witness` as a string name.
-
-#### Deserialization Output — All Protocol Constants Return Strings
-
-The SDK's Guard deserialization (`query_objects` / `guard2file`) returns ALL protocol constants as user-friendly strings, not numeric IDs:
-
-| Field | Returned as | Example | Conversion function |
-|-------|-------------|---------|---------------------|
-| `query` | String name | `"order.service"` | `GUARDQUERY` registry lookup |
-| `value_type` | String name | `"Address"`, `"U64"` | `valueTypeToString()` |
-| `convert_witness` | String name | `"OrderProgress"` | `witnessTypeToString()` |
-| `context` | String literal | `"Signer"`, `"Clock"`, `"Guard"` | Hardcoded string |
-| `object_type` | String name | `"Order"`, `"Service"` | `numberToObjectType` mapping |
-| `type` (node discriminator) | String literal | `"logic_and"`, `"query"` | Always string |
-
-This means `guard2file` JSON/Markdown output and `query_objects` results are fully self-documenting without requiring numeric ID lookups.
-
-#### Example — Before and After
-
-**Before (numeric, opaque):**
-```json
-{
-  "type": "logic_equal",
-  "nodes": [
-    {"type": "query", "query": 1563, "object": {"identifier": 0, "convert_witness": 100}, "parameters": []},
-    {"type": "identifier", "identifier": 2}
-  ]
-}
-```
-
-**After (string, self-documenting):**
-```json
-{
-  "type": "logic_equal",
-  "nodes": [
-    {"type": "query", "query": "order.service", "object": {"identifier": 0, "convert_witness": "OrderProgress"}, "parameters": []},
-    {"type": "identifier", "identifier": 2}
-  ]
-}
-```
-
-Both forms are schema-valid and produce identical on-chain behavior; the string form is preferred for all human-readable output.
+Common allocator-guard queries: `order.service` (theft protection), `order.owner` (refund binding), `progress.current` (node check), `progress.current_time` (time-lock), `service.permission`, `permission.owner`, `permission.admin has` (identity-set).
 
 ---
-
-## Tool Reference
-
-| Tool | Purpose |
-|------|---------|
-| `wowok_buildin_info` (`info: "guard instructions"`) | Discover all available query instructions — their IDs, parameter types, return types, and target object types |
-| `wowok_buildin_info` (`info: "value types"`) | Discover the numeric codes for all supported value types used in table entries |
-| `wowok_buildin_info` (`info: "built-in permissions"`) | Discover all built-in permission index codes for use with `permission.entity.perm has` queries |
-| `onchain_operations` (`operation_type: "gen_passport"`) | Test Guard validation with runtime submissions and generate a verified on-chain credential on success |
-| `guard2file` | Export an existing Guard's complete definition (description, table, root tree, dependencies) to a local JSON or Markdown file |
-| `query_toolkit` (`query_type: "onchain_objects"`) | Query any Guard object on-chain by name or address to inspect its full definition |
-| `schema_query` (`name: "onchain_operations_guard"`) | Retrieve the complete Guard operation schema with all parameter definitions |
-
----
-
----
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

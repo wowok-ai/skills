@@ -48,7 +48,7 @@ Allocation evaluates when Progress reaches **any** configured node (not just exi
 
 ### E1 — Service Basic Status
 
-Query `query_toolkit` → `onchain_objects` for `<service_name_or_id>`. Fields in schema. Save: `bPublished`, `bPaused`, `sales`, `machine`, `buy_guard`, `customer_required`, `arbitrations`, `compensation_fund`, `compensation_lock_duration`, `order_allocators`, `um`.
+Query `query_toolkit` → `onchain_objects` for `<service_name_or_id>`. Save: `bPublished`, `bPaused`, `sales`, `machine`, `buy_guard`, `customer_required`, `arbitrations`, `compensation_fund`, `compensation_lock_duration`, `order_allocators`, `um`.
 
 - `bPublished === false` → 🔴 **ABORT**
 - `bPaused === true` → 🔴 **ABORT**
@@ -130,7 +130,7 @@ Guard structure and instruction reference: [wowok-guard](../wowok-guard/SKILL.md
 
 ### E5 — Fund Allocation Rules
 
-From E1 `order_allocators.allocators[]`. Fields in schema. For each Allocator: cross-reference Guard (E4) → trigger condition; map to Machine node (E3) → when it fires; present distribution outcome.
+From E1 `order_allocators.allocators[]`. For each Allocator: cross-reference Guard (E4) → trigger condition; map to Machine node (E3) → when it fires; present distribution outcome.
 
 **Risk Rules**:
 
@@ -147,7 +147,7 @@ From E1 `order_allocators.allocators[]`. Fields in schema. For each Allocator: c
 
 ### E6 — Arbitration Availability
 
-Batch query E1 `arbitrations[]` via `onchain_objects`. Fields in schema. Arb process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+Batch query E1 `arbitrations[]` via `onchain_objects`. Arb process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
 Also: `onchain_events` → `type: "ArbEvent"`, `limit: 20`, filter for these Arb IDs.
 
@@ -159,7 +159,7 @@ Also: `onchain_events` → `type: "ArbEvent"`, `limit: 20`, filter for these Arb
 
 ### E7 — Compensation Fund
 
-From E1: `compensation_fund`, `compensation_lock_duration`. Balance type in schema.
+From E1: `compensation_fund`, `compensation_lock_duration`.
 
 - Balance < planned order amount → ⚠️ may not cover award
 - Lock near expiry → ⚠️ provider may withdraw
@@ -168,7 +168,7 @@ From E1: `compensation_fund`, `compensation_lock_duration`. Balance type in sche
 
 ### E8 — Contact Channel
 
-Query `onchain_objects` for E1 `um` ID. Contact fields in schema.
+Query `onchain_objects` for E1 `um` ID.
 
 - `um === null` → 🔴 **ABORT**
 - `ims[]` empty → 🔴 **No Messenger**
@@ -178,7 +178,7 @@ Query `onchain_objects` for E1 `um` ID. Contact fields in schema.
 
 ### E9 — Chain Reputation
 
-**Sentiment**: `query_toolkit` → `onchain_table_item_entity_linker` for provider address. Compute likes/dislikes ratio from `votes[]` (fields in schema).
+**Sentiment**: `query_toolkit` → `onchain_table_item_entity_linker` for provider address. Compute likes/dislikes ratio from `votes[]`.
 
 **Orders**: Batch query `votes[].address` via `onchain_objects` (50/batch, max 200). Filter Order-type objects where `service` matches. Aggregate dispute rate (`dispute ≠ []` / total) and repeat buyer ratio.
 
@@ -198,28 +198,9 @@ For matched: present value, ask "correct?" and "OK to send?". For missing: ask u
 
 ### Pre-Purchase GATE
 
-```
-┌──────────────────────────────────────────────────────┐
-│              PRE-PURCHASE GATE                        │
-├──────────┬───────────────────────────────────────────┤
-│ E1       │ Service Status          [ ] OK  [ ] ⚠️    │
-│ E2       │ Product & WIP           [ ] OK  [ ] ⚠️    │
-│ E3       │ Machine Workflow        [ ] OK  [ ] ⚠️    │
-│ E4       │ Guards Logic            [ ] OK  [ ] 🔴    │
-│ E5       │ Fund Allocation         [ ] OK  [ ] ⚠️    │
-│ E6       │ Arbitration             [ ] OK  [ ] ⚠️    │
-│ E7       │ Compensation Fund       [ ] OK  [ ] ⚠️    │
-│ E8       │ Contact Channel         [ ] OK  [ ] ⚠️    │
-│ E9       │ Chain Reputation        [ ] OK  [ ] ⚠️    │
-│ E10      │ Privacy Info Match      [ ] OK  [ ] ⚠️    │
-├──────────┴───────────────────────────────────────────┤
-│ ⛔ E1 bPublished=false / E8 um=null → ABORT           │
-│ ⛔ E3 no-refund + E6 no-arb → strongly advise ABORT   │
-│ ⛔ E4 ambiguous Guards → user MUST manually review    │
-│ ⛔ Any ⚠️ → explain risk, wait for user decision      │
-│ ✅ All OK → Phase 2                                   │
-└──────────────────────────────────────────────────────┘
-```
+**Abort conditions**: E1 `bPublished=false`/`bPaused=true` → ABORT; E8 `um=null` → ABORT; E3 no-refund + E6 no-arb → strongly advise ABORT; E4 ambiguous Guards → user MUST manually review.
+
+**Any ⚠️** → explain risk, wait for user decision. **All OK** → Phase 2.
 
 ---
 
@@ -245,8 +226,6 @@ Clarify via Messenger: deliverables (E2 WIP), timeline (E3 nodes), refund/cancel
 
 ## Phase 3: Order Creation
 
-Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_service" } })`. Safety: [wowok-safety](../wowok-safety/SKILL.md).
-
 **Not in schema**:
 - Excess `buy.total_pay` auto-refunded. Agents cannot withdraw.
 - Discounts: query `onchain_received` (type `0x2::service::Discount`), filter by `service`, validate time/benchmark. Rate: `total_pay × (off / 10000)`. Fixed: `min(off, total_pay)`.
@@ -256,8 +235,6 @@ Post-creation: notify via Messenger with order ID.
 ---
 
 ## Phase 4: Order Operations
-
-Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_order" } })`.
 
 ### Progress Advancement
 
@@ -277,7 +254,7 @@ Present all three dimensions. Never just the operation name.
 
 ## Phase 5: Arbitration
 
-Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_arbitration" } })`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
 Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confirm` → voting → (`order.arb_objection`) → `order.arb_claim_compensation`.
 
@@ -287,145 +264,30 @@ Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confir
 
 ## Fund Management
 
-Schema: `onchain_operations_order`. Builder-only operations: `order.transfer_to` (ownership), `order.receive` (withdraw — agents can execute, only builder receives).
+Builder-only operations: `order.transfer_to` (ownership), `order.receive` (withdraw — agents can execute, only builder receives).
 
 ---
 
-## Phase 3: Customer Intelligence (Optional Enhancement)
+## Phase 3: Customer Intelligence (MCP-Handled)
 
-> **When to use**: When `customer_intelligence` runtime service is enabled (default ON), the MCP server automatically populates `semantic.customer_advice` in order/query operations. This is a layer ON TOP of E1-E10 — never a replacement for due diligence.
+> **MCP auto-populates `semantic.customer_advice`** in order/query responses when `customer_intelligence` is ON (default). Read these fields from MCP output — do NOT recompute internally.
 
-### Information Puzzle (6 dimensions)
-
-E1-E10 captures static facts. The information puzzle assembles them into a dynamic, evolving picture that gets richer with every query:
-
-| Dimension | Source | Fragments |
-|-----------|--------|-----------|
-| Service basics | E1 query | publish/pause/price/sales/WIP |
-| Workflow structure | E3 machineNode2file | nodes/forwards/user-operable/refund path |
-| Fund safety | E5 + E7 | allocators/compensation/price anomaly |
-| Trust signals | E6 + E9 | arbitration/reviews/dispute rate |
-| Merchant behavior | onchain_events | completion rate/trend/refund rate |
-| Market context | batch query_toolkit | similar services/price distribution |
-
-**Incremental collection**: Don't fetch all 6 every time. Browse = dim 1+6, Evaluate = +2/3/4, Preorder = +5, Monitoring = 2+5.
-
-### Risk Scoring (4 dimensions, 100 points)
-
-E1-E10 produces ⚠️/🔴 flags. Risk scoring converts them to a quantitative score:
-
-| Dimension | Max | Key checks |
-|-----------|-----|------------|
-| Workflow | 35 | refund path / arbitration path / user-operable / dead ends |
-| Fund | 25 | compensation coverage / allocator fairness / price anomaly / lock duration |
-| Trust | 20 | arbitration independence / dispute rate / reputation / trust score |
-| Behavior | 20 | completion trend / response time / refund rate / arb loss rate / anomalies |
-
-**Levels**: 🟢 ≥85 low | 🟡 70-84 medium-low | 🟠 50-69 medium-high | 🔴 <50 high (advise against)
-
-### User Preference Matching (7 dimensions, 100 points)
-
-When the user has 3+ historical orders, the system infers preferences and scores each Service:
-
-| Dimension | Max | What it measures |
-|-----------|-----|------------------|
-| Price | 25 | budget fit or market avg comparison |
-| Time | 15 | cycle ≤ max_acceptable_cycle |
-| Region | 10 | preferred_region match |
-| Brand | 10 | min_order_history + merchant age |
-| Bargain | 15 | reward/discount presence |
-| Emotion | 10 | after_sales_expectation + transparency |
-| Risk | 15 | risk_score ≥ min_trust_score + arb/comp requirements |
-
-**Score ≥ 75** = strong match. **< 50** = significant mismatch. The `matches`/`mismatches` arrays explain the score so you can present tradeoffs to the user.
-
-### Reminder System (6 stages, 4 priorities)
-
-Reminders are populated in `semantic.customer_advice.reminders` based on the operation stage:
-
-| Stage | When | Example reminders |
-|-------|------|-------------------|
-| browse | query_toolkit on Service | reviews summary / price anomaly / no arb / no comp |
-| evaluate | deeper analysis | checklist / high risk (required) / ambiguous guard (required) / no refund path |
-| preorder | order creation | payment confirm (required) / compensation insufficient / arb missing (required) |
-| in_progress | order monitoring | progress stalled / compensation drop / messenger unanswered |
-| complete | order done | review reminder / review window |
-| after_sale | post-purchase | arb window / refund received |
-
-**Priority order**: `required` (blocks purchase) > `recommended` (strong caution) > `info` (advisory) > `reminder` (timed nudge). Fatigue control: max 3 high-risk reminders per response.
-
-### Game Strategy Quick Reference (8 scenarios)
-
-When the user faces a specific negotiation, refer to the strategy matrix:
-
-| Scenario | Merchant tactic | User strategy |
-|----------|------------------|---------------|
-| Info asymmetry | Hides Machine details | Demand machineNode2file export + Messenger Q&A |
-| Fund safety | No/low compensation | Require 100% coverage + WTS agreement |
-| Refund dispute | No refund path | Demand 100%→Order Allocator + Messenger terms |
-| Arb fairness | Self-built arbitration | Verify arb owner via query_toolkit |
-| Pricing | Price >120% market avg | Reference market_context.avg_price + request discount/Reward |
-| Delivery SLA | No milestone nodes | Require milestone config + written timeline |
-| Quality | WIP hash unverified | Require WIP verify + sample/staged delivery |
-| After-sales | No Messenger | Require Messenger config + written after-sales terms |
+**Key fields in `semantic.customer_advice`**:
+- `reminders[]`: stage-aware reminders with priority (`required` blocks purchase; `recommended` = strong caution; `info` = advisory; `reminder` = timed nudge)
+- `risk_score`: 0-100 (🟢≥85 low | 🟡70-84 | 🟠50-69 | 🔴<50 high — advise against purchase)
+- `preference_match`: 0-100 score with `matches`/`mismatches` arrays (≥75 strong match, <50 significant mismatch)
 
 **Red lines** (do not purchase): no arb + no refund path, OR compensation_ratio < 0.5.
 
-### Industry Personalization (6 industries)
+**Post-purchase**: monitor refund Allocator triggers, WIP hash mismatch, merchant unreachable (>3d warning, >7d arb advice), evidence collection (≥3 items).
 
-Each industry has specific risk checks and preference templates:
-
-| Industry | Cycle (days) | Response (h) | Arb | Comp | Risk appetite | Delivery |
-|----------|--------------|--------------|-----|------|---------------|----------|
-| freelance | 30 | 4 | ✓ | ✓ | balanced | normal |
-| rental | 7 | 8 | ✓ | ✓ | conservative | normal |
-| education | 90 | 24 | ✓ | ✓ | conservative | flexible |
-| travel | 14 | 2 | ✓ | ✓ | conservative | urgent |
-| subscription | 30 | 24 | – | – | aggressive | normal |
-| retail | 7 | 8 | ✓ | ✓ | balanced | normal |
-
-**Industry-specific risks**: freelance checks WIP verified + milestone nodes; rental checks compensation coverage + lock duration; travel checks urgent delivery + Messenger; subscription checks no-lockin + user-operable; etc.
-
-### Post-Purchase Support (4 phases)
-
-When the order is in progress or completed, post-purchase support covers:
-
-- **Refund tracking**: monitor refund Allocator triggers, check refunded vs order amount
-- **Quality issue**: WIP hash mismatch detection + evidence collection (≥3 items recommended)
-- **Merchant unreachable**: >3 days warning, >7 days arbitration advice (if available)
-- **Arbitration support**: evidence collection → application template → progress monitoring → result interpretation
-
-### Runtime Service Toggles
-
-Use `config_operation` to toggle Phase 3 services at runtime:
-
-| Service | Default | What it controls |
-|---------|---------|------------------|
-| `customer_intelligence` | ON | Populates `semantic.customer_advice` (reminders + risk + preference match) |
-| `order_monitor` | OFF | Active order monitoring (Progress stall + compensation change + Messenger timeout) |
-
-Toggle example: `config_operation` → `action: "toggle"`, `service: "order_monitor"` to enable active monitoring when the user has active orders.
+**Runtime toggle**: `config_operation` → `action: "toggle"`, `service: "order_monitor"` (default OFF) to enable active Progress stall + compensation change + Messenger timeout monitoring.
 
 ---
 
-## Quick Reference
-
-Schemas: `wowok({ tool: "schema_query", data: { action: "get", name: "<name>" } })` for `onchain_operations_service`, `onchain_operations_order`, `onchain_operations_arbitration`, `messenger_operation`, `query_toolkit`, `onchain_table_data`, `wip_file`.
-
 ### Phase Dependency
 
-```
-E1 (Service) ──→ E2 (Products/WIP)
-  │    │
-  │    ├──→ E8 (Contact)   ├──→ E7 (Compensation)
-  │    ├──→ E10 (Privacy)  └──→ E6 (Arbitrations)
-  │
-  └──→ E3 (Machine) ──→ E4 (Guards) ──→ E5 (Allocators)
-         │
-         └──→ E9 (Reputation)
-```
-
-> E3→E4→E5 is a strict chain. E6-E10 run in parallel after E1.
+E1 (Service) → E2 (Products/WIP), E8 (Contact), E10 (Privacy), E7 (Compensation), E6 (Arbitrations) run in parallel after E1. E3 (Machine) → E4 (Guards) → E5 (Allocators) is a strict chain. E9 (Reputation) follows E3.
 
 ### ⚠️ Critical Attention Items
 
@@ -437,14 +299,3 @@ E1 (Service) ──→ E2 (Products/WIP)
 6. **Phase 3 customer_advice** — when `customer_intelligence` is ON, read `semantic.customer_advice` first in every order/query response. The `reminders` array is pre-sorted by priority; `required` items block purchase.
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
-> - Phase 3 Integration — information puzzle + risk scoring + preference matching + game strategy + post-purchase playbook
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

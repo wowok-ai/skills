@@ -292,30 +292,9 @@ When a merchant wants to modify an existing service (change workflow, add alloca
 
 ### Fork Workflow
 
-When the service is already published and the user wants to make structural changes:
+When the service is already published and the user wants structural changes, use MCP `project_operation` action `fork_project` (creates a new version with copies of stage.json/manifest/deployment docs; original v1 stays read-only; no on-chain objects copied since they're immutable). Then work on v2 using the normal 5-stage flow, reusing v1 on-chain objects by address and creating new objects only for changed parts. Publish v2 when ready — v1 continues running uninterrupted.
 
-```
-STEP 1: Check if fork is needed
-├── Call: project_operation({ action: "get_reversibility", query_object_type: "service", query_lifecycle_state: "published" })
-├── Result: struct_reversible="immutable" → must fork
-└── Call: project_operation({ action: "get_project_status", project, version })
-    → If has_published_object=true → fork required
-
-STEP 2: Fork the project
-├── Call: project_operation({ action: "fork_project", project: "<prefix>", version: "v1", fork_to_version: "v2" })
-├── This creates a new version v2 with:
-│   - Copy of stage.json (reset to stage 1)
-│   - Copy of manifest.json (new version, needs_recalibration=true)
-│   - Copy of deployment/ docs (for reference)
-│   - No on-chain objects copied (they're immutable on-chain)
-└── The original v1 remains as a read-only historical snapshot
-
-STEP 3: Modify in the new version
-├── Work on v2 using the normal 5-stage flow
-├── Reuse on-chain objects from v1 (reference by address)
-├── Create new objects for changed parts
-└── Publish v2 when ready — v1 continues running uninterrupted
-```
+Before forking, verify necessity via `get_reversibility` (query_object_type: "service", query_lifecycle_state: "published") → `struct_reversible="immutable"` confirms fork is required, or `get_project_status` → `has_published_object=true`.
 
 ### When to Recommend Forking
 
@@ -337,24 +316,7 @@ The MCP server runs an offline flywheel that collects operational signals from y
 
 ### How to Review
 
-Use the [wowok-distill](../wowok-distill/SKILL.md) skill for guided review, or call MCP actions directly:
-
-```
-STEP 1: Check for pending proposals
-├── Call: project_operation({ action: "get_improvement_queue", queue_filter_status: "pending" })
-├── Review each proposal: title, priority, confidence, description
-└── If no proposals → inform user "No pending improvements. The flywheel is idle."
-
-STEP 2: Apply or reject
-├── To apply: project_operation({ action: "apply_improvement", proposal_id: "<id>", review_status: "approved" })
-├── To reject: project_operation({ action: "apply_improvement", proposal_id: "<id>", review_status: "rejected" })
-└── Applied proposals write overrides to ~/.wowok/overrides/ (config changes) or patches/ (source changes)
-
-STEP 3: Verify
-├── Call: project_operation({ action: "get_flywheel_config" })
-├── Check: applied_count increased, pending_count decreased
-└── Overrides are hot-loaded — next operation uses the new config immediately
-```
+Use the [wowok-distill](../wowok-distill/SKILL.md) skill for guided review, or call MCP `project_operation` actions directly in order: (1) `get_improvement_queue` with `queue_filter_status: "pending"` to list proposals (title, priority, confidence, description); (2) `apply_improvement` with `proposal_id` + `review_status: "approved"` or `"rejected"` — approved proposals write overrides to `~/.wowok/overrides/` (config) or `patches/` (source); (3) `get_flywheel_config` to verify `applied_count` increased and `pending_count` decreased. Overrides are hot-loaded — next operation uses the new config immediately.
 
 ### Override Categories
 
@@ -380,31 +342,3 @@ Only these categories can be overridden (no arbitrary changes):
 **AI Reminder**: When fulfilling, check `customer_required` fields. Missing → prompt via Messenger.
 
 ---
-
-## Quick Reference
-
-| Purpose | Schema |
-|---------|--------|
-| Service ops | `onchain_operations_service` |
-| Machine ops | `onchain_operations_machine` |
-| Guard ops | `onchain_operations_guard` |
-| Progress ops | `onchain_operations_progress` |
-| WIP generation | `wip_file` |
-| Messenger | `messenger_operation` |
-| Query | `query_toolkit` |
-
-**Export**: `machineNode2file`, `guard2file` | **Query Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "<name>" } })`
-
----
-
----
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

@@ -62,12 +62,31 @@ A confirmed ODG JSON document (see §ODG Data Structure) with: scenario tag, com
 
 ---
 
-## Appendices (Progressive Disclosure)
+## ODG Data Structure
 
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.
+The ODG (Object Dependency Graph) is the single output artifact, persisted via `local_info_operation` and consumed by the Harness:
+
+```json
+{
+  "task_id": "task_20260714_001",
+  "scenario": "freelance",
+  "version": 1,
+  "status": "confirmed",
+  "account": "merchant_v1",
+  "objects": [
+    { "id": "obj_permission", "type": "permission", "status": "planned", "reversible": true, "dependencies": [], "user_decisions": { "reuse": false, "indexes": { "provider": 1000, "arbiter": 1500 } } },
+    { "id": "obj_service", "type": "service", "status": "planned", "reversible": true, "dependencies": ["obj_permission"], "user_decisions": { "name": "...", "publish": "deferred" } },
+    { "id": "obj_machine", "type": "machine", "status": "planned", "reversible": false, "dependencies": ["obj_permission"], "user_decisions": { "nodes": [...], "forwards": [...], "publish": "deferred" } }
+  ],
+  "phases": [
+    { "phase": 1, "objects": ["obj_permission"], "gate": "user_confirm" },
+    { "phase": 2, "objects": ["obj_service", "obj_machine"], "gate": "risk_check" },
+    { "phase": 3, "objects": ["obj_guard_*"], "gate": "passport_test" },
+    { "phase": 4, "objects": ["obj_allocator_*"], "gate": "allocation_audit" },
+    { "phase": 5, "objects": ["publish"], "gate": "final_audit" }
+  ],
+  "risk_assessment": { "critical": [], "warnings": [], "irreversible_count": 1 }
+}
+```
+
+Each object has: `id`, `type`, `status` (planned/created/published), `reversible` (true/false), `dependencies` (other object IDs), `user_decisions` (typed fields). Phases gate progression — `risk_check` calls `aggregate_risks`, `final_audit` calls `generate_deployment_doc` + `trace_substeps`.

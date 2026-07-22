@@ -54,19 +54,9 @@ This Skill keeps the **workflow conversation guidance**, **business flow design 
 
 ## Machine Architecture
 
-```
-Machine
-└── Nodes
-    └── Pairs
-        ├── prev_node: which prior node ("" = entry point, multiple allowed)
-        ├── threshold: required total forward weight to advance
-        └── Forwards (MachineForward)
-            ├── name, weight
-            ├── permissionIndex | namedOperator: who can execute
-            └── guard (optional): condition that must pass
-```
+**Machine** → **Nodes** → **Pairs** (`prev_node` ["" = entry, multiple allowed], `threshold` [required total forward weight to advance]) → **Forwards** (`name`, `weight`, `permissionIndex` | `namedOperator` [who can execute], `guard` [optional condition]).
 
-> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_machine" } })` — all field types, limits, valid values. This document focuses on design decisions **not captured** by the schema.
+> All field types, limits, and valid values are in the MCP schema (`onchain_operations_machine`). This document focuses on design decisions **not captured** by the schema.
 
 ### Forward Permission Model
 
@@ -110,29 +100,18 @@ Users execute Forwards from the current node, accumulating weight within a **ses
 
 ### Dependency-First Construction
 
-Build in this exact order:
-
-```
-1. Permission (CREATE/MODIFY) → access control foundation
-2. Machine (CREATE, unpublished) → define all nodes
-3. Guards (CREATE) → build validation conditions
-4. Bind Guards to Forwards (MODIFY Machine) → set `guard` on each Forward; all operations (`add`, `set`, `add forward`) accept full `MachineForward` including `guard` + `retained_submission`
-5. Publish Machine → nodes IMMUTABLE
-6. Bind Machine to Service → workflow goes live
-```
+Build in this exact order: (1) Permission (CREATE/MODIFY) → access control foundation; (2) Machine (CREATE, unpublished) → define all nodes; (3) Guards (CREATE) → build validation conditions; (4) Bind Guards to Forwards (MODIFY Machine) → set `guard` on each Forward; all operations (`add`, `set`, `add forward`) accept full `MachineForward` including `guard` + `retained_submission`; (5) Publish Machine → nodes IMMUTABLE; (6) Bind Machine to Service → workflow goes live.
 
 **Why this order matters**: Publishing locks the Machine. Guards are immutable. Publishing before Guards are ready means Guards can never be added — the Machine is frozen without validation rules. **Create Guards, test them, then publish.**
 
 ### Node Operations (Pre-Publish Only)
 
-Nine operations are available via the `node` field. Query schema for full parameters. Key design notes not captured by schema:
+Nine operations are available via the `node` field. Key design notes not captured by schema:
 
 - `add` / `set` with `bReplace: false` (default) **merges** into existing nodes; `true` replaces all.
 - `clear` is **irreversible** — instant wipe with no undo. Export via `machineNode2file` first.
 - `exchange` swaps two node positions without delete/recreate. `rename` auto-updates all Pair references.
 - `add forward` supports the full `MachineForward` structure including `guard` with `retained_submission`.
-
-> **Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_operations_machine" } })` for full operation parameters.
 
 ### File-Based Workflow
 
@@ -164,22 +143,11 @@ Two paths: **Service Order** (automatic when Order created on Service with bound
 
 Two-phase operations (`hold`/`unhold`) allow locking resources during multi-step operations; `adminUnhold` force-releases stale locks.
 
-> **Querying**: Progress state via `onchain_objects`, history via `onchain_table` / `onchain_table_item_progress_history`. Schema: `wowok({ tool: "schema_query", data: { action: "get", name: "onchain_table_data" } })`.
+> **Querying**: Progress state via `onchain_objects`, history via `onchain_table` / `onchain_table_item_progress_history`.
 
 ### Runtime: Advancing the Workflow
 
-The runtime loop (schema: `onchain_operations` with `operation_type: "progress"` or `"order"`):
-
-```
-1. Query active Forwards → onchain_objects reveals current node name and available Pairs/Forwards
-2. Execute Forward → weight accumulates in session; Guard validates (pass/fail);
-                    retained_submission stores values indexed by (current_node, next_node, forward_name)
-3. Threshold met → session commits to history (all completed Forwards recorded);
-                    node transitions; session resets; new Forwards unlocked
-4. OR threshold NOT met → session stays open; more Forwards can execute in same session;
-                          weight from repeated same Forwards ignored
-5. OR competing Pair wins first → other incomplete Pairs abandoned; next session starts on winner node
-```
+The runtime loop: (1) Query active Forwards via `onchain_objects` (reveals current node + available Pairs/Forwards); (2) Execute Forward → weight accumulates in session, Guard validates (pass/fail), `retained_submission` stores values indexed by `(current_node, next_node, forward_name)`; (3) Threshold met → session commits to history, node transitions, session resets, new Forwards unlocked; (4) Threshold NOT met → session stays open, more Forwards can execute, repeated same Forwards ignored; (5) Competing Pair wins first → other incomplete Pairs abandoned.
 
 **What the user sees**: At any node, callers can discover which Forwards are available (by querying the Machine definition and cross-referencing with their permissions). Executing a Forward that requires a Guard triggers Guard verification — the caller must submit required data. Successful Forward execution is recorded on-chain; failed Guard rejections are visible as transaction errors.
 
@@ -273,28 +241,10 @@ Before `publish: true`, verify:
 
 ## Guard + Machine Immutability Deadlock
 
-Both Guards and published Machines are **immutable**:
-
-```
-Guard created with bug → Cannot fix (immutable)
-  → Must create new Guard
-    → Must rebind to Machine
-      → Machine already published? Cannot modify (immutable)
-        → DEADLOCK: new Guard exists but cannot be attached
-```
+Both Guards and published Machines are **immutable**. A Guard created with a bug cannot be fixed (immutable) → must create new Guard → must rebind to Machine → but Machine already published cannot be modified (immutable) → **DEADLOCK**: new Guard exists but cannot be attached.
 
 **Prevention**: Test every Guard via `gen_passport` before binding. Verify computation tree, submission types, and query instructions against all scenarios.
 
 **If deadlocked**: Only recovery is a completely new Machine with new nodes and Guard bindings, then rebind to Service. Keep Machines unpublished until all Guards are verified.
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts / Onboarding Flow (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

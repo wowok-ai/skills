@@ -70,20 +70,7 @@ Empty string `""` means the default account. Always use `""` when the user does 
 
 ### 2.1 Confirmation Template
 
-```
-📋 **Operation Preview**
-
-| Field | Value |
-|-------|-------|
-| Operation | {operation_type} — {op} |
-| Object | {object_name} |
-| Network | {network} |
-| Account | {account} |
-
-⚠️ **This will {describe_what_will_happen}**
-
-Proceed with execution?
-```
+Present a preview table (Operation, Object, Network, Account) with a warning describing what will happen, then ask: "Proceed with execution?"
 
 ### 2.2 Amount Verification
 
@@ -98,26 +85,7 @@ Proceed with execution?
 
 ### 2.3 Publish Confirmation
 
-Before publishing a Service or Machine:
-
-1. **Export and review**:
-   - Use `guard2file` to export Guard definitions
-   - Use `machineNode2file` to export Machine nodes
-
-2. **Verify logic**: Confirm Guards and Machine nodes match user intent
-
-3. **Warn about immutability**: Once published, many fields become locked
-
-```
-⚠️ PUBLISH CONFIRMATION REQUIRED
-
-You are about to publish:
-- {Service|Machine}: {name}
-- This will make it publicly accessible on-chain
-- After publish: {list what becomes immutable}
-
-This action cannot be easily undone. Proceed?
-```
+Before publishing a Service or Machine: (1) Export and review — use `guard2file` to export Guard definitions, `machineNode2file` to export Machine nodes; (2) Verify logic — confirm Guards and Machine nodes match user intent; (3) Warn about immutability — once published, many fields become locked. Present a publish confirmation warning listing what becomes immutable, then ask: "This action cannot be easily undone. Proceed?"
 
 ---
 
@@ -209,32 +177,15 @@ Use `Payment` objects for commercial transfers when possible — they offer Guar
 
 ## 8. Testing & Validation Workflow
 
-1. **Design Phase**: Use `wowok_buildin_info` to discover available permissions, Guard instructions, and value types
-
-**Tool**: `wowok_buildin_info` with `info: "built-in permissions"`, `info: "guard instructions"`, or `info: "value types"`.
+1. **Design Phase**: Discover available permissions, Guard instructions, and value types via `wowok_buildin_info` (`info: "built-in permissions"` / `"guard instructions"` / `"value types"`).
+2. **Export & Review**: Before publishing, use `guard2file` and `machineNode2file` to export and review definitions.
+3. **Incremental Testing**: Build objects step-by-step, verifying each step.
+4. **Final Validation**: Test all Guard conditions and Machine transitions before publishing.
+5. **Publish**: Only after thorough testing, publish Service and Machine.
 
 ### 8.1 Value Types — Built-in Type Annotation System
 
-WoWok's value type system is the foundation for type-safe data declarations used across Guards, records, and query instructions. Every data field in a Guard table or Guard submission carries a `value_type` annotation, ensuring the protocol can validate and process data correctly.
-
-**When value types matter:**
-- Defining Guard table columns: each Identifier in a Guard's `table` block requires a `value_type`
-- Submitting data to Guards: `GuardSubmission` entries must match their declared `value_type`
-- Reading Guard exports: `guard2file` output shows `value_type` for every Identifier
-- Designing query instructions: both parameters and return values carry `value_type` annotations
-
-- **String format is recommended** (e.g., `"U64"`, `"Address"`, `"VecString"`) for readability in Guard tables and submissions.
-- Numeric codes (0–18) are accepted but obscure — prefer string names in all user-facing contexts.
-- `Value` (19) is a protocol-internal type for dynamic value handling. It must **never** be used directly in user-defined Guards or submissions.
-**Available value types** (queried via `wowok_buildin_info` with `info: "value types"`)
-
-2. **Export & Review**: Before publishing, use `guard2file` and `machineNode2file` to export and review definitions
-
-3. **Incremental Testing**: Build objects step-by-step, verifying each step
-
-4. **Final Validation**: Test all Guard conditions and Machine transitions before publishing
-
-5. **Publish**: Only after thorough testing, publish Service and Machine
+Every data field in a Guard table or submission carries a `value_type` annotation. Value types matter when: defining Guard table columns, submitting data to Guards, reading `guard2file` exports, and designing query instructions. **String format is recommended** (`"U64"`, `"Address"`, `"VecString"`) for readability; numeric codes (0–18) are accepted but obscure. `Value` (19) is protocol-internal — never use in user-defined Guards. Available types are queried via `wowok_buildin_info` with `info: "value types"`.
 
 ---
 
@@ -251,29 +202,6 @@ For complex objects with many fields (Service, Machine), use **incremental build
 
 ## Schema Reference
 
-| Purpose | Schema Name |
-|---------|-------------|
-| Query toolkit | `query_toolkit` |
-| Token list | `query_toolkit` with `query_type: "token_list"` |
-| Guard export | `guard2file` |
-| Machine export | `machineNode2file` |
-| Build-in info | `wowok_buildin_info` |
-| Built-in permissions | `wowok_buildin_info` with `info: "built-in permissions"` |
-| Guard instructions | `wowok_buildin_info` with `info: "guard instructions"` |
-| Value types | `wowok_buildin_info` with `info: "value types"` |
-
-**Query Schema**: `wowok({ tool: "schema_query", data: { action: "get", name: "<schema_name>" } })`
-
 **Related Skills**: [wowok-tools](../wowok-tools/SKILL.md) | [wowok-guard](../wowok-guard/SKILL.md) | [wowok-machine](../wowok-machine/SKILL.md) | [wowok-order](../wowok-order/SKILL.md) | [wowok-provider](../wowok-provider/SKILL.md) | [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | [wowok-messenger](../wowok-messenger/SKILL.md)
 
 ---
-
-## Appendices (Progressive Disclosure)
-
-> The following sections have been extracted to [APPENDIX.md](./APPENDIX.md) for on-demand loading:
-> - Dialogue Scripts (R1-R10) — guided conversation scripts
-> - Decision Trees — branching logic reference
-> - Failure Playbooks — recovery scenarios
-> - Tier Layering — expertise-tier based guidance
->
-> Load APPENDIX.md when the user needs guided dialogue, recovery help, or tier-specific guidance.

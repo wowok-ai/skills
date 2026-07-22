@@ -117,13 +117,12 @@ function checkGlossaryDrift(filePath) {
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 const skillFiles = findSkillFiles(SKILLS_ROOT);
-const glossary = loadGlossaryTerms();
 
 const results = skillFiles.map((filePath) => {
     const lines = countLines(filePath);
     const status = getStatus(lines);
     const meta = extractMetadata(filePath);
-    const drifts = checkGlossaryDrift(filePath, glossary.terms);
+    const drifts = checkGlossaryDrift(filePath);
     return {
         file: relative(SKILLS_ROOT, filePath).replace(/\\/g, "/"),
         name: meta.name,

@@ -6,8 +6,8 @@
  *   preuninstall → remove SKILL.md folders from all installed client dirs
  *
  * Environment variables:
- *   WOWOK_SKILLS_TARGETS  Comma-separated client targets (claude,agents,codebuddy)
- *                         Defaults to "claude". Example: "claude,agents"
+ *   WOWOK_SKILLS_TARGETS  Comma-separated client targets (claude,codex,agents,codebuddy,cursor,copilot)
+ *                         Defaults to "claude". Example: "claude,agents,cursor"
  */
 
 const fs = require('fs');
