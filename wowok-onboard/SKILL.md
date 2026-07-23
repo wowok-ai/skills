@@ -86,7 +86,7 @@ The onboarding flow is gated by the MCP project-based 5-stage deployment pipelin
 | R1 | Account | `account_operation.gen` + `faucet` | New or reuse? |
 | R2 | Industry mode | `project_operation.analyze_intent` (pass `industry`) | Which driving mode? |
 | R3 | Service | `onchain_operations.service` CREATE | Name, type_parameter, description |
-| R4 | Permission | `onchain_operations.permission` CREATE/REUSE | Indexes 1000/1500 (customer uses `namedOperator:""`) |
+| R4 | Permission | `onchain_operations.permission` CREATE/REUSE | Index 1000 = provider/merchant (customer uses `namedOperator:""` = OrderHolder; arbiter is NOT a Permission index — arbiters live in `Arbitration.voting_guard`) |
 | R5 | Machine | `onchain_operations.machine` CREATE | Nodes, forwards (mode defaults from MCP) |
 | R6 | Progress | `onchain_operations.progress` CREATE + bind | Mirror Machine nodes |
 | R7 | Guards | `onchain_operations.guard` CREATE + `gen_passport` test | 5 Guard templates (mode defaults from MCP) |

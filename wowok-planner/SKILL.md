@@ -74,13 +74,14 @@ The ODG (Object Dependency Graph) is the single output artifact, persisted via `
   "status": "confirmed",
   "account": "merchant_v1",
   "objects": [
-    { "id": "obj_permission", "type": "permission", "status": "planned", "reversible": true, "dependencies": [], "user_decisions": { "reuse": false, "indexes": { "provider": 1000, "arbiter": 1500 } } },
+    { "id": "obj_permission", "type": "permission", "status": "planned", "reversible": true, "dependencies": [], "user_decisions": { "reuse": false, "indexes": { "provider": 1000 } } },
     { "id": "obj_service", "type": "service", "status": "planned", "reversible": true, "dependencies": ["obj_permission"], "user_decisions": { "name": "...", "publish": "deferred" } },
-    { "id": "obj_machine", "type": "machine", "status": "planned", "reversible": false, "dependencies": ["obj_permission"], "user_decisions": { "nodes": [...], "forwards": [...], "publish": "deferred" } }
+    { "id": "obj_machine", "type": "machine", "status": "planned", "reversible": false, "dependencies": ["obj_permission"], "user_decisions": { "nodes": [...], "forwards": [...], "publish": "deferred" } },
+    { "id": "obj_arbitration", "type": "arbitration", "status": "planned", "reversible": true, "dependencies": [], "user_decisions": { "voting_guard_count": 3, "fee_balance": "1000 WOW", "note": "arbiters live in voting_guard, NOT Permission index 1500" } }
   ],
   "phases": [
     { "phase": 1, "objects": ["obj_permission"], "gate": "user_confirm" },
-    { "phase": 2, "objects": ["obj_service", "obj_machine"], "gate": "risk_check" },
+    { "phase": 2, "objects": ["obj_service", "obj_machine", "obj_arbitration"], "gate": "risk_check" },
     { "phase": 3, "objects": ["obj_guard_*"], "gate": "passport_test" },
     { "phase": 4, "objects": ["obj_allocator_*"], "gate": "allocation_audit" },
     { "phase": 5, "objects": ["publish"], "gate": "final_audit" }

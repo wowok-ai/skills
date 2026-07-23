@@ -113,29 +113,32 @@ When two modes specify different Permission indexes for the same role, user deci
 
 | Mode | Machine Shape | Guards | Allocators | Key Risk |
 |------|---------------|--------|------------|----------|
-| `freelance` | 7 nodes (ordered→...→completed/refunded) | 5 (buy/deliver/accept/withdraw/refund) | 2 (100% provider / 100% refund) | Customer never accepts delivery |
-| `rental` | 10 nodes (reserved→...→deposit_refunded/deducted) | 5 (deposit/return/inspect/refund/damage) | 3 (rent / refund / deduct) | Owner claims damage without pre-rental WIP |
+| `freelance` | 7 nodes (ordered→...→completed→{wonder\|no_wonder}) | 5 (buy/deliver/accept/withdraw/rating_window) | 2 (100% provider at completed / 0 at wonder-no_wonder) | Customer never accepts delivery |
+| `rental` | 10 nodes (reserved→...→completed→{wonder\|no_wonder}) | 5 (deposit/return/inspect/damage/rating_window) | 3 (rent at completed / refund-to-order via Allocator / damage deduct) | Owner claims damage without pre-rental WIP |
+
+> **Dispute Independence**: `refunded`/`disputed`/`arb` MUST NOT appear as Machine nodes (R-M1-11 critical). Refunds flow through Allocator (100%→OrderHolder) or Arbitration (dispute → ruling → arb_withdraw), both off-Machine. Wonder/no_wonder are post-completion reputation terminals only.
 
 ### Freelance Audit Checklist (pre-publish BLOCKERS)
 
 - `accept_guard` exists + `gen_passport` tested — BLOCKER (no acceptance = funds stuck)
-- `refund_guard` + 100% refund Allocator — BLOCKER (no refund = dispute deadlock)
-- Machine has terminal nodes for both `completed` and `refunded` — BLOCKER (dead-end = stuck funds)
+- 100% refund Allocator (sharing.who=OrderHolder) — BLOCKER (no refund path = dispute deadlock)
+- Machine MUST NOT contain `refunded`/`disputed`/`arb` nodes (R-M1-11 critical) — BLOCKER. Refund flows through Allocator or Arbitration, both off-Machine
 - `withdraw_guard` only triggers at `Progress.current=completed` — BLOCKER (prevents premature payout)
 - `deliver_guard` validates WIP hash — recommended
+- Optional: wonder/no_wonder terminals after `completed` for post-purchase rating (enables Reward wonder_praise template)
 
 ### Freelance Failure Playbooks
 
 - Customer never accepts: `accept_guard` includes timeout auto-accept forward (threshold met by `namedOperator:""` after N days)
 - Wrong deliverable hash: `deliver_guard` enforces WIP match → re-generate WIP, re-submit via `progress.hold:false`
-- No arbiter assigned: Permission must include `permissionIndex:1500`, bind Arbitration via `service.arbitrations.list` before publish
+- No arbiter assigned: bind Arbitration via `service.arbitrations` AND configure `Arbitration.voting_guard` (NOT Permission index 1500 — arbiters live in voting_guard, never in Permission)
 
 ### Rental Audit Checklist (pre-publish BLOCKERS)
 
 - `deposit_guard` validates `Order.balance ≥ deposit_amount` — BLOCKER (renter runs off with item)
-- `refund_guard` + 100% refund Allocator — BLOCKER (no refund = deposit theft)
+- 100% refund Allocator (sharing.who=OrderHolder) — BLOCKER (no refund = deposit theft)
 - `damage_guard` requires pre+post WIP hash diff — BLOCKER (no evidence = arbitrary deduction)
-- Machine has both `deposit_refunded` and `deposit_deducted` terminals — BLOCKER
+- Machine MUST NOT contain `deposit_refunded`/`deposit_deducted`/`refunded` nodes (R-M1-11 critical) — BLOCKER. Deposit refund/deduction flows through Allocator, not Machine terminals
 - Pre-rental WIP generated + hash stored — BLOCKER (can't prove damage without pre-hash)
 - Rental period timeout forward on `in_use` node — recommended
 
@@ -154,7 +157,7 @@ When two modes specify different Permission indexes for the same role, user deci
 
 ### Mode Outline
 
-- **Default Machine**: enroll → pay_tuition → session_1 → session_2 → ... → session_N → completed / refunded
+- **Default Machine**: enroll → pay_tuition → session_1 → session_2 → ... → session_N → completed → {wonder | no_wonder}
 - **Default Guards**: `attendance_guard` (per session, student signs), `refund_guard` (institution approval OR arbiter)
 - **Default Allocator**: 1/N of tuition released per session attendance; unearned portion refundable on `refund_guard`
 - **Key trait**: `setting_locked_time` on Service prevents institution from changing rules mid-semester (regulatory compliance)
@@ -168,7 +171,7 @@ When two modes specify different Permission indexes for the same role, user deci
 
 ### Mode Outline
 
-- **Default Machine**: order → pay_deposit → pay_final → segment_D1 → segment_D2 → ... → return → completed / refunded
+- **Default Machine**: order → pay_deposit → pay_final → segment_D1 → segment_D2 → ... → return → completed → {wonder | no_wonder}
 - **Default Guards**: `segment_guard` (per-segment arrival WIP, e.g., hotel check-in), `refund_guard` (agency approval OR arbiter for trip interruption)
 - **Default Allocator**: multi-tier — deposit 20% to agency, final 80% to agency, then agency-side Allocation splits to hotel/guide/driver per segment
 - **Key trait**: multi-tier Allocation is WoWok's unique advantage over traditional travel platforms
