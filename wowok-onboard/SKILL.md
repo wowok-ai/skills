@@ -34,11 +34,11 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | MCP Knowledge Module | Applied Via |
 |---------|---------------------|-------------|
-| Scenario mode details (per-industry Permission/Machine/Guard/Allocator defaults) | `knowledge/scenario-modes.ts` (`SCENARIO_MODES`, `matchScenarioMode`, `inferScenarioTraits`) | `project_operation.analyze_intent` — auto-applied when `industry` parameter is passed |
-| Safety rules (immutability, confirmation, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.aggregate_risks` |
-| Guard / Machine design rules | `knowledge/guard-design-patterns.ts`, `machine-risk.ts` | `project_operation.aggregate_risks` |
+| Scenario mode details (per-industry Permission/Machine/Guard/Allocator defaults) | `knowledge/scenario-modes.ts` (`SCENARIO_MODES`, `matchScenarioMode`, `inferScenarioTraits`) | `project_operation.create_project` — auto-applied when `project_industry` parameter is passed |
+| Safety rules (immutability, confirmation, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.evaluate_project` |
+| Guard / Machine design rules | `knowledge/guard-design-patterns.ts`, `machine-risk.ts` | `project_operation.evaluate_project` |
 
-This Skill keeps the **overall onboarding flow** and **R1-R10 build order** (see below). Pass the user's industry to `analyze_intent` and the MCP layer auto-fills the scenario defaults — no need to look up per-industry presets manually.
+This Skill keeps the **overall onboarding flow** and **R1-R10 build order** (see below). Pass the user's industry to `create_project` (via `project_industry` parameter) and the MCP layer auto-fills the scenario defaults — no need to look up per-industry presets manually.
 
 ---
 
@@ -49,7 +49,7 @@ The onboarding skill dismantles the "16 operation_type × 14 object_type" wall. 
 ### What This Skill Does
 
 - Converts "I want to open a shop" into a 10-round guided build plan
-- Industry defaults auto-applied via `project_operation.analyze_intent` (pass `industry` parameter; defaults sourced from MCP `knowledge/scenario-modes.ts`)
+- Industry defaults auto-applied via `project_operation.create_project` (pass `project_industry` parameter; defaults sourced from MCP `knowledge/scenario-modes.ts`)
 - Enforces dependency order: Permission → Service → Machine → Progress → Guard → Allocation → Order → Publish
 - Persists checkpoints after each round via `local_info_operation` so users can resume
 - Hands off to [wowok-provider](../wowok-provider/SKILL.md) once the Service is published
@@ -67,24 +67,23 @@ A published Service with: published Machine, bound Progress, validated Guards, c
 
 ---
 
-## MCP 5-Stage Pipeline Integration
+## MCP Project Pipeline Integration
 
-The onboarding flow is gated by the MCP project-based 5-stage deployment pipeline. Each stage gates progression — the AI MUST honor `can_proceed: false` by stopping and fixing reported issues:
+The onboarding flow is backed by the MCP SQLite-based project pipeline. Each step produces verifiable state — the AI MUST honor risk/blocking findings by stopping and fixing reported issues:
 
-| Stage | Rounds | MCP Action | Gate |
-|-------|--------|------------|------|
-| 1. Project Naming | R1-R2 | Establish `project` + `version` namespace | — |
-| 2. Business Puzzle | R2 | `analyze_intent` (pass `industry`) → ODG + missing fields + `next_step` | — |
-| 3. Risk Calibration | After R8 | `aggregate_risks` → risk assessment across all puzzles | CRITICAL risks block |
-| 4. Deployment Doc | After risks pass | `generate_deployment_doc` → deployment doc with D-01..D-18 checks | D-errors block R9 |
-| 5. Substep Trace | R9-R10 | `trace_substeps` → validate substep linkage (D-10 check) | Linkage errors block publish |
+| Step | Rounds | MCP Action | Gate |
+|------|--------|------------|------|
+| 1. Create Project | R1-R2 | `create_project` (pass `project_industry`) → project record + scenario defaults | — |
+| 2. Add Objects | R3-R8 | `add_object` for each on-chain object (Service, Machine, Guards, Allocators) | — |
+| 3. Build Graph | After R8 | `build_graph` → object dependency graph from added objects | — |
+| 4. Evaluate | After graph built | `evaluate_project` (evaluation_type='risk') → risk assessment | CRITICAL risks block R9 |
 
 ## R1-R10 Build Order
 
 | Round | Object | MCP Operation | Key Decision |
 |-------|--------|---------------|--------------|
 | R1 | Account | `account_operation.gen` + `faucet` | New or reuse? |
-| R2 | Industry mode | `project_operation.analyze_intent` (pass `industry`) | Which driving mode? |
+| R2 | Industry mode | `project_operation.create_project` (pass `project_industry`) | Which driving mode? |
 | R3 | Service | `onchain_operations.service` CREATE | Name, type_parameter, description |
 | R4 | Permission | `onchain_operations.permission` CREATE/REUSE | Index 1000 = provider/merchant (customer uses `namedOperator:""` = OrderHolder; arbiter is NOT a Permission index — arbiters live in `Arbitration.voting_guard`) |
 | R5 | Machine | `onchain_operations.machine` CREATE | Nodes, forwards (mode defaults from MCP) |

@@ -90,4 +90,4 @@ The ODG (Object Dependency Graph) is the single output artifact, persisted via `
 }
 ```
 
-Each object has: `id`, `type`, `status` (planned/created/published), `reversible` (true/false), `dependencies` (other object IDs), `user_decisions` (typed fields). Phases gate progression — `risk_check` calls `aggregate_risks`, `final_audit` calls `generate_deployment_doc` + `trace_substeps`.
+Each object has: `id`, `type`, `status` (planned/created/published), `reversible` (true/false), `dependencies` (other object IDs), `user_decisions` (typed fields). Phases gate progression — `risk_check` calls `evaluate_project` (evaluation_type='risk'), `final_audit` runs the pre-publish audit checklist (see wowok-auditor).

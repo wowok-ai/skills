@@ -28,7 +28,6 @@ const SKILL_DIRS = [
   'wowok-scenario',
   'wowok-planner',
   'wowok-auditor',
-  'wowok-distill',
 ];
 
 const CLIENT_DIRS = {

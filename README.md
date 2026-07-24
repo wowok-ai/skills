@@ -37,7 +37,7 @@ WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 | Mode | Skills | Behavior |
 |------|--------|----------|
 | **Always** | `wowok-tools`, `wowok-safety`, `wowok-output` | Metadata always in prompt (~100 tokens each). AI auto-loads full content when needed. |
-| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-guard`, `wowok-machine`, `wowok-onboard`, `wowok-scenario`, `wowok-planner`, `wowok-auditor`, `wowok-distill` | AI matches description to task. Only loaded when relevant. |
+| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-guard`, `wowok-machine`, `wowok-onboard`, `wowok-scenario`, `wowok-planner`, `wowok-auditor` | AI matches description to task. Only loaded when relevant. |
 
 ## Quick Start
 
@@ -174,7 +174,7 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-safety` | Safety protocol — dry-run → confirm → execute, immutability rules, confirmation checkpoints | All Roles |
 | `wowok-output` | Output processing — address resolution, name mapping, amount formatting, data visualization | All Roles |
 
-### On-Demand (11 skills — contextually loaded)
+### On-Demand (10 skills — contextually loaded)
 
 | Skill | Purpose | Role |
 |-------|---------|------|
@@ -184,11 +184,10 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-messenger` | Encrypted messaging — E2E communication, WTS evidence, anti-spam strategy, Contact object lifecycle | All Roles |
 | `wowok-guard` | Guard design mastery — programmable trust rules, 4 data source classifications, verifier constraint levels, 33 creation/runtime constraints | All Roles |
 | `wowok-machine` | Machine workflow design — state machines, node/pair/forward graph, immutability rules, dependency-first build order | Service Provider |
-| `wowok-onboard` | First-touch onboarding — 10-round dialogue from zero to first published Service, MCP 5-stage pipeline integration | New Users |
+| `wowok-onboard` | First-touch onboarding — 10-round dialogue from zero to first published Service, SQLite-based project pipeline integration | New Users |
 | `wowok-scenario` | Industry mode templates — freelance, rental, education, travel, subscription presets with audit checklists and failure playbooks | All Roles |
 | `wowok-planner` | Planning skill — converts natural language intent into Object Dependency Graph (ODG), 5 scenario templates | All Roles |
 | `wowok-auditor` | Pre-publish audit — Guard completeness, Machine soundness, fund flow correctness, 32 audit checks | All Roles |
-| `wowok-distill` | Distillation review — guides merchants through reviewing AI-generated improvement proposals from the Loop Engineering flywheel | Service Provider |
 
 ## Related Projects
 

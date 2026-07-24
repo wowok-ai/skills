@@ -42,11 +42,11 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | MCP Knowledge Module | Applied Via |
 |---------|---------------------|-------------|
-| Node design rules (node type specs, forward guard design patterns, topology limits) | `knowledge/machine-risk.ts` (`MACHINE_RISK_RULES`), `machine-topology.ts`, `machine-translation.ts` | `project_operation.analyze_intent` (business puzzle) + `project_operation.aggregate_risks` (via `assessMachineRisks`) |
-| Machine scene/template selection | `knowledge/machine-ledger.ts`, `machine-templates.ts` | `project_operation.analyze_intent` |
-| Forward Guard design patterns | `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`) | `project_operation.aggregate_risks` (via `assessGuardRisks`) |
-| Safety rules (immutability, confirmation) | `knowledge/safety-rules.ts` | Pre-publish checks + `project_operation.aggregate_risks` |
-| Publish gate (4-layer fail-closed: checklist → risk → user → environment) | `knowledge/machine-confirm.ts` (`PUBLISH_CHECKLIST`, `confirmPublish`) | `project_operation.aggregate_risks` + pre-publish gate |
+| Node design rules (node type specs, forward guard design patterns, topology limits) | `knowledge/machine-risk.ts` (`MACHINE_RISK_RULES`), `machine-topology.ts`, `machine-translation.ts` | `project_operation.create_project` (pass `project_industry`) + `project_operation.evaluate_project` (via `assessMachineRisks`) |
+| Machine scene/template selection | `knowledge/machine-ledger.ts`, `machine-templates.ts` | `project_operation.create_project` (pass `project_industry`) |
+| Forward Guard design patterns | `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`) | `project_operation.evaluate_project` (via `assessGuardRisks`) |
+| Safety rules (immutability, confirmation) | `knowledge/safety-rules.ts` | Pre-publish checks + `project_operation.evaluate_project` |
+| Publish gate (4-layer fail-closed: checklist → risk → user → environment) | `knowledge/machine-confirm.ts` (`PUBLISH_CHECKLIST`, `confirmPublish`) | `project_operation.evaluate_project` + pre-publish gate |
 
 This Skill keeps the **workflow conversation guidance**, **business flow design patterns**, and **machine lifecycle scripts**. The MCP layer handles node-design rule evaluation, scene/template selection, and risk aggregation.
 
@@ -74,7 +74,7 @@ This Skill keeps the **workflow conversation guidance**, **business flow design 
 
 A Guard validates the Forward's execution condition. **Retained submissions**: when `retained_submission` is set on a Guard, submitted values are stored in Progress history, uniquely located by `(current_node, next_node, forward_name)`. Later nodes query these values from history.
 
-> **Guard construction**: Forward Guard design patterns (table design, computation trees, query instructions) now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), auto-applied via `project_operation.aggregate_risks`. Query available Guard instructions via `wowok_buildin_info`.
+> **Guard construction**: Forward Guard design patterns (table design, computation trees, query instructions) now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), auto-applied via `project_operation.evaluate_project`. Query available Guard instructions via `wowok_buildin_info`.
 
 ### Threshold Mechanics
 
@@ -198,7 +198,7 @@ Decompose complex workflows into multiple Machines connected by Guard-based vali
 3. "Does any step depend on an external process completing first?"
 4. "Which party creates the sub-order, and which party verifies it?"
 
-> **Guard construction**: Cross-Machine Guards use `convert_witness` with Progress query instructions. Design rules now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), applied via `project_operation.aggregate_risks`. Query available Guard instructions via `wowok_buildin_info`.
+> **Guard construction**: Cross-Machine Guards use `convert_witness` with Progress query instructions. Design rules now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), applied via `project_operation.evaluate_project`. Query available Guard instructions via `wowok_buildin_info`.
 
 ### Dual-Signature Consensus
 

@@ -14,7 +14,6 @@ import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT
  * - Arbitrator: wowok-arbitrator
  * - Shared: wowok-guard, wowok-tools, wowok-safety, wowok-output
  * - Onboarding: wowok-onboard, wowok-scenario, wowok-planner, wowok-auditor
- * - Distillation: wowok-distill
  */
 const SKILL_DIRS = [
   'wowok-order',
@@ -30,7 +29,6 @@ const SKILL_DIRS = [
   'wowok-scenario',
   'wowok-planner',
   'wowok-auditor',
-  'wowok-distill',
 ];
 
 /**

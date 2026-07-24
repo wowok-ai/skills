@@ -107,7 +107,7 @@ When two modes specify different Permission indexes for the same role, user deci
 
 ## Phase 1 Mode Details (Freelance & Rental)
 
-> **Mode defaults** (traits, machine_shape, guards, allocator, key_risk, build_notes) are provided by MCP `project_operation` action `analyze_intent` — pass `industry` parameter and the MCP auto-fills scenario defaults from `knowledge/scenario-modes.ts`. The AI does NOT need to look up per-industry presets manually.
+> **Mode defaults** (traits, machine_shape, guards, allocator, key_risk, build_notes) are provided by MCP `project_operation` action `create_project` — pass `project_industry` parameter and the MCP auto-fills scenario defaults from `knowledge/scenario-modes.ts`. The AI does NOT need to look up per-industry presets manually.
 
 ### Quick Reference (mode summaries)
 

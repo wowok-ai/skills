@@ -22,7 +22,7 @@ when_to_use:
 # WoWok Service Provider Guide
 
 > **Role**: Service Provider (Merchant/Seller)
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-distill](../wowok-distill/SKILL.md) (distillation review)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication)
 
 ---
 
@@ -32,13 +32,13 @@ The following rule tables have been pushed down to the MCP knowledge layer and a
 
 | Rule Category | MCP Knowledge Module | Applied By |
 |---------------|---------------------|------------|
-| Safety rules (confirmation, immutability, object reuse) | `knowledge/safety-rules.ts` | `aggregate_risks` + `onchain_operations` pre-publish |
-| Guard design patterns | `knowledge/guard-design-patterns.ts` | `aggregate_risks` (guard risk assessment) |
-| Machine topology rules | `knowledge/machine-risk.ts` | `aggregate_risks` (machine risk assessment) |
-| Scenario mode defaults | `knowledge/scenario-modes.ts` | `analyze_intent` (pass `industry` parameter) |
+| Safety rules (confirmation, immutability, object reuse) | `knowledge/safety-rules.ts` | `evaluate_project` + `onchain_operations` pre-publish |
+| Guard design patterns | `knowledge/guard-design-patterns.ts` | `evaluate_project` (guard risk assessment) |
+| Machine topology rules | `knowledge/machine-risk.ts` | `evaluate_project` (machine risk assessment) |
+| Scenario mode defaults | `knowledge/scenario-modes.ts` | `create_project` (pass `project_industry` parameter) |
 | Tool reference (gas, faucet, wrappers) | `knowledge/tools-reference.ts` | All tool calls automatically |
 
-**How to use**: Call `project_operation` with `action: "aggregate_risks"` after completing your puzzle — the MCP server will automatically apply all relevant safety rules and return risk findings.
+**How to use**: Call `project_operation` with `action: "evaluate_project"` (evaluation_type='risk') after completing your puzzle — the MCP server will automatically apply all relevant safety rules and return risk findings.
 
 ---
 
@@ -128,7 +128,7 @@ STEP 2: Trust Layer
          - Allocator guard → pass/fail only
          - Machine forward guard → if retained_submission is used, ensure b_submission:true entries match expected types
          - Reward guard → pass/fail only
-      Guard design patterns: MCP `knowledge/guard-design-patterns.ts` (auto-applied via `aggregate_risks`)
+      Guard design patterns: MCP `knowledge/guard-design-patterns.ts` (auto-applied via `evaluate_project`)
 
 STEP 3: Business Logic (MODIFY)
 ├── Machine — bind Guards to forwards
@@ -181,7 +181,7 @@ STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 
 ### Service Object Relationships
 
-> **Boundary conditions**: Use MCP `project_operation` with action `get_reversibility` to query the full 22-object lifecycle reversibility matrix (mutability, prerequisites, capacity limits, irreversibility). Key rules: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible.
+> **Boundary conditions**: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible. Use `get_project_detail` to check whether a project has published objects.
 
 ```
 Service (merchant storefront)
@@ -288,47 +288,19 @@ When a merchant wants to modify an existing service (change workflow, add alloca
 | Scenario | Strategy | MCP Action |
 |----------|----------|------------|
 | Service NOT yet published | **In-place** — modify the current version directly | `onchain_operations` (modify) |
-| Service IS published | **Fork** — create a new version, preserve original as read-only | `project_operation` → `fork_project` |
+| Service IS published | **Fork** — create a new version, preserve original as read-only | `project_operation` → `create_version` (with `fork_from_version`) |
 
 ### Fork Workflow
 
-When the service is already published and the user wants structural changes, use MCP `project_operation` action `fork_project` (creates a new version with copies of stage.json/manifest/deployment docs; original v1 stays read-only; no on-chain objects copied since they're immutable). Then work on v2 using the normal 5-stage flow, reusing v1 on-chain objects by address and creating new objects only for changed parts. Publish v2 when ready — v1 continues running uninterrupted.
+When the service is already published and the user wants structural changes, use MCP `project_operation` action `create_version` (with `fork_from_version` parameter; original v1 stays read-only; no on-chain objects copied since they're immutable). Then work on v2 reusing v1 on-chain objects by address and creating new objects only for changed parts. Publish v2 when ready — v1 continues running uninterrupted.
 
-Before forking, verify necessity via `get_reversibility` (query_object_type: "service", query_lifecycle_state: "published") → `struct_reversible="immutable"` confirms fork is required, or `get_project_status` → `has_published_object=true`.
+Before forking, verify necessity via `get_project_detail` → `has_published_object=true` confirms fork is required (published objects are immutable).
 
 ### When to Recommend Forking
 
 - User says "I want to change my workflow" → check if published → recommend fork
 - User says "I want to add a new product line" → if same Machine can handle it, in-place modify Service.sales; if needs new Machine, fork
 - User says "I want to change fund distribution" → if Service not published, in-place; if published, fork (allocators are frozen after publish)
-
----
-
-## Distillation Review
-
-The MCP server runs an offline flywheel that collects operational signals from your deployments and generates improvement proposals. Periodically review these proposals to optimize your service.
-
-### When to Review
-
-- After publishing a service and running it for a while
-- When the user asks "any improvements?" or "what did the system learn?"
-- As part of routine service maintenance
-
-### How to Review
-
-Use the [wowok-distill](../wowok-distill/SKILL.md) skill for guided review, or call MCP `project_operation` actions directly in order: (1) `get_improvement_queue` with `queue_filter_status: "pending"` to list proposals (title, priority, confidence, description); (2) `apply_improvement` with `proposal_id` + `review_status: "approved"` or `"rejected"` — approved proposals write overrides to `~/.wowok/overrides/` (config) or `patches/` (source); (3) `get_flywheel_config` to verify `applied_count` increased and `pending_count` decreased. Overrides are hot-loaded — next operation uses the new config immediately.
-
-### Override Categories
-
-Only these categories can be overridden (no arbitrary changes):
-
-| Category | What It Controls | Example |
-|----------|-----------------|---------|
-| risk-thresholds | Risk assessment cutoffs | max_retries, min_deposit |
-| descriptions | AI guidance text | industry descriptions |
-| industry-profiles | Industry trait profiles | rental traits, freelance traits |
-| scenario-defaults | Default parameters per scenario | default allocators, machine nodes |
-| recovery-priorities | Error recovery order | which failures to fix first |
 
 ---
 

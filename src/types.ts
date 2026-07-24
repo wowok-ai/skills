@@ -48,7 +48,7 @@ export interface Skill {
 }
 
 /**
- * Skill negotiation mode (GLM5 §6.6).
+ * Skill negotiation mode.
  * Determines how a skill behaves relative to the MCP server version.
  * - 'full': Versions match — skill provides full orchestration (best experience)
  * - 'passthrough': MCP major > skill major — skill only forwards MCP responses, no orchestration

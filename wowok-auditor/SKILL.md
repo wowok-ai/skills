@@ -38,9 +38,9 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | MCP Knowledge Module | Applied Via |
 |---------|---------------------|-------------|
-| Safety rules (confirmation levels, immutability rules, object reuse rules) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`, `ConfirmLevel`) | Pre-publish checks + `project_operation.aggregate_risks` |
-| Machine-executable audit rules | `knowledge/audit-rules.ts` (`AUDIT_RULES`, `auditService`) | `project_operation.aggregate_risks` |
-| Guard completeness / Machine soundness / fund-flow risks | `knowledge/guard-risk.ts`, `machine-risk.ts`, per-object risk modules | `project_operation.aggregate_risks` (via per-object assessors) |
+| Safety rules (confirmation levels, immutability rules, object reuse rules) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`, `ConfirmLevel`) | Pre-publish checks + `project_operation.evaluate_project` |
+| Machine-executable audit rules | `knowledge/audit-rules.ts` (`AUDIT_RULES`, `auditService`) | `project_operation.evaluate_project` |
+| Guard completeness / Machine soundness / fund-flow risks | `knowledge/guard-risk.ts`, `machine-risk.ts`, per-object risk modules | `project_operation.evaluate_project` (via per-object assessors) |
 
 This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completeness, Machine soundness, fund flow, publish readiness), and the **checklist structure** as the human-readable knowledge base for the L4 Harness Verify Loop. The MCP layer runs the machine-executable rule evaluation.
 

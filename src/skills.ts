@@ -137,16 +137,6 @@ export const wowokSkills: SkillConfig = {
       role: 'shared',
       loading: 'on-demand',
       related: ['wowok-planner', 'wowok-provider', 'wowok-safety', 'wowok-guard', 'wowok-machine']
-    },
-
-    // === DISTILLATION REVIEW (GLM5 §6.4 MODE 2) ===
-    {
-      name: 'wowok-distill',
-      description: 'Distillation review orchestrator — guides merchants through reviewing and applying AI-generated improvement proposals from the Loop Engineering flywheel. Stateless conversation orchestrator: all data from MCP get_improvement_queue / apply_improvement / get_flywheel_config actions. Use when user asks about improvements, optimizations, flywheel proposals, or operational learnings.',
-      version: '1.0.0',
-      role: 'shared',
-      loading: 'on-demand',
-      related: ['wowok-tools', 'wowok-provider']
     }
   ]
 };
@@ -239,23 +229,18 @@ export function recommendSkills(intent: string): Skill[] {
     return [getSkillByName('wowok-guard')!];
   }
 
-  // Distillation keywords (GLM5 §6.4)
-  if (/\b(improvement|optimization|flywheel|distillation|proposal|override|operational learnings?)\b/.test(lower)) {
-    return [getSkillByName('wowok-distill')!];
-  }
-
   // Default: return all on-demand skills
   return getSkillsByLoading('on-demand');
 }
 
 // ============================================================
-// GLM5 §6.6 — Skills Version Negotiation
+// Skills Version Negotiation
 // ============================================================
 
 /**
  * Negotiate skill behavior mode based on MCP server version vs skill version.
  *
- * Decision matrix (§6.6):
+ * Decision matrix:
  *  - MCP major > skill major → "passthrough" (skill only forwards MCP responses)
  *  - MCP major < skill major → "legacy" (skill falls back to older content)
  *  - Major versions match    → "full" (normal orchestration)

@@ -22,7 +22,6 @@
     "wowok-scenario/",
     "wowok-planner/",
     "wowok-auditor/",
-    "wowok-distill/",
     "examples/",
     "scripts/install.js",
     "README.md",
