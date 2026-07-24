@@ -1,6 +1,6 @@
 {
   "name": "@wowok/skills",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "WoWok AI Skills for Claude and other AI assistants - Helping AI use WoWok MCP tools correctly",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
