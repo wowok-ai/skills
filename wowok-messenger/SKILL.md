@@ -56,14 +56,14 @@ Every conversation between two addresses has a deterministic session. Messages a
 Before any communication:
 
 1. **Account must exist** → `account_operation` (gen)
-2. **Enable messenger** → `account_operation` (messenger), set a messenger name
+2. **Enable messenger** → `account_operation` (messenger), set `enabled: true`
 3. **Get your address** → `account_operation` (get) — share this address with your counterparties
 
-> The messenger name is required for message delivery. Without it, your account has no messenger endpoint and cannot receive messages.
+> Messenger must be enabled for message delivery. Without it, your account has no messenger endpoint and cannot receive messages. Account name is used for messenger identity lookup.
 
 ### Account Limit
 
-A single device supports up to 1000 messenger accounts. Exceeding this returns "Maximum 1000 messenger accounts allowed". Use `account_operation → messenger { m: null }` to disable unused accounts.
+A single device supports up to 1000 messenger accounts. Exceeding this returns "Maximum 1000 messenger accounts allowed". Use `account_operation → messenger { enabled: false }` to disable unused accounts.
 
 ### Contact Object (On-Chain Bridge)
 
@@ -225,7 +225,7 @@ When a dispute requires evidence: (1) `generate_wts` → export messages by time
 ## Common Pitfalls
 
 - **One-message limit trap**: Sending a vague first message to a stranger wastes your only chance. Make the first message complete and actionable.
-- **Disabled messenger**: Without a messenger name set, your account has no endpoint — counterparties cannot find or message you.
+- **Disabled messenger**: Without messenger enabled, your account has no endpoint — counterparties cannot find or message you.
 - **WTS range too narrow**: Selecting only favorable messages undermines evidence credibility. Include the full conversation.
 - **Guard list without strategy**: Adding a Guard to your list without testing it (`gen_passport`) means you don't know what conditions strangers must meet — you may be blocking legitimate contacts.
 - **`allowStrangerMessages: false` with no guard list and no friends**: Nobody can contact you. Always ensure at least one inbound path exists.

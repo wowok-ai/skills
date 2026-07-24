@@ -65,9 +65,9 @@ This Skill keeps the **workflow conversation guidance**, **business flow design 
 | `permissionIndex` | Shared across ALL Progress instances | Internal staff (warehouse, admin, platform) — same for every order |
 | `namedOperator` | Per-Progress namespace | Roles that differ per order (delivery person, reviewer, agent) |
 
-- `namedOperator: ""` (empty string): grants **order owner and agents** the right to execute. Standard way to let customers operate.
-- `namedOperator: "<role_name>"`: role-based operators managed per Progress instance. Each Progress independently assigns addresses to role names.
-- **Both fields set**: executor needs EITHER permission — internal staff OR external roles.
+- `namedOperator: ""` (empty string): grants **order owner and agents** the right to execute. Standard way to let customers operate. **⚠ Must be advanced via `order.progress`** (uses `order.has_op_permission`); direct `progress::next` aborts with Permission denied (code 5).
+- `namedOperator: "<role_name>"`: role-based operators managed per Progress instance. Each Progress independently assigns addresses to role names. **Advanced via `progress.operate`** directly.
+- **Both fields set**: executor needs EITHER permission — internal staff OR external roles. **Advanced via `progress.operate`** (the non-empty namedOperator takes precedence for routing).
 - **Design principle**: Use custom permissions (dedicated Permission object with custom indices), not built-in indices. Define workflow-specific roles, reference those indices in Forwards.
 
 ### Guard on Forwards

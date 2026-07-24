@@ -152,11 +152,11 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 |-----------------|----------------------------------|
 | `service` | `machine` must be **published**. Allocators: array order = priority (first-Guard-wins). Publish locks `machine`/`order_allocators`; `sales`/`discount`/`description` stay mutable. |
 | `machine` | Nodes immutable after publish. Forward needs ≥1 of `namedOperator`/`permissionIndex` (both empty = SDK error). `""` = entry node. → [wowok-machine](../wowok-machine/SKILL.md) |
-| `progress` | Two-phase: `hold:true` (lock) → `hold:false` (submit). `adminUnhold:true` force-releases. SDK auto-fetches Machine when resolving `object_address`. |
+| `progress` | Two-phase: `hold:true` (lock) → `hold:false` (submit). `adminUnhold:true` force-releases. SDK auto-fetches Machine when resolving `object_address`. **⚠ Routing rule**: Use `progress.operate` ONLY for forwards with non-empty `namedOperator` or `permissionIndex`-only. For forwards with `namedOperator=""` (OrderHolder), use `order.progress` instead — direct `progress::next` aborts with Permission denied (code 5). |
 | `arbitration` | MAX 20 propositions, 520 voters. Verdict (2→3) **irreversible** — only customer can `order.arb_objection`. Non-Finished withdrawal = 30-day wait. → [wowok-arbitrator](../wowok-arbitrator/SKILL.md) |
 | `guard` | `root.type:"node"` (inline) or `"file"` (JSON/MD). MAX 4 `rely`. `rep:false` Guards excluded from others' `rely`. System addresses `0xaab`/`0xaaa` need table entries. → [wowok-guard](../wowok-guard/SKILL.md) |
 | `gen_passport` | MAX 20 Guards/call (AND-ed). Omit `info` to auto-fetch. Passport = frozen immutable credential. |
-| `order` | Agents can operate but **cannot withdraw** — only builder. `order.progress`+Guard requires Passport. Arb via `order.arb_confirm`/`arb_objection` (not `arbitration` directly). `arb_claim_compensation` once-only. → [wowok-order](../wowok-order/SKILL.md) |
+| `order` | Agents can operate but **cannot withdraw** — only builder. `order.progress`+Guard requires Passport. **⚠ Routing rule**: `order.progress` works ONLY for forwards with `namedOperator=""` (OrderHolder) — uses `order.has_op_permission`. For non-empty `namedOperator` or `permissionIndex`-only forwards, use `progress.operate` on the Progress object directly. Arb via `order.arb_confirm`/`arb_objection` (not `arbitration` directly). `arb_claim_compensation` once-only. → [wowok-order](../wowok-order/SKILL.md) |
 | `payment` | `type_parameter` required. **Irreversible** — no refund. |
 | `personal` | **Permanently public** — warn users before writing sensitive data. |
 | `demand` | Guard-gated: `guards` filter presenters. Separate from Service. |
@@ -177,7 +177,7 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 |------|----------------|
 | `query_toolkit` | `token_list` cached (first query populates). `account_balance`: `balance=true` for totals, `coin={cursor,limit}` for paginated. `onchain_objects` batches 50/req. `local_names` resolves accounts + marks. |
 | `onchain_table_data` | 12 types. Global (no `parent`): `entity_registrar`, `entity_linker`. `onchain_table_item_generic` = universal fallback. |
-| `account_operation` | `faucet` testnet/localnet only. Mainnet funding: `transfer` from existing account (1 WOW = 10^9 base units). `gen` with `m` enables Messenger. Private keys never leave device. |
+| `account_operation` | `faucet` testnet/localnet only. Mainnet funding: `transfer` from existing account (1 WOW = 10^9 base units). `gen` with `messenger: true` enables Messenger. **Naming convention**: `<role>-<number>` (e.g. `shop-001`, `user-001`, `arb-001`) for easy filtering. `gen.replaceExistName:true` is DISCOURAGED — suspends old account; FORBIDDEN on default account (name=''). Private keys never leave device. |
 | `local_mark_operation` | Max 50 tags/entry (64 chars). `replaceExistName:true` steals names — prefer `_v1`/`_v2`. |
 | `local_info_operation` | Max 50 contents/entry, 300 chars each. |
 | `messenger_operation` | Stranger: 1 msg before reply (~480 chars). Guard block → rejection includes guard list; sender needs Passport. WTS: `generate` needs continuous sequences. → [wowok-messenger](../wowok-messenger/SKILL.md) |

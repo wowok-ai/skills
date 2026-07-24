@@ -311,6 +311,16 @@ Before forking, verify necessity via `get_project_detail` → `has_published_obj
 | Order | Fund escrow | Read-only |
 | **Progress** | Workflow state | **Operate this** — `hold: true` (lock) → work → `hold: false` (submit) |
 
+**⚠ Progress Routing Rule** (critical):
+
+| Forward `namedOperator` | Required Operation | Why |
+|------------------------|--------------------|-----|
+| `""` (empty = OrderHolder) | `order.progress` | Uses `order.has_op_permission` — order owner/agents authorized |
+| `"<role_name>"` (non-empty) | `progress.operate` | Uses Progress named_operator namespace |
+| `None` + `permissionIndex` | `progress.operate` | Uses Permission object entity table |
+
+Wrong path → "Permission denied" (Move abort code 5). The empty-string `namedOperator` is set automatically by `service::buy` — the customer becomes the operator. Providers who need to act on a forward should either use a non-empty `namedOperator` (and `progress.operate`) or use `permissionIndex` (requiring a custom permission grant in the Service's Permission object).
+
 **AI Reminder**: When fulfilling, check `customer_required` fields. Missing → prompt via Messenger.
 
 ---

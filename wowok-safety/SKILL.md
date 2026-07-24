@@ -118,16 +118,19 @@ When users request complex systems without naming, propose this scheme:
 
 ### 4.1 `replaceExistName` Flag
 
-Controls name collision behavior:
+Controls name collision behavior. **DISCOURAGED** — prefer versioned names (`_v1`, `_v2`).
 
 | Value | Effect |
 |-------|--------|
 | `false` (default) | Throws error if name is in use — safe default |
-| `true` | Steals name from existing object; old object becomes unnamed |
+| `true` | Existing object/account with the same name is **suspended** (deactivated) to free the name |
 
-- Use `true` during development to reuse fixed names without cleanup
-- Default to `false` in production to prevent accidental name hijacking
-- Prefer versioned names (`_v1`, `_v2`) over `replaceExistName` for production
+**Account-specific rules** (stricter than on-chain objects):
+- `replaceExistName: true` on the **default account** (`name=''` or omitted) is **FORBIDDEN** — throws error. The default account is unique and cannot be suspended by replacement; use `suspend()` explicitly if needed.
+- On non-default account names, `replaceExistName: true` **suspends** the old account (moves to Suspended tab, clears name + messenger). The old account can be reactivated via `resume(address, new_name)`.
+- This prevents the "orphan unnamed account" bug where old accounts leaked into the Active list without a name.
+
+**On-chain objects** (NamedObjectSchema): `replaceExistName: true` steals the name; the old object becomes unnamed (address-only reference). Prefer versioned names for production.
 
 ---
 

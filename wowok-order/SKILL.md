@@ -79,12 +79,14 @@ Use `wip_file` → `op: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wi
 
 **Step 3: Classify every forward**:
 
-| `namedOperator` | `guard` | User Can Execute? |
-|-----------------|---------|-------------------|
-| `Some("")` | `None` | ✅ Independently via `order.progress` |
-| `Some("")` | `Some({...})` | ⚠️ Need Guard passport — **no bypass** |
-| `None` | Any | ❌ Provider/permission-holder only |
-| `Some("<other>")` | Any | ❌ Named operator required |
+| `namedOperator` | `guard` | User Can Execute? | Operation Path |
+|-----------------|---------|-------------------|----------------|
+| `Some("")` | `None` | ✅ Independently | **`order.progress`** (uses `order.has_op_permission`) |
+| `Some("")` | `Some({...})` | ⚠️ Need Guard passport — **no bypass** | **`order.progress`** + Passport |
+| `None` | Any | ❌ Provider/permission-holder only | `progress.operate` (provider path) |
+| `Some("<other>")` | Any | ❌ Named operator required | `progress.operate` (named operator path) |
+
+> **⚠ CRITICAL ROUTING RULE**: When `namedOperator=""` (empty string = OrderHolder), you MUST use `order.progress` (NOT `progress.operate`). Direct `progress::next` will abort with "Permission denied" (code 5) because the Progress-level permission check does not recognize the OrderHolder short-circuit. The empty-string `namedOperator` is set automatically by `service::buy` when an Order is created — the customer (order.builder) becomes the operator for the `""` namespace. In ALL other cases (non-empty `namedOperator` or `permissionIndex`-only), use `progress.operate` on the Progress object directly.
 
 **Step 4: Detect paths**:
 - Terminal nodes (no outgoing forwards) → order ends
