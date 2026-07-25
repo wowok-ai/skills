@@ -10,27 +10,48 @@ export type SkillRole = 'customer' | 'provider' | 'arbitrator' | 'shared';
  */
 export type LoadingMode = 'always' | 'on-demand';
 
-export type ClientTarget = 'claude' | 'codex' | 'agents' | 'codebuddy' | 'cursor' | 'copilot' | 'all';
+export type ClientTarget =
+  | 'claude'    // Claude Code — .claude/skills/
+  | 'cursor'    // Cursor — .cursor/rules/
+  | 'windsurf'  // Windsurf (Codeium) — .windsurf/skills/
+  | 'codebuddy' // CodeBuddy — .codebuddy/skills/
+  | 'codex'     // OpenAI Codex — .codex/skills/ (MCP via config.toml)
+  | 'trae'      // Trae CN & Trae Work — .agents/skills/ (CN) / .trae/skills/ (Work)
+  | 'qoder'     // Qoder / Qoder CN — .qoder/skills/
+  | 'roo'       // Roo Code — .roo/skills/
+  | 'agents'    // [DEPRECATED] alias for 'trae'
+  | 'copilot'   // GitHub Copilot — .github/prompts/ (MCP via mcp-config.json)
+  | 'all';
 
 export const CLIENT_SKILL_DIRS: Record<Exclude<ClientTarget, 'all'>, string> = {
   claude: '.claude/skills',
-  codex: '.codex/skills',
-  agents: '.agents/skills',
-  codebuddy: '.codebuddy/skills',
   cursor: '.cursor/rules',
+  windsurf: '.windsurf/skills',
+  codebuddy: '.codebuddy/skills',
+  codex: '.codex/skills',
+  trae: '.agents/skills',
+  qoder: '.qoder/skills',
+  roo: '.roo/skills',
+  agents: '.agents/skills',
   copilot: '.github/prompts',
 };
 
 export const CLIENT_FILE_EXT: Record<Exclude<ClientTarget, 'all'>, string> = {
   claude: '.md',
-  codex: '.md',
-  agents: '.md',
-  codebuddy: '.md',
   cursor: '.mdc',
+  windsurf: '.md',
+  codebuddy: '.md',
+  codex: '.md',
+  trae: '.md',
+  qoder: '.md',
+  roo: '.md',
+  agents: '.md',
   copilot: '.prompt.md',
 };
 
-export const ALL_CLIENT_TARGETS: Exclude<ClientTarget, 'all'>[] = ['claude', 'codex', 'agents', 'codebuddy', 'cursor', 'copilot'];
+export const ALL_CLIENT_TARGETS: Exclude<ClientTarget, 'all'>[] = [
+  'claude', 'cursor', 'windsurf', 'codebuddy', 'codex', 'trae', 'qoder', 'roo', 'copilot',
+];
 
 /**
  * Skill definition

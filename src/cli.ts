@@ -2,6 +2,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
+import * as os from 'os';
 import { getSkills, getSkillByName, getRoleSkills, recommendSkills, getSkillsByRole } from './skills';
 import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT_TARGETS } from './types';
 
@@ -135,6 +137,294 @@ function convertSkillContent(content: string, target: string, skillDir: string):
   return content;
 }
 
+// =========================================================================
+// MCP Server Management — shared by postinstall and `wowok-skills init`
+// =========================================================================
+
+const MCP_PACKAGE = '@wowok/agent-mcp';
+
+type McpConfigEntry = { configPath: string; merge?: (config: any) => any; format?: 'toml' };
+const MCP_TARGET_CONFIGS: Record<string, McpConfigEntry | null> = {
+  claude: {
+    configPath: path.join(os.homedir(), '.claude', 'settings.json'),
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  codebuddy: {
+    configPath: path.join(os.homedir(), '.codebuddy', 'mcp.json'),
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  windsurf: {
+    configPath: path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json'),
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  qoder: {
+    configPath: process.platform === 'win32'
+      ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Qoder', 'mcp-settings.json')
+      : path.join(os.homedir(), '.config', 'qoder', 'mcp-settings.json'),
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  roo: {
+    configPath: path.join(os.homedir(), '.roo', 'mcp_settings.json'),
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  // trae / agents: IDE-managed MCP via ~/.trae-cn/mcps/ directory structure
+  trae: null,
+  agents: null,
+  // cursor: project-level only
+  cursor: null,
+  // copilot: user-level MCP config (Copilot CLI)
+  copilot: {
+    configPath: path.join(os.homedir(), '.copilot', 'mcp-config.json'),
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { type: 'local', command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  // codex: global TOML config (~/.codex/config.toml)
+  codex: {
+    configPath: path.join(os.homedir(), '.codex', 'config.toml'),
+    format: 'toml' as const,
+  },
+};
+
+/** Project-level MCP configs (written relative to cwd). */
+const MCP_PROJECT_CONFIGS: Record<string, { configPath: string; merge: (config: any) => any } | null> = {
+  cursor: {
+    configPath: '.cursor/mcp.json',
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  windsurf: {
+    configPath: '.windsurf/mcp.json',
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  trae: {
+    configPath: '.trae/mcp.json',
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  agents: {
+    configPath: '.trae/mcp.json',
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  qoder: {
+    configPath: '.qoder/mcp.json',
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+  roo: {
+    configPath: '.roo/mcp.json',
+    merge: (config: any) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    },
+  },
+};
+
+function getInstalledMcpVersion(): string | null {
+  try {
+    const output = execSync(`npm ls -g ${MCP_PACKAGE} --depth=0 --json`, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 15000,
+    });
+    const parsed = JSON.parse(output);
+    const pkg = parsed.dependencies?.[MCP_PACKAGE] || parsed[MCP_PACKAGE];
+    return pkg?.version || null;
+  } catch { return null; }
+}
+
+function getLatestMcpVersion(): string | null {
+  try {
+    const output = execSync(`npm view ${MCP_PACKAGE} version`, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 15000,
+    });
+    return output.trim();
+  } catch { return null; }
+}
+
+function semverMajor(version: string | null): number {
+  if (!version) return 0;
+  const parts = version.split('.');
+  return parseInt(parts[0], 10) || 0;
+}
+
+function npmInstallGlobal(pkg: string, retries = 2): boolean {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      execSync(`npm install -g ${pkg}`, { stdio: 'inherit', timeout: 120000 });
+      return true;
+    } catch (err: any) {
+      if (attempt < retries) {
+        console.log(`[wowok-skills]   npm install attempt ${attempt} failed, retrying...`);
+        const waitCmd = process.platform === 'win32'
+          ? 'ping -n 3 127.0.0.1 >nul'
+          : 'sleep 2';
+        execSync(waitCmd, { stdio: 'pipe', timeout: 5000 });
+      } else {
+        console.error(`[wowok-skills]   npm install failed after ${retries} attempts: ${err.message}`);
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
+function ensureMcpServer(): boolean {
+  const currentVersion = getInstalledMcpVersion();
+  const latestVersion = getLatestMcpVersion();
+
+  if (currentVersion) {
+    console.log(`[wowok-skills] MCP server ${MCP_PACKAGE} v${currentVersion} found.`);
+
+    if (!latestVersion) {
+      console.log(`[wowok-skills]   Cannot check latest version (offline or registry unreachable). Keeping v${currentVersion}.`);
+      return false;
+    }
+
+    if (currentVersion === latestVersion) {
+      console.log(`[wowok-skills] MCP server is up to date (v${currentVersion}).`);
+      return false;
+    }
+
+    const currentMajor = semverMajor(currentVersion);
+    const latestMajor = semverMajor(latestVersion);
+
+    if (latestMajor > currentMajor) {
+      console.warn(`[wowok-skills] ⚠ WARNING: Major version bump detected v${currentVersion} → v${latestVersion}.`);
+      console.warn(`[wowok-skills]   Skipping auto-upgrade to avoid breaking changes.`);
+      console.warn(`[wowok-skills]   To upgrade manually: npm install -g ${MCP_PACKAGE}@latest`);
+      return false;
+    }
+
+    console.log(`[wowok-skills] Upgrading MCP server v${currentVersion} → v${latestVersion}...`);
+    if (npmInstallGlobal(`${MCP_PACKAGE}@latest`)) {
+      console.log(`[wowok-skills] MCP server upgraded to v${latestVersion}.`);
+      return true;
+    }
+    console.error(`[wowok-skills] MCP server upgrade FAILED. Keeping v${currentVersion}.`);
+    return false;
+  }
+
+  console.log(`[wowok-skills] Installing MCP server ${MCP_PACKAGE}...`);
+  if (npmInstallGlobal(MCP_PACKAGE)) {
+    console.log(`[wowok-skills] MCP server installed.`);
+    return true;
+  }
+  console.error(`[wowok-skills] MCP server installation FAILED.`);
+  return false;
+}
+
+function writeMcpConfig(target: string, configMap: Record<string, any>, cwd?: string): boolean {
+  const cfg = configMap[target];
+  if (!cfg) {
+    console.log(`[wowok-skills]   MCP config: ${target} does not support external MCP registration (skipped).`);
+    return false;
+  }
+
+  try {
+    const configPath = cwd ? path.join(cwd, cfg.configPath) : cfg.configPath;
+
+    // ── TOML format (Codex CLI uses ~/.codex/config.toml) ──────────────
+    if (cfg.format === 'toml') {
+      const tomlEntry = '\n[mcp_servers.wowok]\ncommand = "npx"\nargs = ["-y", "@wowok/agent-mcp"]\n';
+      let content = '';
+      if (fs.existsSync(configPath)) {
+        content = fs.readFileSync(configPath, 'utf-8');
+      }
+      if (content.includes('[mcp_servers.wowok]')) {
+        console.log(`[wowok-skills]   MCP config already up to date: ${configPath}`);
+        return false;
+      }
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, content + tomlEntry, 'utf-8');
+      console.log(`[wowok-skills]   MCP config written: ${configPath}`);
+      return true;
+    }
+
+    // ── JSON format (all other clients) ────────────────────────────────
+    let config: any = {};
+    if (fs.existsSync(configPath)) {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+
+    const before = JSON.stringify(config);
+    config = cfg.merge(config);
+    const after = JSON.stringify(config);
+
+    if (before !== after) {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      console.log(`[wowok-skills]   MCP config written: ${configPath}`);
+      return true;
+    }
+
+    console.log(`[wowok-skills]   MCP config already up to date: ${configPath}`);
+    return false;
+  } catch (err: any) {
+    console.error(`[wowok-skills]   ERROR writing MCP config for ${target}: ${err.message}`);
+    return false;
+  }
+}
+
+function restartMcpServer(): void {
+  try {
+    if (process.platform === 'win32') {
+      const psScript =
+        'Get-CimInstance Win32_Process -Filter "Name=\'node.exe\' AND CommandLine LIKE \'%wowok%agent-mcp%\'" | ' +
+        'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }';
+      const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+      execSync(`powershell -NoProfile -EncodedCommand ${encoded}`, { stdio: 'pipe', timeout: 10000 });
+    } else {
+      execSync('pkill -f "wowok.*agent-mcp" 2>/dev/null || true', { stdio: 'pipe', timeout: 5000 });
+    }
+    console.log('[wowok-skills] MCP server process terminated (IDE will auto-restart).');
+  } catch {
+    console.log('[wowok-skills] No running MCP server process found. Start your IDE to launch it.');
+  }
+}
+
 function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>[] {
   if (!targetArg || targetArg === 'claude') {
     return ['claude'];
@@ -146,11 +436,11 @@ function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>
     return [targetArg as Exclude<ClientTarget, 'all'>];
   }
   console.error(`Invalid target: ${targetArg}`);
-  console.error(`Valid targets: claude, codex, agents, codebuddy, cursor, copilot, all`);
+  console.error(`Valid targets: claude, cursor, windsurf, codebuddy, codex, trae, qoder, roo, copilot, all`);
   process.exit(1);
 }
 
-function cmdInit(targetArg?: string): void {
+function cmdInit(targetArg: string | undefined, withMcp: boolean): void {
   const cwd = process.cwd();
   const pkgRoot = getPackageRoot();
   const targets = getTargets(targetArg);
@@ -191,6 +481,32 @@ function cmdInit(targetArg?: string): void {
 
   if (targets.length > 1) {
     console.log(`[wowok-skills] Total: ${totalCount} skills across ${targets.length} clients.`);
+  }
+
+  // ─── MCP setup (default: enabled, use --no-mcp to skip) ────────────
+  if (withMcp) {
+    console.log('');
+    console.log('[wowok-skills] Setting up MCP server (use --no-mcp to skip)...');
+
+    const mcpChanged = ensureMcpServer();
+
+    console.log('[wowok-skills] Registering MCP server in client config...');
+    for (const target of targets) {
+      // Global-level config (Claude, CodeBuddy, Windsurf, Qoder, Roo)
+      writeMcpConfig(target, MCP_TARGET_CONFIGS);
+      // Project-level config (Cursor, Windsurf, Trae, Qoder, Roo)
+      writeMcpConfig(target, MCP_PROJECT_CONFIGS, cwd);
+    }
+
+    if (mcpChanged) {
+      console.log('[wowok-skills] Restarting MCP server...');
+      restartMcpServer();
+    }
+
+    console.log('[wowok-skills] MCP server setup complete.');
+  } else {
+    console.log('');
+    console.log('[wowok-skills] --no-mcp: MCP server setup skipped (skills only).');
   }
 }
 
@@ -304,16 +620,20 @@ function printUsage(): void {
   console.log('  get <name>              Show skill details');
   console.log('  role <role>             List skills for a role (customer|provider|arbitrator|shared)');
   console.log('  recommend <intent>      Recommend skills based on user intent');
-  console.log('  init [--target <t>]     Install skills to project (default: .claude/skills/)');
+  console.log('  init [--target <t>] [--no-mcp]     Install skills to project (default: .claude/skills/ with MCP)');
+  console.log('                              --no-mcp   Skip MCP server setup (skills only)');
   console.log('  uninit [--target <t>]   Remove skills from project');
   console.log('');
   console.log('Targets:');
-  console.log('  claude       .claude/skills/       (Claude Code, default)');
-  console.log('  codex        .codex/skills/        (OpenAI Codex)');
-  console.log('  agents       .agents/skills/       (Trae IDE)');
-  console.log('  codebuddy    .codebuddy/skills/    (CodeBuddy)');
+  console.log('  claude       .claude/skills/       (Claude Code)');
   console.log('  cursor       .cursor/rules/        (Cursor IDE)');
-  console.log('  copilot      .github/prompts/      (GitHub Copilot)');
+  console.log('  windsurf     .windsurf/skills/     (Windsurf / Codeium)');
+  console.log('  codebuddy    .codebuddy/skills/    (CodeBuddy)');
+  console.log('  codex        .codex/skills/         (OpenAI Codex, no MCP)');
+  console.log('  trae         .agents/skills/       (Trae CN & Trae Work)');
+  console.log('  qoder        .qoder/skills/        (Qoder / Qoder CN)');
+  console.log('  roo          .roo/skills/          (Roo Code)');
+  console.log('  copilot      .github/prompts/      (GitHub Copilot, no MCP)');
   console.log('  all          All of the above');
   console.log('');
   console.log('Examples:');
@@ -324,6 +644,8 @@ function printUsage(): void {
   console.log('  wowok-skills init');
   console.log('  wowok-skills init --target agents');
   console.log('  wowok-skills init --target all');
+  console.log('  wowok-skills init --no-mcp');
+  console.log('  wowok-skills init --target cursor --no-mcp');
 }
 
 function main() {
@@ -365,9 +687,11 @@ function main() {
       cmdRecommend(args.slice(1).join(' '));
       break;
 
-    case 'init':
-      cmdInit(parseTargetArg(args.slice(1)));
+    case 'init': {
+      const withMcp = !args.includes('--no-mcp');
+      cmdInit(parseTargetArg(args.slice(1)), withMcp);
       break;
+    }
 
     case 'uninit':
       cmdUninit(parseTargetArg(args.slice(1)));

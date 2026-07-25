@@ -1,19 +1,25 @@
 # WoWok Skills
 
-WoWok AI Skills for Claude Code, OpenAI Codex, Trae IDE, CodeBuddy, Cursor, and GitHub Copilot — Helping AI use WoWok MCP tools correctly.
+WoWok AI Skills for Claude Code, OpenAI Codex, ChatGPT Desktop (Codex Mode), Trae IDE, CodeBuddy, Cursor, Windsurf, Qoder, Roo Code, and GitHub Copilot — Helping AI use WoWok MCP tools correctly.
 
 ## Supported AI Clients
 
-| Client | Skills Directory | Format |
-|--------|-----------------|--------|
-| **Claude Code** | `.claude/skills/` | SKILL.md (native) |
-| **OpenAI Codex** | `.codex/skills/` | SKILL.md (native) |
-| **Trae IDE** | `.agents/skills/` | SKILL.md (native) |
-| **CodeBuddy** | `.codebuddy/skills/` | SKILL.md (native) |
-| **Cursor IDE** | `.cursor/rules/` | `.mdc` (frontmatter adapted) |
-| **GitHub Copilot** | `.github/prompts/` | `.prompt.md` (plain markdown) |
+| Client | Skills Directory | Format | MCP Support |
+|--------|-----------------|--------|-------------|
+| **Claude Code** | `.claude/skills/` | SKILL.md (native) | ✅ `~/.claude/settings.json` |
+| **OpenAI Codex CLI** | `.codex/skills/` | SKILL.md (native) | ✅ `~/.codex/config.toml` |
+| **ChatGPT Desktop (Codex Mode)** | `.codex/skills/` | SKILL.md (native) | ✅ Shares Codex CLI config (`~/.codex/config.toml`) |
+| **Trae IDE** | `.agents/skills/` | SKILL.md (native) | ⚙️ IDE-managed via `~/.trae-cn/mcps/` |
+| **CodeBuddy** | `.codebuddy/skills/` | SKILL.md (native) | ✅ `~/.codebuddy/mcp.json` |
+| **Cursor IDE** | `.cursor/rules/` | `.mdc` (frontmatter adapted) | ✅ Project-level `.cursor/mcp.json` |
+| **Windsurf** | `.windsurf/skills/` | SKILL.md (native) | ✅ `~/.codeium/windsurf/mcp_config.json` |
+| **Qoder** | `.qoder/skills/` | SKILL.md (native) | ✅ `~/.qoder/mcp-settings.json` (project: `.qoder/mcp.json`) |
+| **Roo Code** | `.roo/skills/` | SKILL.md (native) | ✅ `~/.roo/mcp_settings.json` (project: `.roo/mcp.json`) |
+| **GitHub Copilot** | `.github/prompts/` | `.prompt.md` (plain markdown) | ✅ `~/.copilot/mcp-config.json` |
 
 > **Format notes**: For Cursor, the YAML frontmatter is adapted to `description` + `alwaysApply`. For Copilot, frontmatter is stripped — pure Markdown instructions. Codex follows the [Agent Skills](https://agentskills.io) open standard natively. All other clients use the native SKILL.md format directly.
+>
+> **ChatGPT Desktop (Chat Mode)** does **not** support local skills or stdio MCP. Only the **Codex Mode** (built into ChatGPT Desktop) inherits Codex CLI's skills and MCP configuration. Full MCP (write operations) in ChatGPT Desktop requires **Business, Enterprise, or Edu** plans (beta).
 
 
 ## How It Works
@@ -23,13 +29,17 @@ Each skill is a `SKILL.md` file with YAML frontmatter. AI clients discover them 
 ```
 npm install -g @wowok/skills
        │
-       └── postinstall ──→ Copies SKILL.md to ~/.claude/skills/wowok-*/
-                            AI discovers them on next session ✅
+       ├── postinstall ──→ Copies SKILL.md to ~/.claude/skills/wowok-*/
+       └── auto MCP   ──→ Installs/upgrades @wowok/agent-mcp
+                           Registers MCP in client config
+                           Restarts MCP server process
+                           AI discovers on next session ✅
 
 # For other clients, set the WOWOK_SKILLS_TARGETS env var:
 WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
        │
-       └── postinstall ──→ Copies to ~/.claude/skills/ AND ~/.agents/skills/
+       ├── postinstall ──→ Copies to ~/.claude/skills/ AND ~/.agents/skills/
+       └── auto MCP   ──→ Same MCP install/register/restart for each client
 ```
 
 **Two loading modes:**
@@ -43,7 +53,9 @@ WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 
 ### 1. Prerequisites
 
-Setup WoWok Agent (MCP Server) in your Claude Code MCP configuration:
+The `@wowok/skills` package will **automatically install and configure** the `@wowok/agent-mcp` MCP server for you. No manual setup needed.
+
+To configure MCP manually for a specific client, see the [MCP Support](#supported-ai-clients) table above. The standard WoWok MCP server entry is:
 
 ```json
 {
@@ -68,7 +80,7 @@ npm install -g @wowok/skills
 WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 
 # All supported clients:
-WOWOK_SKILLS_TARGETS=claude,codex,agents,codebuddy,cursor,copilot npm install -g @wowok/skills
+WOWOK_SKILLS_TARGETS=claude,codex,agents,codebuddy,cursor,windsurf,qoder,roo,copilot npm install -g @wowok/skills
 ```
 
 This copies skills to the respective `~/.*/skills/` directories. They will be available in your next session.
@@ -82,7 +94,7 @@ cd your-project
 # Claude Code (default):
 wowok-skills init
 
-# OpenAI Codex:
+# OpenAI Codex / ChatGPT Desktop (Codex Mode):
 wowok-skills init --target codex
 
 # Trae IDE:
@@ -145,15 +157,20 @@ wowok-skills uninit
 | `wowok-skills role <role>` | — | List skills by role |
 | `wowok-skills recommend <intent>` | — | Recommend skills by intent |
 | `wowok-skills init` | Project | Install to `.claude/skills/` (default) |
-| `wowok-skills init --target codex` | Project | Install to `.codex/skills/` (Codex) |
+| `wowok-skills init --target codex` | Project | Install to `.codex/skills/` (Codex / ChatGPT Desktop) |
 | `wowok-skills init --target agents` | Project | Install to `.agents/skills/` (Trae) |
 | `wowok-skills init --target cursor` | Project | Install to `.cursor/rules/` (Cursor) |
 | `wowok-skills init --target copilot` | Project | Install to `.github/prompts/` (Copilot) |
-| `wowok-skills init --target all` | Project | Install to all 6 clients |
+| `wowok-skills init --target windsurf` | Project | Install to `.windsurf/skills/` (Windsurf) |
+| `wowok-skills init --target qoder` | Project | Install to `.qoder/skills/` (Qoder) |
+| `wowok-skills init --target roo` | Project | Install to `.roo/skills/` (Roo Code) |
+| `wowok-skills init --target all` | Project | Install to all 10 clients |
 | `wowok-skills uninit` | Project | Remove from `.claude/skills/` (default) |
 | `wowok-skills uninit --target all` | Project | Remove from all clients |
 
 > **Note**: `init` / `uninit` require `@wowok/skills` to be globally installed first.
+>
+> **MCP auto-install**: `npm install -g @wowok/skills` (postinstall) and `wowok-skills init` automatically install/upgrade the `@wowok/agent-mcp` MCP server and register it in each client's config. Set `WOWOK_SKILLS_NO_MCP=1` to skip MCP management.
 
 ## Programmatic API
 
