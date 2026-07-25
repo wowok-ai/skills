@@ -435,8 +435,19 @@ function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>
   if (ALL_CLIENT_TARGETS.includes(targetArg as any)) {
     return [targetArg as Exclude<ClientTarget, 'all'>];
   }
-  console.error(`Invalid target: ${targetArg}`);
-  console.error(`Valid targets: claude, cursor, windsurf, codebuddy, codex, trae, qoder, roo, copilot, all`);
+  console.error(`Invalid target: "${targetArg}"`);
+  console.error('');
+  console.error('Supported targets:');
+  console.error('  claude       .claude/skills/       (Claude Code)');
+  console.error('  cursor       .cursor/rules/        (Cursor IDE)');
+  console.error('  windsurf     .windsurf/skills/     (Windsurf / Codeium)');
+  console.error('  codebuddy    .codebuddy/skills/    (CodeBuddy)');
+  console.error('  codex        .codex/skills/        (OpenAI Codex / ChatGPT Desktop Codex Mode)');
+  console.error('  trae         .agents/skills/       (Trae CN & Trae Work)');
+  console.error('  qoder        .qoder/skills/        (Qoder / Qoder CN)');
+  console.error('  roo          .roo/skills/          (Roo Code)');
+  console.error('  copilot      .github/prompts/      (GitHub Copilot)');
+  console.error('  all          All of the above');
   process.exit(1);
 }
 
@@ -629,11 +640,11 @@ function printUsage(): void {
   console.log('  cursor       .cursor/rules/        (Cursor IDE)');
   console.log('  windsurf     .windsurf/skills/     (Windsurf / Codeium)');
   console.log('  codebuddy    .codebuddy/skills/    (CodeBuddy)');
-  console.log('  codex        .codex/skills/         (OpenAI Codex, no MCP)');
+  console.log('  codex        .codex/skills/        (OpenAI Codex / ChatGPT Desktop Codex Mode)');
   console.log('  trae         .agents/skills/       (Trae CN & Trae Work)');
   console.log('  qoder        .qoder/skills/        (Qoder / Qoder CN)');
   console.log('  roo          .roo/skills/          (Roo Code)');
-  console.log('  copilot      .github/prompts/      (GitHub Copilot, no MCP)');
+  console.log('  copilot      .github/prompts/      (GitHub Copilot)');
   console.log('  all          All of the above');
   console.log('');
   console.log('Examples:');
@@ -651,7 +662,7 @@ function printUsage(): void {
 function main() {
   const args = process.argv.slice(2);
 
-  if (args.length === 0) {
+  if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     printUsage();
     process.exit(0);
   }
