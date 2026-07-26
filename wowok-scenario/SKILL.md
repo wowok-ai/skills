@@ -116,6 +116,8 @@ When two modes specify different Permission indexes for the same role, user deci
 | `freelance` | 7 nodes (ordered→...→completed→{wonder\|no_wonder}) | 5 (buy/deliver/accept/withdraw/rating_window) | 2 (100% provider at completed / 0 at wonder-no_wonder) | Customer never accepts delivery |
 | `rental` | 10 nodes (reserved→...→completed→{wonder\|no_wonder}) | 5 (deposit/return/inspect/damage/rating_window) | 3 (rent at completed / refund-to-order via Allocator / damage deduct) | Owner claims damage without pre-rental WIP |
 
+> **Freelance entry-node forward (CRITICAL)**: the entry node (`prev_node: ""`, typically "Ordered") MUST have ≥1 forward (e.g. `{next_node:"Ordered", namedOperator:"", weight:1}`). Without it, Progress is permanently stuck at `current=""`. The 5-Guard default covers buy/deliver/accept/withdraw/rating_window; `penalty_guard` is OPTIONAL (add only if penalty deduction is needed — most freelance flows omit it).
+
 > **Dispute Independence**: `refunded`/`disputed`/`arb` MUST NOT appear as Machine nodes (R-M1-11 critical). Refunds flow through Allocator (100%→OrderHolder) or Arbitration (dispute → ruling → arb_withdraw), both off-Machine. Wonder/no_wonder are post-completion reputation terminals only.
 
 ### Freelance Audit Checklist (pre-publish BLOCKERS)
@@ -144,10 +146,120 @@ When two modes specify different Permission indexes for the same role, user deci
 
 ### Rental Failure Playbooks
 
-- Renter never returns: timeout forward to `damage_confirmed`, `deposit_deduct` Allocator fires
+- Renter never returns: timeout forward to `damage_confirmed`, `damage_deduct` Allocator fires (deduct deposit to host)
 - No pre-rental WIP: impossible post-publish — audit checklist blocks this at publish time
-- Owner refuses inspect: timeout forward auto-passes `inspect_guard`, `refund_guard` fires, deposit returns
+- Owner refuses inspect: timeout forward auto-passes `inspect_guard`, `refund_guard` fires on `return_approved`, deposit returns to customer
 - Double-spend dispute: Machine topology ensures mutually exclusive forwards (first-Pair-wins), `escalate_arbiter` routes to Arbitration
+
+### Rental Mode Template (R-M1-11 Compliant)
+
+> **P3-03 fix**: The original Turo deployment used `deposit_refunded`/`deposit_deducted` as Machine nodes, which violates R-M1-11. This template replaces them with R-M1-11-compliant node names (`return_approved` / `damage_confirmed`). Deposit refund/deduction flows through Allocator triggered by these nodes, NOT through "refund terminal" nodes.
+
+#### Corrected 10-Node Machine Topology
+
+```
+reserved → paid_deposit → in_use → returned → inspected ─┬─→ return_approved → completed
+                                                            ├─→ damage_confirmed → completed
+                                                            └─→ arbiter_rule → completed
+
+completed → wonder | no_wonder (rating terminals, optional)
+```
+
+**Node inventory (10 nodes)**:
+
+| # | Node | Operator | Business meaning | Entry forward |
+|---|------|----------|------------------|---------------|
+| 1 | `reserved` | system | Renter selected item, pending payment | Order creation (auto) |
+| 2 | `paid_deposit` | customer | Paid rent + deposit | `pay_deposit_and_rent` (Customer, `namedOperator:""`) |
+| 3 | `in_use` | host | Item handed over, renter using | `pickup` (Host, `permissionIndex:1000`) |
+| 4 | `returned` | customer | Renter returned item | `trigger_return` (Customer, `namedOperator:""`) |
+| 5 | `inspected` | host | Host inspected condition | `inspect_item` (Host, `permissionIndex:1000`) |
+| 6 | `return_approved` | host | No damage — refund deposit | `approve_return` (Host, `permissionIndex:1000`) — **path 1** |
+| 7 | `damage_confirmed` | host | Damage confirmed — deduct deposit | `claim_damage` (Host, `permissionIndex:1000`) — **path 2** |
+| 8 | `arbiter_rule` | system | Escalated to arbitration | `escalate_arbiter` (Customer, `namedOperator:""`) — **path 3** |
+| 9 | `completed` | host | Trip finalized | `finalize` (Host, `permissionIndex:1000`) |
+| 10 | `wonder` / `no_wonder` | customer | Rating terminal (one of two) | `rate_good` / `rate_bad` (Customer, `namedOperator:""`) |
+
+**R-M1-11 compliance**: NO `deposit_refunded`, `deposit_deducted`, or `refunded` nodes. Deposit refund/deduction flows through Allocator triggered by `return_approved` / `damage_confirmed` nodes. `arbiter_rule` is allowed (it routes to Arbitration, not a refund terminal).
+
+#### 3 Mutually Exclusive Forwards from `inspected`
+
+| Forward | Next node | Operator | Trigger condition | Allocator fired |
+|---------|-----------|----------|-------------------|----------------|
+| `approve_return` | `return_approved` | Host (perm 1000) | No damage WIP diff | Allocator 1 (refund to customer) |
+| `claim_damage` | `damage_confirmed` | Host (perm 1000) | Damage WIP diff > 0 | Allocator 2 (deduct to host) |
+| `escalate_arbiter` | `arbiter_rule` | Customer (`namedOperator:""`) | Dispute | Arbitration (off-Machine) |
+
+Move contract guarantees first-Forward-wins: Progress can only advance from `inspected` to ONE of the three next nodes.
+
+#### 3 Allocator Templates (Amount mode recommended)
+
+> **Why Amount mode**: Rate mode requires sum == 10000 (hard constraint). Amount mode is clearer for fixed rent/deposit amounts. See [Allocation Mode Documentation](../../wiki/market/行业/租赁-Turo/06-Allocation模式说明-待审核.md) for details.
+
+**Allocator 0 — Rent payment (triggers on `completed`)**:
+```json
+{
+  "guard": "rent_completed_guard",
+  "sharing": [
+    { "who": { "Entity": { "name_or_address": "<host>" } }, "sharing": "750000000", "mode": "Amount" }
+  ]
+}
+```
+- Fires when `progress.current == "completed"` (via `rent_completed_guard`)
+- Pays 0.75 WOW rent to host
+
+**Allocator 1 — Deposit refund (triggers on `return_approved`)**:
+```json
+{
+  "guard": "refund_guard",
+  "sharing": [
+    { "who": { "GuardIdentifier": 0 }, "sharing": "250000000", "mode": "Amount" }
+  ]
+}
+```
+- Fires when `progress.current == "return_approved"` (via `refund_guard`)
+- Refunds 0.25 WOW deposit to customer (Order owner, via `GuardIdentifier:0`)
+
+**Allocator 2 — Damage deduction (triggers on `damage_confirmed`)**:
+```json
+{
+  "guard": "damage_guard",
+  "sharing": [
+    { "who": { "Entity": { "name_or_address": "<host>" } }, "sharing": "250000000", "mode": "Amount" }
+  ]
+}
+```
+- Fires when `progress.current == "damage_confirmed"` (via `damage_guard`)
+- Deducts 0.25 WOW deposit to host
+
+#### 5 Guard Templates
+
+| Guard | Type | Trigger condition | Purpose |
+|-------|------|-------------------|---------|
+| `deposit_guard` | Permission | `progress.current == "paid_deposit"` + signer is Customer | Verify customer paid rent + deposit |
+| `return_guard` | Permission | `progress.current == "returned"` + signer is Host | Verify item returned |
+| `inspect_guard` | Permission | `progress.current == "inspected"` + signer is Host | Verify inspection done |
+| `damage_guard` | WIP | Pre + post WIP hash diff > 0 | Verify damage evidence |
+| `rating_window_guard` | Permission | `progress.current == "completed"` + within N days | Rating window timer |
+
+#### Permission Index Design
+
+| Role | Permission Index | Operations |
+|------|------------------|------------|
+| Host | 1000 | pickup / inspect / approve_return / claim_damage / finalize |
+| Arbiter | 1500 | arbitration ruling (via `voting_guard`, NOT Permission index) |
+| Customer | (no index) | pay_deposit / trigger_return / escalate_arbiter (via `namedOperator:""`) |
+
+**Customer authorization**: uses `namedOperator: ""` (empty string = OrderHolder). Set automatically by `service::buy` when Order is created. No Permission index needed.
+
+#### Migration Guide (from R-M1-11 violating deployment)
+
+If you have an existing rental Machine with `deposit_refunded`/`deposit_deducted` nodes:
+
+1. **Clone the Machine** (nodes are immutable after publish)
+2. **Rename nodes**: `deposit_refunded` → `return_approved`; `deposit_deducted` → (remove, merge into `damage_confirmed`)
+3. **Rebind Allocators**: Allocator 1 trigger node `deposit_refunded` → `return_approved`; Allocator 2 trigger node `deposit_deducted` → `damage_confirmed`
+4. **Publish new Machine** and rebind to Service (requires Service to be in draft state; if already published, use `service.machine_rebind` with setting_lock_duration wait)
 
 ---
 
@@ -176,6 +288,35 @@ When two modes specify different Permission indexes for the same role, user deci
 - **Default Allocator**: multi-tier — deposit 20% to agency, final 80% to agency, then agency-side Allocation splits to hotel/guide/driver per segment
 - **Key trait**: multi-tier Allocation is WoWok's unique advantage over traditional travel platforms
 - **GTM angle**: targets "paid in full then service shrinks" pain point
+
+### Travel Mode Preset (Reference)
+
+> Concise preset for quick deployment. For full template, see Phase 2 expansion.
+
+**10-Node Machine Workflow**:
+```
+inquiry → booking → payment → confirmation → preparation → departure → in-progress → completion → review → refund
+```
+- `refund` is a routing node (Allocator-triggered), NOT a refund terminal — R-M1-11 compliant
+- Rating terminals (`wonder` / `no_wonder`) optional after `review`
+
+**4 Guards**:
+
+| Guard | Type | Trigger | Purpose |
+|-------|------|---------|---------|
+| `buy_guard` | Permission | Order creation | Validate customer eligibility + segment WIP |
+| `withdraw_guard` | Permission | `progress.current == "completion"` | Verify trip completed before host payout |
+| `refund_guard` | Permission | `progress.current == "refund"` | Verify trip interruption / agency approval |
+| `dispute_guard` | Permission | Arb escalation | Route to Arbitration (off-Machine) |
+
+**2 Allocators** (Rate mode, sum = 10000 each):
+
+| Allocator | Trigger Node | sharing[0] | sharing[1] |
+|-----------|--------------|------------|------------|
+| Withdraw | `completion` | Agency 80% (Entity) | Hotel/Guide/Driver 20% (Entity) |
+| Refund | `refund` | Customer 100% (GuardIdentifier:0 = Order owner) | — |
+
+**Required flags**: `require_compensation_fund = true` (protects customer prepayment if agency defaults)
 
 ---
 

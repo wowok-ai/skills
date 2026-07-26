@@ -108,7 +108,10 @@ This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completen
 | Permission configured | Permission object exists with correct indices for every Forward | FAIL: no Permission |
 | Allocators configured | `order_allocators` non-empty and each Allocator audited | FAIL: no Allocators |
 | User confirmation | User has explicitly confirmed publish intent | FAIL: no confirmation |
-| Compensation fund | `compensation_fund` funded (recommended for trust) | WARN: empty fund |
+| Compensation fund present | `compensation_fund` funded (recommended for trust) | WARN: empty fund |
+| Compensation fund invariant | If `compensation_fund > 0` then `arbitrations` MUST be non-empty (per service.move:494-496 `assert!(vector::length(&self.arbitrations) > 0, E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND)`) | FAIL: funded but no Arbitration bound |
+| order_allocators immutability | `order_allocators` set BEFORE publish (service.move:503 `assert!(!self.bPublished)`) — cannot be modified post-publish | FAIL: attempt to modify after publish |
+| machine immutability | `machine` bound BEFORE publish (service.move:633 `assert!(!self.bPublished)`) — cannot be modified post-publish | FAIL: attempt to modify after publish |
 | Backup export | `machineNode2file` + `guard2file` backups persisted | WARN: no backup |
 
 ---

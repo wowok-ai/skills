@@ -220,14 +220,32 @@ All stem from the same root: **every on-chain object has a publish/create freeze
 - Never publish before all Guards are created, tested, and bound.
 - `clear` is irreversible — export via `machineNode2file` first.
 
+### R-M1-11 Anti-Pattern: Refund Terminal Nodes (CRITICAL)
+
+**Forbidden node names**: `deposit_refunded`, `deposit_deducted`, `refunded`, `disputed` (when used as a refund terminal), or any node implying the Machine itself performs fund movement.
+
+**Why forbidden**: Machines are pure state machines — they have **no fund movement primitive**. A node named `deposit_refunded` suggests the Machine itself refunds the deposit, but in reality it just routes; the actual refund MUST be triggered by an **Allocator** watching `progress.current == <trigger_node>`. Without a bound Allocator, funds lock permanently in the Order escrow.
+
+**Correct pattern**:
+| Wrong | Correct (R-M1-11 compliant) |
+|-------|------------------------------|
+| `deposit_refunded` (terminal) | `return_approved` (routing) → Allocator fires refund |
+| `deposit_deducted` (terminal) | `damage_confirmed` (routing) → Allocator fires deduction |
+| `refunded` (terminal) | `refund_routing` (routing) → Allocator fires |
+| N/A (dispute) | `arbiter_rule` (routing) → Arbitration off-Machine (no Allocator) |
+
+See [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template (R-M1-11 Compliant)" for a complete 10-node rental topology.
+
 ### Pre-Publish Validation Checklist
 
 Before `publish: true`, verify:
 
 - [ ] **Entry point exists**: at least one Pair with `prev_node: ""` — workflow cannot start otherwise
+- [ ] **⚠ Entry node has ≥1 Forward** (CRITICAL): entry node (`prev_node: ""`) MUST have at least one forward — Progress starts at `current=""` and follows the entry node's forwards to advance. Empty entry forwards = Progress permanently stuck at `current=""`. Schema-enforced (P0-2). Example: `{name:"Ordered", pairs:[{prev_node:"", forwards:[{next_node:"Ordered", namedOperator:"", weight:1}]}]}`
 - [ ] **Every node has outgoing Forwards** (except terminals): no dead-end nodes
 - [ ] **Every node has incoming Pair** (except entry): no orphaned nodes
 - [ ] **All thresholds independently achievable**: no dead branches (competing Pair always wins first)
+- [ ] **⚠ R-M1-11 Compliance** (CRITICAL for deposit/refund scenarios): NO terminal nodes named `deposit_refunded`, `deposit_deducted`, `refunded`, or any name implying Machine-internal refund/deduction. Refund/deduction MUST flow through an **Allocator** triggered by a routing node (e.g., `return_approved`, `damage_confirmed`, `arbiter_rule`). Violating this causes funds to lock in the Machine with no Allocator path. See [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template (R-M1-11 Compliant)".
 - [ ] All Guards exist on-chain and tested (use `gen_passport`)
 - [ ] `namedOperator` vs `permissionIndex` correct per Forward
 - [ ] Every Forward has at least one of `namedOperator` or `permissionIndex`

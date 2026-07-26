@@ -75,6 +75,8 @@ Use `wip_file` → `op: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wi
 
 **Step 1**: `query_toolkit` → `onchain_objects` for `<machine_id>`. Fail if `bPublished === false` or `bPaused === true`.
 
+**Step 1b (entry-node forward check)**: In the exported Machine JSON, verify the entry node (`prev_node: ""`) has ≥1 forward. If empty, Progress will be permanently stuck at `current=""` — flag as 🔴 BLOCKER. (New Machines are schema-blocked from this, but legacy Machines may still have it.)
+
 **Step 2**: `machineNode2file` → export the complete Machine JSON. Contains all nodes and forwards — parse locally, never node-by-node. Machine structure: see [wowok-machine](../wowok-machine/SKILL.md).
 
 **Step 3: Classify every forward**:
@@ -252,6 +254,15 @@ Present all three dimensions. Never just the operation name.
 - `namedOperator === ""` + Guard → passport required, no bypass
 - `namedOperator !== ""` → not user-operable
 
+### Progress.current="" Diagnostic (stuck at initial state)
+
+If `query_toolkit` returns a Progress with `current: ""`:
+
+1. **Root cause**: Machine entry node (`prev_node: ""`) has empty `forwards[]` — Progress cannot advance.
+2. **Query Machine**: `query_toolkit` → `onchain_objects` for `progress.machine` → inspect `node.pairs` for `prev_node: ""`.
+3. **If forwards empty**: Machine must be republished with ≥1 forward on the entry node (nodes are immutable after publish — clone + add forward + new Machine + rebind to Service).
+4. **MCP auto-diagnostic**: `query_toolkit` now attaches `_diagnostic` with cause + 5-step fix guide when `current=""` is detected.
+
 ---
 
 ## Phase 5: Arbitration
@@ -267,6 +278,75 @@ Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confir
 ## Fund Management
 
 Builder-only operations: `order.transfer_to` (ownership), `order.receive` (withdraw — agents can execute, only builder receives).
+
+### How to Withdraw Funds from Order (`order.receive`)
+
+After Allocation distributes funds to Order (as `CoinWrapper` objects), the builder (Order owner) MUST call `order.receive` to unwrap and withdraw the funds. Without this step, funds stay locked in the Order as `CoinWrapper` objects.
+
+> **P0-01 / P3-04 fix**: The `receive` field now uses `ReceivedObjectsOrRecentlySchema` (consistent with `owner_receive` on all other objects). Do NOT wrap in `{result: ...}` — pass directly.
+
+#### Step 1: Query received objects (optional but recommended)
+
+Before calling `order.receive`, query what the Order has received to verify there are funds to withdraw:
+
+```json
+{
+  "tool": "query_toolkit",
+  "query_type": "onchain_received",
+  "name_or_address": "<order_name_or_address>",
+  "type": "CoinWrapper"
+}
+```
+
+**Expected response**: A `ReceivedBalance` object with `token_type`, `balance`, and `received[]` array of `CoinWrapper` objects. If empty, there is nothing to withdraw yet.
+
+#### Step 2: Call `order.receive` with `"recently"` (simplest form)
+
+Use the string `"recently"` to auto-receive all recently received `CoinWrapper` objects:
+
+```json
+{
+  "tool": "onchain_operations",
+  "data": {
+    "operation_type": "order",
+    "data": {
+      "object": "<order_name_or_address>",
+      "receive": "recently"
+    }
+  },
+  "env": {
+    "account": "<builder_account_name>",
+    "network": "testnet",
+    "confirmed": true
+  }
+}
+```
+
+**Expected result**:
+- Builder account receives the underlying token (e.g., WOW) — `CoinWrapper` is auto-unwrapped
+- Transaction digest returned
+- Order's received `CoinWrapper` objects are consumed
+
+#### Step 2 (alternatives)
+
+For precise control, pass an explicit array of `{id, type}` objects, or pass the `ReceivedBalance` object from Step 1 query directly as `receive`. Both forms accept the same `env` block as the `"recently"` form above.
+
+#### Common Pitfalls
+
+- ❌ **Do NOT wrap in `{result: ...}`** — the `receive` field accepts `ReceivedObjectsOrRecently` directly, NOT `QueryReceivedResult` (`{result: [...]}`)
+- ❌ **Do NOT call `order.receive` if no funds received yet** — query first via Step 1
+- ✅ Only the **builder** (Order owner) can call `receive` — agents cannot withdraw funds (they can execute the call, but only builder receives)
+- ✅ `CoinWrapper` is auto-unwrapped to the underlying token (e.g., WOW)
+- ✅ The `receive` field is consistent with `owner_receive` on all other objects (arbitration/contact/demand/machine/permission/repository/reward/service/treasury)
+
+#### When to Call `order.receive`
+
+| Trigger | Why | Action |
+|---------|-----|--------|
+| Allocation fires (e.g., refund Allocator triggers on `return_approved`) | Order receives `CoinWrapper` with refund amount | Call `order.receive` to withdraw to builder account |
+| Arbitration awards compensation | Order receives `CoinWrapper` with award amount | Call `order.receive` to withdraw to builder account |
+| Multi-stage allocation (partial refund + partial deduction) | Order receives multiple `CoinWrapper` objects | Call `order.receive` with `"recently"` to receive all at once |
+| Order closed with no allocation | No `CoinWrapper` received | Do NOT call `order.receive` (nothing to withdraw) |
 
 ---
 

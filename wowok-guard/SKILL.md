@@ -160,6 +160,30 @@ External Repository? → query + table entry declaring Repository address
 Entity reputation?   → query + table entry declaring ENTITY_REGISTRAR_ADDRESS(0xaab) / ENTITY_LINKER_ADDRESS(0xaaa)
 ```
 
+### Circular Dependency Handling (Service ↔ Guard)
+
+When a Guard needs to query a Service that doesn't exist yet (classic chicken-and-egg: `buy_guard` validates Service fields, but Service creation needs `buy_guard` address), use **LocalMark NAME** (not address) in the Guard's query table. LocalMark is resolved by the SDK at publish time, deferring the address binding until after both objects exist.
+
+**Workflow** (4-step safe pattern):
+1. **Create Service (no publish)** — Service exists as draft with a LocalMark name
+2. **Create Guard** — In the Guard table, reference the Service via `name_or_address: "<service_local_mark_name>"` (NOT a hardcoded address)
+3. **Update Service** — Set `service.buy_guard = <guard_address>` (now resolvable since Guard is created)
+4. **Publish Service** — SDK resolves LocalMark → on-chain address; both objects now bound
+
+> **Why LocalMark**: A Guard that hardcodes a Service address fails creation if the Service doesn't exist yet. LocalMark defers resolution, allowing the Guard to be created first (or in either order). This pattern also applies to Allocator guards that query Service fields.
+
+### Triple Verification Template (withdraw / refund Guards)
+
+Withdraw and refund guards protect fund flow — the highest-risk operations. They should verify **three independent conditions** (AND-ed):
+
+| # | Verification | What to Check | Typical Query |
+|---|---------------|---------------|---------------|
+| (a) | Order status | Order is in expected state (not cancelled / disputed) | `order.service` + `order.balance` |
+| (b) | Progress node completion | Progress.current == expected node (e.g. "completion" / "refund") | `progress.current` (via witness 100 from Order) |
+| (c) | Permission / role | Caller is authorized (merchant / arbiter / customer) | `permission.owner` / `permission.admin has` (Level 2 identity-set) |
+
+> **Why all three**: (a) alone is insufficient — Order may be in correct state but Progress not advanced. (b) alone is insufficient — Progress may be at correct node but Order cancelled. (c) alone is insufficient — caller may be authorized but state wrong. AND-combine all three at the Guard root.
+
 ### Design Before Building
 
 **Design thoroughly before calling the create operation** — there is no edit phase after creation (see The Immutability Contract above).

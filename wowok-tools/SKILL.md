@@ -99,7 +99,8 @@ When a Guard queries a related object (e.g., Progress from an Order), `convert_w
 |--------|------------|----------|
 | Guard | After creation | Create new, update all refs |
 | Machine (nodes) | After publish | Create new Machine, rebind Service |
-| Service `machine`/`order_allocators` | After publish | Create new Service |
+| Service `machine`/`order_allocators`/`arbitrations` | After publish (SDK-locked) | Create new Service |
+| Service `buy_guard` | **NOT locked** — mutable after publish | Can modify directly |
 | Passport | After generation | Regenerate with `gen_passport` |
 | Payment | After transfer | Irreversible — no protocol refund |
 
@@ -150,24 +151,37 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 
 | `operation_type` | Key Constraints (not in schema) |
 |-----------------|----------------------------------|
-| `service` | `machine` must be **published**. Allocators: array order = priority (first-Guard-wins). Publish locks `machine`/`order_allocators`; `sales`/`discount`/`description` stay mutable. |
+| `service` | `machine` must be **published**. Allocators: array order = priority (first-Guard-wins). **Publish locks 3 fields (SDK-level)**: `machine`/`order_allocators`/`arbitrations` — MUST be set BEFORE `publish:true`. **buy_guard is MUTABLE after publish** (no SDK/Move lock). `setting_locked_time_add` is extendable. TIME-LOCKED (need pause + setting_lock_duration): `rewards` remove/clear. REMAIN MUTABLE: `sales`/`discount`/`description`/`location`/`pause`/`repositories`/`rewards`(add)/`compensation_fund_add`/`customer_required`/`um`/`buy_guard`. To change locked fields after publish, clone a new Service. |
 | `machine` | Nodes immutable after publish. Forward needs ≥1 of `namedOperator`/`permissionIndex` (both empty = SDK error). `""` = entry node. → [wowok-machine](../wowok-machine/SKILL.md) |
-| `progress` | Two-phase: `hold:true` (lock) → `hold:false` (submit). `adminUnhold:true` force-releases. SDK auto-fetches Machine when resolving `object_address`. **⚠ Routing rule**: Use `progress.operate` ONLY for forwards with non-empty `namedOperator` or `permissionIndex`-only. For forwards with `namedOperator=""` (OrderHolder), use `order.progress` instead — direct `progress::next` aborts with Permission denied (code 5). |
+| `progress` | CANONICAL form: `operate: {operation: {next_node_name, forward}, op: "next"\|"hold"\|"unhold"\|"adminUnhold", message?}`. LEGACY `hold: boolean` is auto-converted (`hold:true`→`op:'hold'`, `hold:false`→`op:'next'`). SDK auto-fetches Machine when resolving `object_address`. **⚠ Routing rule**: Use `progress.operate` ONLY for forwards with non-empty `namedOperator` or `permissionIndex`-only. For forwards with `namedOperator=""` (OrderHolder), use `order.progress` instead — direct `progress::next` aborts with Permission denied (code 5). |
 | `arbitration` | MAX 20 propositions, 520 voters. Verdict (2→3) **irreversible** — only customer can `order.arb_objection`. Non-Finished withdrawal = 30-day wait. → [wowok-arbitrator](../wowok-arbitrator/SKILL.md) |
 | `guard` | `root.type:"node"` (inline) or `"file"` (JSON/MD). MAX 4 `rely`. `rep:false` Guards excluded from others' `rely`. System addresses `0xaab`/`0xaaa` need table entries. → [wowok-guard](../wowok-guard/SKILL.md) |
 | `gen_passport` | MAX 20 Guards/call (AND-ed). Omit `info` to auto-fetch. Passport = frozen immutable credential. |
 | `order` | Agents can operate but **cannot withdraw** — only builder. `order.progress`+Guard requires Passport. **⚠ Routing rule**: `order.progress` works ONLY for forwards with `namedOperator=""` (OrderHolder) — uses `order.has_op_permission`. For non-empty `namedOperator` or `permissionIndex`-only forwards, use `progress.operate` on the Progress object directly. Arb via `order.arb_confirm`/`arb_objection` (not `arbitration` directly). `arb_claim_compensation` once-only. → [wowok-order](../wowok-order/SKILL.md) |
-| `payment` | `type_parameter` required. **Irreversible** — no refund. |
+| `payment` | TWO modes: (1) CREATE: `type_parameter` required, `revenue[]` + `info`. **Irreversible** — no refund. (2) RECEIVE: `{object: '<coinwrapper_id_or_name>', receive: true, type_parameter: '0x2::wow::WOW'}` — unwraps a CoinWrapper (created by Allocation's `alloc_by_guard`) to the caller's wallet via `payment::unwrap_to_myself`. **CoinWrapper DOES arrive** in recipient's wallet via `transfer::public_transfer` (as an owned object), but it is NOT spendable coins — recipient must call `payment receive` to unwrap it into actual coins. Find received CoinWrappers via `query_toolkit` with `query_type='onchain_received'`. |
 | `personal` | **Permanently public** — warn users before writing sensitive data. |
 | `demand` | Guard-gated: `guards` filter presenters. Separate from Service. |
 | `treasury` | Guardable deposits/withdrawals. Each entry creates Payment record for audit. |
 | `repository` | Composite key: `name + entity`. Guard validates writer + content. |
 | `reward` | `guard_add`: `Fixed` (equal) or `GuardU64Identifier` (dynamic). `guard_expiration_time` freezes Guard list; `null` removes. |
-| `allocation` | Auto-executes on Progress advance. Order: Amount → Rate → Surplus, first-Guard-wins per mode. |
+| `allocation` | **Manual trigger** — `alloc_by_guard` does NOT auto-execute on Progress advance. After advancing Progress, call `allocation` with `{object: '<alloc_name>', alloc_by_guard: '<guard_name>'}` to release funds. Order: Amount → Rate → Surplus, first-Guard-wins per mode. Each trigger releases currently-available balance based on Guard validation. Also: `received_coins` unwraps CoinWrappers into the Allocation's pending balance for re-allocation. |
 | `contact` | Bridge: Service `um` ↔ Messenger `ims[]`. IM mutations need permission index 453; no events (poll `ims[]`). |
 | `permission` | 0–999 reserved; custom ≥1000. SDK rejects <1000. Reusable across objects. |
 | `proof` | Immutable (freeze_object). `proof_type=1` reserved for WTS; >100 for custom. Large data → Repository + `about_address`, not inline. |
 | `gen_proof` | Convenience wrapper: creates Proof without `namedNew`. Same immutability rules. Use `proof` with `namedNew` when naming is needed. |
+
+### Customer Operation Routing (decision tree)
+
+```
+forward.namedOperator?
+├─ "" (empty = OrderHolder) → order.progress (NOT progress.operate)
+│   └─ progress::next aborts: "Permission denied" (code 5)
+│   └─ Needs Passport if forward has guard
+└─ "<non-empty>" or permissionIndex-only → progress.operate
+    └─ Provider or named operator executes
+```
+
+> **Invariant**: `namedOperator === ""` ⟹ MUST use `order.progress`. No exceptions.
 
 **WIP hash anti-bait**: Capture `sale.wip_hash` when browsing; pass in `buy.items[].wip_hash`. Two-layer: SDK verifies file hash off-chain, Move asserts on-chain. Merchant swap = order fails.
 
@@ -175,9 +189,9 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 
 | Tool | Key Constraints |
 |------|----------------|
-| `query_toolkit` | `token_list` cached (first query populates). `account_balance`: `balance=true` for totals, `coin={cursor,limit}` for paginated. `onchain_objects` batches 50/req. `local_names` resolves accounts + marks. |
+| `query_toolkit` | `token_list` cached (first query populates). `account_balance`: `balance=true` for totals, `coin={cursor,limit}` for paginated. `onchain_objects` batches 50/req. `local_names` resolves accounts + marks. **To list all local accounts**: use `query_type='account_list'` (account_operation itself has no list action). **To find received CoinWrappers** (for payment receive): use `query_type='onchain_received'`. |
 | `onchain_table_data` | 12 types. Global (no `parent`): `entity_registrar`, `entity_linker`. `onchain_table_item_generic` = universal fallback. |
-| `account_operation` | `faucet` testnet/localnet only. Mainnet funding: `transfer` from existing account (1 WOW = 10^9 base units). `gen` with `messenger: true` enables Messenger. **Naming convention**: `<role>-<number>` (e.g. `shop-001`, `user-001`, `arb-001`) for easy filtering. `gen.replaceExistName:true` is DISCOURAGED — suspends old account; FORBIDDEN on default account (name=''). Private keys never leave device. |
+| `account_operation` | `faucet` testnet/localnet only. Mainnet funding: `transfer` from existing account (1 WOW = 10^9 base units). `gen` with `messenger: true` enables Messenger. **Naming convention**: `<role>-<number>` (e.g. `shop-001`, `user-001`, `arb-001`) for easy filtering. `gen.replaceExistName:true` is DISCOURAGED — suspends old account; FORBIDDEN on default account (name=''). Private keys never leave device. **No `list` action** — to enumerate all local accounts, use `query_toolkit` with `query_type='account_list'`. |
 | `local_mark_operation` | Max 50 tags/entry (64 chars). `replaceExistName:true` steals names — prefer `_v1`/`_v2`. |
 | `local_info_operation` | Max 50 contents/entry, 300 chars each. |
 | `messenger_operation` | Stranger: 1 msg before reply (~480 chars). Guard block → rejection includes guard list; sender needs Passport. WTS: `generate` needs continuous sequences. → [wowok-messenger](../wowok-messenger/SKILL.md) |
@@ -186,7 +200,43 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 | `machineNode2file` | Read-only; exports complete topology. |
 | `onchain_events` | 6 event types; cursor `{eventSeq, txDigest}`. |
 | `wowok_buildin_info` | 5 info types. Guard instructions filter by `name`/`return_type`/`param_count`. **Never use Value type 19**. |
-| `schema_query` | `list` returns empty if schemas not generated → `npm run generate:schemas`. |
+| `schema_query` | `list` returns empty if schemas not generated → `npm run generate:schemas`. Actions: `list`, `get` (full schema), `get_field` (field-path query e.g. `field_path='data.node'`), `get_output` (output schema), `search`, `list_operations`, `get_guard_templates` (Guard creation templates + best practices + common errors). Use `output_file='.trae/tmp/schema.json'` to write large schemas to workspace temp files (accessible via Read tool). |
+| `project_operation` | Sub-tool for project lifecycle: `create_project`, `add_object`, `build_graph`, `evaluate_project`, `pre_evaluate_check`, `verify_deployment`, `create_version`, `get_project_detail`. See §"Project Operation Extended Actions" below for the two pre/post-publish verification actions. |
+
+### Project Operation Extended Actions
+
+Two `project_operation` actions act as **pre-flight and post-flight verification** around `evaluate_project` / deployment. They never mutate on-chain state — they only query and report.
+
+#### `pre_evaluate_check` (Pre-evaluation Readiness)
+
+**Purpose**: Verify input data completeness BEFORE calling `evaluate_project`, so callers can fix missing/stale data without paying the cost of a full evaluation.
+
+**Call pattern**: `wowok({ tool: "project_operation", data: { action: "pre_evaluate_check", project_id: "..." } })`
+
+**Returns**:
+- `ready: boolean` — true if `evaluate_project` will produce meaningful results
+- `missing[]` — hard blockers (e.g., PE-01 empty project, PE-06 producer without Service)
+- `warnings[]` — soft issues (PE-02 no graph edges, PE-03 uncached objects, PE-04 stale cache >24h, PE-05 dangling edges, PE-07 all drafts)
+- `counts` — quick metrics: `objects`, `edges`, `uncached`, `stale`, `dangling_edges`, `drafts`
+- `summary` — one-line human-readable status
+
+**When to use**: Always call BEFORE `evaluate_project`. If `ready=false`, fix the listed `missing` issues first. If `warnings` exist, decide whether to refresh data (`refresh_objects`, `build_graph`) or proceed with caveats.
+
+#### `verify_deployment` (Post-deployment Drift Detection)
+
+**Purpose**: After deploying objects on-chain, verify the on-chain state matches what SQLite expects. Catches drift caused by manual edits, version bumps, or third-party modifications after initial deployment.
+
+**Call pattern**: `wowok({ tool: "project_operation", data: { action: "verify_deployment", project_id: "..." } })`
+
+**Returns per-object verification status**:
+- `matched` — on-chain state matches SQLite
+- `mismatched` — on-chain state differs (fields listed in `differences`)
+- `missing` — object no longer exists on-chain
+- `unreachable` — query failed (network error or rate limit)
+
+**Also checks critical bindings for Service objects**: `machine`, `permission`, `buy_guard`, `order_allocators` are all set to non-null on-chain if they were recorded as bound in SQLite.
+
+**When to use**: After every publish operation (Service publish, Machine publish). Periodically for production monitoring. When debugging "evaluation says bound but on-chain says unbound" discrepancies.
 
 ---
 
@@ -209,20 +259,20 @@ Step 3: MODIFY reward { object: "reward_v1", guard_add: [...] } // bind guard
 
 | Aspect | Treasury | Allocation |
 |--------|----------|------------|
-| Purpose | Team fund management (deposit/withdraw with audit trail) | Order fund distribution (auto-trigger on Progress advance) |
-| Trigger | Manual deposit/withdraw (Guard-gated) | Automatic when Progress reaches configured node |
+| Purpose | Team fund management (deposit/withdraw with audit trail) | Order fund distribution (manual `alloc_by_guard` trigger after Progress advance) |
+| Trigger | Manual deposit/withdraw (Guard-gated) | Manual `alloc_by_guard` after Progress advance (NOT automatic) |
 | Guard | External guard on withdrawals | Allocation guard on distribution rules |
 | Use when | Holding pooled funds, compensation funds, team wallets | Splitting order payments among recipients |
 
-Compensation fund = Treasury bound to Service. Each Treasury entry creates a Payment record for audit. Withdrawal requires Guard verification.
+**Compensation fund ≠ Treasury**: `Service.compensation_fund` is `Balance<T>` stored inline on the Service object (per service.move:179), NOT a Treasury address. Treasury is an independent object. Funds are added via `compensation_fund_add` (joins Coin<T> into the balance) and withdrawn via `compensation_fund_receive` after pause + lock duration. Each Treasury entry creates a Payment record for audit; withdrawal requires Guard verification.
 
 ### Reward (Incentive Pools)
 
-Guard-gated claim pools: `claim_guard` verifies eligibility before payout. `guard_add` modes: `Fixed` (equal split among claimants) or `GuardU64Identifier` (dynamic amount from Guard table index). `guard_expiration_time` freezes the Guard list (set `null` to remove freeze). Use cases: customer loyalty rewards, referral bonuses, airdrop campaigns, attendance rewards. Query claim history via `query_toolkit` → `onchain_table_item_reward_record`.
+Guard-gated claim pools: each entry in `Reward.guards[].guard` (array — see wowok-guard SKILL) verifies eligibility before payout. `guard_add` modes: `Fixed` (equal split among claimants) or `GuardU64Identifier` (dynamic amount from Guard table index). `guard_expiration_time` freezes the Guard list (set `null` to remove freeze). Use cases: customer loyalty rewards, referral bonuses, airdrop campaigns, attendance rewards. Query claim history via `query_toolkit` → `onchain_table_item_reward_record`.
 
 ### Demand (Customer-Posted Requests)
 
-Demand is the **inverse** of Service: customer posts a request + optional reward pool, providers submit offers. Guard-gated: `guards` filter which providers can present. `recommend_guard` filters presenter submissions. Separate `operation_type: "demand"` — NOT `service`. Use when: customer needs competitive bids (custom work, bulk procurement, reverse-auction marketplace). Pair with Reward to incentivize providers.
+Demand is the **inverse** of Service: customer posts a request + optional reward pool, providers submit offers. Guard-gated: each entry in `Demand.guards[].guard` (array — see wowok-guard SKILL) filters which providers can present. The `service_identifier` field on each ServiceGuard differentiates filtering roles (e.g., recommend vs. eligibility). Separate `operation_type: "demand"` — NOT `service`. Use when: customer needs competitive bids (custom work, bulk procurement, reverse-auction marketplace). Pair with Reward to incentivize providers.
 
 ### Repository (On-Chain Database)
 
@@ -274,5 +324,66 @@ Discover?    → tool: "schema_query" / "wowok_buildin_info" / "onchain_events"
 | Publishing before all deps ready | Guard/Machine immutable after create/publish. Test via `gen_passport` before finalizing |
 | `demand` via `service` operation_type | Separate `operation_type: "demand"` — Demand posts are not Services |
 | Arbitration called directly | Customer path: `order.arb_confirm` / `order.arb_objection`. Order is the interface |
+
+---
+
+## Cross-Network Name Management (testnet → mainnet)
+
+> Object addresses differ between testnet and mainnet. WoWok uses **local names** to bridge this gap — the same name resolves to different addresses on different networks.
+
+### How Name Resolution Works
+
+- **Local names** are stored per-network in the local SQLite database (`LocalMark`).
+- When you create an object with `namedNew.name = "my_service"`, the name→address mapping is stored for the **current network** (specified in `env.network`).
+- When you reference `"my_service"` in a subsequent call, the SDK resolves it to the address **for the current network**.
+- Names are **NOT shared across networks** — testnet and mainnet have separate name registries.
+
+### Testnet → Mainnet Migration Workflow
+
+1. **Develop and test on testnet**: Create all objects with `replaceExistName: true` and consistent names (e.g., `myshop_permission`, `myshop_machine`, `myshop_service`).
+2. **Record the JSON call sequence**: Save all `onchain_operations` calls (with their `data` and `env` fields) that worked on testnet.
+3. **Switch `env.network` to `mainnet`**: Change `env.network` from `"testnet"` to `"mainnet"` in all calls. Also switch `env.account` to a mainnet-funded account.
+4. **Re-run the same call sequence on mainnet**: With `replaceExistName: true` on all object creations, the same names will be re-registered to new mainnet addresses. All cross-references (e.g., `permission: "myshop_permission"` in Machine) will resolve to the new mainnet addresses automatically.
+5. **Fund the mainnet account**: Use `account_operation` with `transfer` from a funded account (1 WOW = 10^9 base units).
+
+### Key Rules
+
+| Rule | Detail |
+|------|--------|
+| `replaceExistName: true` | Re-creates the name→address mapping for the current network. Use on all object creations when re-deploying. |
+| Name consistency | Use the SAME names across testnet and mainnet. The SDK resolves names per-network, so `"my_service"` on testnet ≠ `"my_service"` on mainnet (different addresses). |
+| `env.network` | The ONLY field that changes between testnet and mainnet runs. All `data` fields (names, references, configs) stay the same. |
+| Object references | Always use names (strings), NOT hardcoded addresses (0x...). Hardcoded addresses break across networks. |
+| Account funding | `faucet` works only on testnet/localnet. Mainnet requires `transfer` from an existing funded account. |
+
+### Example: Testnet → Mainnet
+
+```json
+// testnet call (works)
+{
+  "tool": "onchain_operations",
+  "data": {
+    "operation_type": "service",
+    "data": { "object": { "name": "my_service", "permission": "my_permission", ... } },
+    "env": { "account": "test_account", "network": "testnet", "confirmed": true }
+  }
+}
+
+// mainnet call (same data, only env changes)
+{
+  "tool": "onchain_operations",
+  "data": {
+    "operation_type": "service",
+    "data": { "object": { "name": "my_service", "permission": "my_permission", ... } },
+    "env": { "account": "main_account", "network": "mainnet", "confirmed": true }
+  }
+}
+```
+
+### Common Mistakes
+
+- **Hardcoding addresses**: `"machine": "0xabc123..."` breaks on mainnet. Use `"machine": "my_machine"` instead.
+- **Forgetting `replaceExistName`**: Without it, re-deploying to a new network creates a name conflict if the name already exists locally.
+- **Mixing networks in one session**: All calls in a deployment sequence should use the same `env.network`. Mixing testnet and mainnet calls causes name resolution failures.
 
 ---

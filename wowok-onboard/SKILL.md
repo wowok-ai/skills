@@ -92,3 +92,55 @@ The onboarding flow is backed by the MCP SQLite-based project pipeline. Each ste
 | R8 | Allocation | `onchain_operations.allocation` CREATE + `service.order_allocators` | Fund split (mode defaults from MCP) |
 | R9 | Test order | `onchain_operations.order` CREATE + `progress` advance + `allocation.alloc_by_guard` | Full flow dry run |
 | R10 | Publish | `onchain_operations.machine` publish + `service` publish | Pre-publish audit must PASS |
+
+---
+
+## Industry Selection Guide
+
+When the user describes their business (R2), match to one of the supported industry modes. The MCP layer auto-fills scenario defaults when `project_industry` is passed to `create_project`.
+
+| Industry | Mode | One-line Description |
+|----------|------|----------------------|
+| `general` | `general` | Free-form / hybrid — no presets, full manual control |
+| `retail` | `general` (retail profile) | Physical goods sales with stock + WIP product listings |
+| `service` | `general` (service profile) | Intangible services (consulting, design) — milestone delivery |
+| `rental` | `rental` | Equipment / vehicle / property rental with deposit escrow + return inspection (R-M1-11 compliant — uses `return_approved`/`damage_confirmed`/`arbiter_rule` routing nodes, NO `deposit_refunded`/`deposit_deducted`/`refunded` terminal nodes; see [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template") |
+| `freelance` | `freelance` | Design / dev / consulting — milestone allocation + acceptance gate |
+| `education` | `education` | Courses / training / tutoring — periodic release per session attendance |
+| `travel` | `travel` | Custom tours / multi-segment trips — multi-tier allocation per segment |
+| `subscription` | `subscription` | SaaS / content membership / periodic service — periodic charge + cancel guard |
+
+> If unsure which fits, default to `general`. Users can switch modes mid-onboarding (see wowok-scenario "Escape Hatch"). For mode composition (e.g., freelance + subscription retainer), see [wowok-scenario](../wowok-scenario/SKILL.md).
+
+---
+
+## Deployment Checklist
+
+Before declaring onboarding complete, verify ALL items. Each is a hard gate — a missing item blocks successful order flow.
+
+| # | Item | How to Verify |
+|---|------|---------------|
+| 1 | Permission created | `query_toolkit` (onchain_objects, type=permission) returns object |
+| 2 | Machine published | `query_toolkit` (onchain_objects, type=machine) → `bPublished: true` |
+| 2b | **R-M1-11 compliance** (rental / deposit / refund scenarios only) | `machineNode2file` export → grep node names; MUST NOT contain `deposit_refunded`/`deposit_deducted`/`refunded`; MUST contain routing nodes (`return_approved`/`damage_confirmed`/`arbiter_rule`) with bound Allocators (item 4) |
+| 3 | Guards created | `query_toolkit` (onchain_objects, type=guard) returns all expected guards |
+| 4 | Allocators configured | Each Allocator `sharing[].sharing` Rate entries sum to **10000** (Rate mode); or `Amount` mode values set. For rental/refund scenarios, verify Allocators' `trigger_node` references the routing nodes (e.g., `return_approved`) — NOT missing (else R-M1-11 refund path is broken) |
+| 5 | Service created with all bindings | `query_toolkit` (onchain_objects, type=service) → machine, order_allocators, buy_guard all non-empty |
+| 6 | Service published | `query_toolkit` (onchain_objects, type=service) → `bPublished: true` |
+| 7 | Test order placed | R9 test order created + Progress advanced + Allocator triggered successfully |
+
+> If any item fails, do NOT proceed to handoff. Fix the underlying issue, then re-verify. Use `project_operation.evaluate_project` (risk) to auto-detect missing bindings.
+
+---
+
+## Common Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `dynamicFieldNotFound` | SDK cannot resolve a dynamic field reference | Set `env.account` (account not configured) — pass account in the tool call wrapper |
+| `Circular dependency` (Guard ↔ Service creation) | Guard needs Service address; Service needs Guard address | Use **LocalMark NAME** (not address) in Guard query table — see [wowok-guard](../wowok-guard/SKILL.md) "Circular Dependency Handling" |
+| `order.balance invalid` | Used wrong field for order amount | Use `order.amount` (not `order.balance` — `balance` is residual escrow, `amount` is original payment) |
+| Allocator `rate sum != 10000` | Rate-mode Allocator sharing percentages don't sum to 100% | Ensure all `sharing[].sharing` values in Rate mode sum to exactly **10000** basis points (e.g., 80% = 8000) |
+| `IMPACK_GUARD_NOT_FOUND` (gen_passport) | Repository query with `quote_guard = Some(addr)` | `impack_list` is empty during verify phase — only `quote_guard = None` passes; see [wowok-guard](../wowok-guard/SKILL.md) |
+| `Permission denied` (Progress advance, abort code 5) | Wrong operation path for forward's `namedOperator` | Empty `namedOperator` → use `order.progress`; non-empty → use `progress.operate`; `permissionIndex` → use `progress.operate` |
+| Allocator never fires (refund stuck) — R-M1-11 violation | Machine has a node like `deposit_refunded` instead of routing node `return_approved`; or Allocator's `trigger_node` is missing/mispelled | Rename node to `return_approved` / `damage_confirmed`; bind Allocator to that node; see [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template (R-M1-11 Compliant)" |

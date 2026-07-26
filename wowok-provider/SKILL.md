@@ -175,6 +175,42 @@ STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 | Guard | Reuse if logic matches | After creation |
 | Service | — | After publish: machine, order_allocators frozen |
 
+### Service Step-by-Step Update (Two-Phase Deployment)
+
+Deploy a Service in two phases to handle Guard↔Service circular dependencies via LocalMark names. Both phases call `onchain_operations` (operation_type: "service"); they differ by `publish` flag and binding completeness.
+
+**Phase 1 — CREATE (no publish)**: Build the full object graph with LocalMark name references so addresses can resolve later.
+
+```
+onchain_operations.service {
+  name: "<service_local_mark>",
+  type_parameter, permission,
+  machine: "<machine_local_mark>",            # reference by name
+  order_allocators: [{ guard: "<guard_local_mark>", sharing: [...] }, ...],
+  arbitrations: { list: ["<arb_local_mark>", ...] },
+  buy_guard: "<buy_guard_local_mark>",         # reference by name — defers resolution
+  publish: false                                # CRITICAL: do not publish yet
+}
+```
+
+**Phase 2 — PUBLISH**: After all referenced objects (Machine, Guards, Allocators) are created/published, re-call to publish.
+
+```
+onchain_operations.service {
+  object: "<service_local_mark>",   # target the existing draft by name
+  publish: true
+}
+```
+
+> The SDK resolves all LocalMark names → on-chain addresses at publish time. Phase 1 + Phase 2 together replace the "create draft → mutate → publish" sequence in STEP 1-4 of the Service Build Lifecycle when circular dependencies exist.
+
+**Post-publish mutability** (SDK-LOCKED vs mutable):
+
+| Field | After Publish |
+|-------|---------------|
+| `buy_guard`, `sales`, `description`, `repositories` (add), `rewards` (add) | **Mutable** |
+| `machine`, `order_allocators`, `arbitrations` | **SDK-LOCKED** (immutable — fork required to change) |
+
 ---
 
 ## Key Concepts
@@ -186,14 +222,15 @@ STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 ```
 Service (merchant storefront)
 ├── permission → Permission (required, mutable after publish)
-├── machine → Machine (required, IMMUTABLE after publish)
-├── order_allocators → Allocation[] (optional, mutable after publish)
+├── machine → Machine (required, IMMUTABLE after publish per service.move:633 assert!(!self.bPublished))
+├── order_allocators → Allocators inline struct (optional, IMMUTABLE after publish per service.move:503; each Order creates an independent Allocation at runtime)
 ├── arbitrations → Arbitration[] (optional, mutable after publish, max 20)
-├── compensation_fund → Treasury (optional, mutable after publish)
-├── sales → Repository (optional, mutable after publish; products with WIP files)
+├── compensation_fund → Balance<T> value (optional, mutable after publish; NOT a Treasury address — Treasury is an independent object)
+├── repositories → Repository[] (optional, mutable after publish; consensus repository refs)
+├── sales → ServiceSale[] (optional, mutable after publish; inline product listings with name/price/stock/wip — NOT a Repository ref)
 ├── rewards → Reward[] (optional, mutable after publish)
 ├── um → Contact (optional, mutable after publish; customer service)
-├── customer_required → Personal (optional, mutable after publish; customer data schema)
+├── customer_required → string[] (optional, mutable after publish; personal info mark names, not a direct Personal ref)
 └── buy_guard → Guard (optional, mutable after publish; gates order placement)
 
 Order (per purchase, runtime-created)
@@ -201,11 +238,20 @@ Order (per purchase, runtime-created)
 ├── service → Service snapshot (immutable after creation)
 ├── machine → Machine (immutable after creation)
 ├── progress → Progress (immutable after binding)
-├── arbitration → Arbitration (optional, immutable once set)
-└── allocation → Fund distribution engine (triggered via Progress.forward)
+├── dispute → Arb[] (optional; Arb addresses pushed on dispute per order.move:93, immutable once set — NOT an Arbitration ref)
+└── allocation → Allocation (optional, created at runtime; triggered via Progress.forward)
 
 Cross-object references:
-- Guard is referenced by 9 object types (Service.buy_guard, Machine.forward.guard, Allocation.allocation_guard, Arbitration.voting_guard, Reward.claim_guard, Repository.write_guard, Treasury.external_guard, Demand.recommend_guard, Passport.guard)
+- Guard is referenced by 9 object types via diverse nested paths (see wowok-guard SKILL for full schema):
+  - Service.buy_guard (top-level Option<address>)
+  - Machine.forward.guard (per-node dynamic table; SDK does not expose — requires query_table)
+  - Allocation.allocators[].guard (array element — graph-builder edge fieldName: allocator_guard)
+  - Arbitration.voting_guard[].guard (array element) + Arbitration.usage_guard (top-level Option)
+  - Reward.guards[].guard (array element — graph-builder edge fieldName: guard)
+  - Repository.policies[].write_guard[].guard (deeply nested) + Repository.policies[].quote_guard
+  - Treasury.external_deposit_guard[].guard + Treasury.external_withdraw_guard[].guard (dual arrays)
+  - Demand.guards[].guard (array element — graph-builder edge fieldName: guard)
+  - Passport.info[].guard (verification snapshot, read-only)
 - Machine is referenced by 4 object types (Service.machine, Order.machine, Progress.machine, Order snapshot)
 - Permission is the central hub — 11 objects hold BuiltinPermissionIndex
 ```

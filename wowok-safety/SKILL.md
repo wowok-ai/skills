@@ -87,6 +87,17 @@ Present a preview table (Operation, Object, Network, Account) with a warning des
 
 Before publishing a Service or Machine: (1) Export and review — use `guard2file` to export Guard definitions, `machineNode2file` to export Machine nodes; (2) Verify logic — confirm Guards and Machine nodes match user intent; (3) Warn about immutability — once published, many fields become locked. Present a publish confirmation warning listing what becomes immutable, then ask: "This action cannot be easily undone. Proceed?"
 
+#### 2.3.1 R-M1-11 Pre-Publish Hard Gate (Refund/Deduction Topology)
+
+For any Machine touching deposits, refunds, escrow, or deductions (rental, freelance milestone, dispute-aware e-commerce), the AI MUST verify R-M1-11 compliance before allowing publish:
+
+- **Hard blocker**: any node named `deposit_refunded`, `deposit_deducted`, `refunded`, or any name implying the Machine itself performs fund movement.
+- **Required pattern**: refund/deduction flows through an **Allocator** triggered by a routing node (e.g., `return_approved`, `damage_confirmed`). The Allocator watches `progress.current == <routing_node>` and executes fund movement.
+- **Dispute path**: `arbiter_rule` (routing) → Arbitration off-Machine — no Allocator; arbitration::dispute handles fund distribution.
+- **Verification**: review the `machineNode2file` export and grep node names against the forbidden list. If any match, BLOCK publish and alert the user.
+
+**Why critical**: A refund terminal node without a bound Allocator causes funds to lock permanently in the Order escrow — there is no primitive to move funds out. This was the root cause of P0-01 (Turo deployment: `deposit_refunded` node locked 0.25 WOW customer refunds). See [wowok-machine](../wowok-machine/SKILL.md) "R-M1-11 Anti-Pattern" and [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template (R-M1-11 Compliant)".
+
 ---
 
 ## 3. Common Mistakes to Avoid
@@ -95,6 +106,7 @@ Before publishing a Service or Machine: (1) Export and review — use `guard2fil
 |---------|---------------|------------|
 | **Forgetting no_cache** | Cache lag in dependency chain | Set `env.no_cache: true` on all operations when building multiple objects |
 | **Missing permission indices** | Machine forwards reference non-existent indices | Verify Permission object has required indices before creating Machine |
+| **R-M1-11 violation** (refund terminal node) | Designing Machine with `deposit_refunded`/`deposit_deducted`/`refunded` nodes implying the Machine refunds — funds lock in escrow with no Allocator path (root cause of P0-01) | Use routing nodes (`return_approved`/`damage_confirmed`/`arbiter_rule`) + bound Allocators; grep `machineNode2file` output for forbidden names BEFORE publish |
 
 ---
 
