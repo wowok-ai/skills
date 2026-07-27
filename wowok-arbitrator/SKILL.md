@@ -129,6 +129,8 @@ Customer dispute creates Arb directly at (1). State (0) entered only via `reset`
 
 **⚠️ Guard Immutability**: Once a Guard is created, its rules **cannot be modified**. If your `voting_guard` design is wrong, you must create a replacement Guard and reconfigure the Arbitration — wasteful but not fatal. Test with `gen_passport` before finalizing.
 
+**⚠️ Permission Isolation from Service** (CRITICAL for mainnet trust): The Arbitration's Permission object MUST be separate from the Service's Permission object. Sharing the same Permission — or having overlapping owner/admin addresses — breaks dispute fairness because the merchant can control arbitration operations (vote, confirm, execute rulings). For mainnet deployment, use a completely independent third-party Permission with a different owner and admin list. The evaluation engine deducts risk scores significantly for Permission overlap (-30 for same Permission, -20 for owner/admin overlap). Testnet may tolerate shared Permission for simplicity, but mainnet users should treat this as a critical trust factor.
+
 ### Voting Modes
 
 **1. Open Voting** (`voting_guard: []`)

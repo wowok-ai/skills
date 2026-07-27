@@ -137,7 +137,7 @@ STEP 3: Business Logic (MODIFY)
 │     Tool: "onchain_operations" (service) | Fields: order_allocators
 ├── Arbitrations (optional) — REUSE existing Arb services
 │     Tool: "onchain_operations" (service) | Fields: arbitrations.list
-├── Compensation Fund (optional): compensation_fund_add + setting_locked_time_add (default 30 days, configurable)
+├── Compensation Fund (optional): compensation_fund_add + setting_lock_duration_add (default 30 days, configurable)
 │     Tool: "onchain_operations" (service)
 └── Reward (optional) — incentive pools
 
@@ -154,7 +154,9 @@ STEP 4: Publication
       2. guard2file export Guards → review
       3. machineNode2file export Machine → review
       4. Allocator splits match user's stated model?
-      5. Warn: publish = immutable. Proceed?
+      5. Permission indexes: every permissionIndex in Machine forwards has entities granted? (call permission "add perm by index" for missing ones)
+      6. Arbitration Permission isolation: Arbitration uses a SEPARATE Permission object (not the Service's Permission)? Different owner/admin? (critical for mainnet trust)
+      7. Warn: publish = immutable. Proceed?
 
 STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 ├── description, location
@@ -320,7 +322,7 @@ Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", .
 
 ### Compensation Fund (Optional but Recommended)
 
-- Add: `compensation_fund_add` | Lock: `setting_locked_time_add` (default 30 days = 2592000000ms, configurable via `setting_lock_duration_add`)
+- Add: `compensation_fund_add` | Lock: `setting_lock_duration_add` (default 30 days = 2592000000ms, configurable via `setting_lock_duration_add`)
 - **Withdraw**: Pause Service → Wait lock duration → `compensation_fund_receive`
 
 ---

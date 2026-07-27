@@ -249,6 +249,7 @@ Before `publish: true`, verify:
 - [ ] All Guards exist on-chain and tested (use `gen_passport`)
 - [ ] `namedOperator` vs `permissionIndex` correct per Forward
 - [ ] Every Forward has at least one of `namedOperator` or `permissionIndex`
+- [ ] **⚠ Permission indexes authorized** (P0): every `permissionIndex` used in forwards MUST have at least one entity granted in the Permission object. Call `permission.op="add perm by index"` for each custom index (≥1000) BEFORE publishing. Un-granted indexes = forward can NEVER execute = Progress permanently stuck. The MCP handler auto-checks this and warns on missing grants.
 - [ ] Terminal nodes mapped to Allocator entries for fund distribution
 - [ ] Tested end-to-end on testnet via a test Progress
 - [ ] Current state exported via `machineNode2file` as backup
