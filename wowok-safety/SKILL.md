@@ -166,6 +166,59 @@ Controls name collision behavior. **DISCOURAGED** — prefer versioned names (`_
 
 Use `Payment` objects for commercial transfers when possible — they offer Guard validation and purpose tracking beyond a simple `account_operation (transfer)`.
 
+### 5.3 Cross-Network Switching (testnet → mainnet)
+
+WoWok objects are network-specific — the same object name resolves to different addresses on testnet vs mainnet. The `local_mark` system manages this mapping automatically.
+
+**Prerequisites**:
+- testnet deployment verified (all objects created, order lifecycle tested)
+- Record all object names (query `local_mark_list` for the full list)
+- mainnet account has sufficient WOW balance (faucet is testnet-only; use `account_operation transfer` from a funded mainnet account)
+
+**Switching Steps**:
+1. Change `env.network` from `"testnet"` to `"mainnet"` in all MCP calls
+2. Re-create all objects on mainnet with `replaceExistName: true` (names stay the same, addresses change)
+3. Order matters — follow the dependency chain: Permission → Machine → Guards → Contact → Service → (Order/Progress/Allocation are created at purchase time)
+4. Verify each object creation succeeds and `local_mark` is updated
+5. Test the critical path: place a test order → advance Progress → verify Allocation
+
+**Key Mechanism**:
+```
+testnet:  local_mark["my_service"] = 0x867a...  (testnet address)
+mainnet:  local_mark["my_service"] = 0xdef0...  (mainnet address, auto-overwritten)
+```
+- All object references in Guard tables, Service bindings, and Machine forwards use NAMES (not addresses)
+- SDK's `GetObjectExisted()` resolves names to the current network's address at transaction build time
+- `replaceExistName: true` ensures the name mapping is overwritten for the new network
+
+**Important Notes**:
+- testnet objects remain on testnet (they don't disappear) — mainnet is a completely fresh deployment
+- Guard tables that reference other objects by NAME will auto-resolve to mainnet addresses
+- Service.order_allocators and Machine nodes are immutable after publish — verify design before mainnet publish
+- mainnet has no faucet — fund accounts via `account_operation` with `transfer` from an existing funded account
+
+### 5.4 Publish Pre-Check Checklist
+
+Before calling `publish: true` on a Service or Machine, verify:
+
+**Service Publish Checklist**:
+- [ ] `order_allocators` is set and design is verified (PERMANENTLY immutable after publish)
+- [ ] `machine` is bound and already published
+- [ ] `buy_guard` is bound (if purchase validation is needed)
+- [ ] `permission` is bound with all required indexes granted
+- [ ] If `compensation_fund > 0`: `arbitrations` MUST be bound (contract enforces: `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`)
+- [ ] All Guard names in `order_allocators` resolve correctly
+- [ ] All sharing amounts and recipient types (Entity/Signer/GuardIdentifier) are intended
+- [ ] Use `dry_run: true` first to simulate the publish transaction
+
+**Machine Publish Checklist**:
+- [ ] All nodes have at least one forward (except terminal nodes)
+- [ ] Each forward has `namedOperator` or `permissionIndex` (or both = OR semantic)
+- [ ] `namedOperator: ""` means OrderHolder (customer), NOT "anyone"
+- [ ] All `permissionIndex` values are granted in the bound Permission object
+- [ ] Entry node has `prev_node: ""` and `threshold: 0`
+- [ ] Terminal nodes have empty `pairs: []`
+
 ---
 
 ## 6. Query-First Pattern
