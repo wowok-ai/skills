@@ -104,13 +104,13 @@ When the user describes their business (R2), match to one of the supported indus
 | `general` | `general` | Free-form / hybrid — no presets, full manual control |
 | `retail` | `general` (retail profile) | Physical goods sales with stock + WIP product listings |
 | `service` | `general` (service profile) | Intangible services (consulting, design) — milestone delivery |
-| `rental` | `rental` | Equipment / vehicle / property rental with deposit escrow + return inspection (R-M1-11 compliant — uses `return_approved`/`damage_confirmed`/`arbiter_rule` routing nodes, NO `deposit_refunded`/`deposit_deducted`/`refunded` terminal nodes; see [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template") |
+| `rental` | `rental` | Equipment / vehicle / property rental with deposit escrow + return inspection (R-M1-11 compliant — uses `return_approved`/`damage_confirmed`/`arbiter_rule` routing nodes, NO `deposit_refunded`/`deposit_deducted`/`refunded` terminal nodes; topology auto-applied by `project_operation.create_project` with `project_industry='rental'` from MCP `knowledge/scenario-modes.ts`) |
 | `freelance` | `freelance` | Design / dev / consulting — milestone allocation + acceptance gate |
 | `education` | `education` | Courses / training / tutoring — periodic release per session attendance |
 | `travel` | `travel` | Custom tours / multi-segment trips — multi-tier allocation per segment |
 | `subscription` | `subscription` | SaaS / content membership / periodic service — periodic charge + cancel guard |
 
-> If unsure which fits, default to `general`. Users can switch modes mid-onboarding (see wowok-scenario "Escape Hatch"). For mode composition (e.g., freelance + subscription retainer), see [wowok-scenario](../wowok-scenario/SKILL.md).
+> If unsure which fits, call `project_operation` action='recommend_industry' with the user's business description — it returns top-3 industry matches with reference examples. To iterate a mode mid-onboarding, use action='derive_user_mode' / 'evolve_user_mode' (user mode registry in MCP).
 
 ---
 
@@ -138,9 +138,9 @@ Before declaring onboarding complete, verify ALL items. Each is a hard gate — 
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `dynamicFieldNotFound` | SDK cannot resolve a dynamic field reference | Set `env.account` (account not configured) — pass account in the tool call wrapper |
-| `Circular dependency` (Guard ↔ Service creation) | Guard needs Service address; Service needs Guard address | Use **LocalMark NAME** (not address) in Guard query table — see [wowok-guard](../wowok-guard/SKILL.md) "Circular Dependency Handling" |
+| `Circular dependency` (Guard ↔ Service creation) | Guard needs Service address; Service needs Guard address | Use **LocalMark NAME** (not address) in Guard query table — pattern documented in MCP `schema_query` action='get_guard_design_patterns' |
 | `order.balance invalid` | Used wrong field for order amount | Use `order.amount` (not `order.balance` — `balance` is residual escrow, `amount` is original payment) |
 | Allocator `rate sum != 10000` | Rate-mode Allocator sharing percentages don't sum to 100% | Ensure all `sharing[].sharing` values in Rate mode sum to exactly **10000** basis points (e.g., 80% = 8000) |
-| `IMPACK_GUARD_NOT_FOUND` (gen_passport) | Repository query with `quote_guard = Some(addr)` | `impack_list` is empty during verify phase — only `quote_guard = None` passes; see [wowok-guard](../wowok-guard/SKILL.md) |
+| `IMPACK_GUARD_NOT_FOUND` (gen_passport) | Repository query with `quote_guard = Some(addr)` | `impack_list` is empty during verify phase — only `quote_guard = None` passes; see MCP `schema_query` action='get_guard_design_patterns' |
 | `Permission denied` (Progress advance, abort code 5) | Wrong operation path for forward's `namedOperator` | Empty `namedOperator` → use `order.progress`; non-empty → use `progress.operate`; `permissionIndex` → use `progress.operate` |
-| Allocator never fires (refund stuck) — R-M1-11 violation | Machine has a node like `deposit_refunded` instead of routing node `return_approved`; or Allocator's `trigger_node` is missing/mispelled | Rename node to `return_approved` / `damage_confirmed`; bind Allocator to that node; see [wowok-scenario](../wowok-scenario/SKILL.md) "Rental Mode Template (R-M1-11 Compliant)" |
+| Allocator never fires (refund stuck) — R-M1-11 violation | Machine has a node like `deposit_refunded` instead of routing node `return_approved`; or Allocator's `trigger_node` is missing/mispelled | Rename node to `return_approved` / `damage_confirmed`; bind Allocator to that node; R-M1-11 is auto-enforced by MCP pre-publish checks and `project_operation.evaluate_project` |

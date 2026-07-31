@@ -1,27 +1,65 @@
 import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
 
 /**
- * WoWok Skills organized by role
- * 
+ * WoWok Skills organized by role (post GLM5-31 sink refactor)
+ *
+ * 4 rule-reference skills were SUNK into the MCP knowledge layer and REMOVED:
+ *   - wowok-safety   → MCP safety-rules (runtime confirm-gate +
+ *                      schema_query action='get_safety_rules')
+ *   - wowok-tools    → MCP tools-reference
+ *                      (schema_query action='get_tool_reference')
+ *   - wowok-scenario → MCP scenario-modes
+ *                      (project_operation recommend_industry / create_project,
+ *                       industry mode registry)
+ *   - wowok-guard    → MCP guard-design-patterns
+ *                      (schema_query action='get_guard_design_patterns')
+ *
+ * The MCP server now serves all rules/reference knowledge directly — installing
+ * skills is NOT required for correctness. The 9 retained skills keep only the
+ * dialogue orchestration layer (business process flows) that cannot be sunk.
+ *
  * Role-based skill selection guide for AI:
- * 
+ *
  * 1. CUSTOMER (wowok-order)
  *    - Use when: User wants to place orders, track progress, request arbitration as a customer
  *    - Key actions: Purchase from Service, operate Order/Progress, submit disputes
- * 
+ *
  * 2. PROVIDER (wowok-provider, wowok-machine)
  *    - Use when: User is a merchant/service provider building or operating services
  *    - Key actions: Create Service, design Machine workflow, set Allocators, handle customer orders
- * 
+ *
  * 3. ARBITRATOR (wowok-arbitrator)
  *    - Use when: User operates an arbitration service for dispute resolution
  *    - Key actions: Create Arbitration, review evidence, organize voting, manage fees
- * 
- * 4. SHARED (wowok-tools, wowok-safety, wowok-guard)
- *    - Use when: Any role needs tool usage, safety protocols, or guard design
- *    - Always loaded: wowok-tools, wowok-safety
- *    - On-demand: wowok-guard (complex guard design)
+ *
+ * 4. SHARED (wowok-messenger, wowok-output, wowok-onboard, wowok-planner, wowok-auditor)
+ *    - Use when: Any role needs encrypted messaging, output formatting, onboarding,
+ *      planning, or pre-publish audit
+ *    - Always loaded: wowok-output
+ *    - On-demand: the rest
  */
+
+/**
+ * Skills removed in the GLM5-31 sink refactor. Their content lives in the MCP
+ * knowledge layer and is served via schema_query / project_operation — no skill
+ * installation required. Kept here for migration detection (checkSkillMigration).
+ */
+export const DEPRECATED_SKILLS = [
+  'wowok-safety',
+  'wowok-tools',
+  'wowok-scenario',
+  'wowok-guard',
+] as const;
+
+export type DeprecatedSkill = (typeof DEPRECATED_SKILLS)[number];
+
+/** Where each deprecated skill's content now lives (for migration messages). */
+export const SKILL_MIGRATION_MAP: Record<DeprecatedSkill, string> = {
+  'wowok-safety': "MCP schema_query action='get_safety_rules' (+ runtime confirm-gate on every on-chain write)",
+  'wowok-tools': "MCP schema_query action='get_tool_reference'",
+  'wowok-scenario': "MCP project_operation action='recommend_industry' / 'list_modes' / 'create_project' (industry mode registry)",
+  'wowok-guard': "MCP schema_query action='get_guard_design_patterns' (+ action='get_guard_templates')",
+};
 
 export const wowokSkills: SkillConfig = {
   skills: [
@@ -29,114 +67,82 @@ export const wowokSkills: SkillConfig = {
     {
       name: 'wowok-order',
       description: 'Customer order lifecycle — place orders, track progress via Order/Progress, submit arbitration disputes, claim compensation. Use when user acts as a customer/buyer.',
-      version: '1.0.0',
+      version: '2.0.0',
       role: 'customer',
       loading: 'on-demand',
-      related: ['wowok-provider', 'wowok-arbitrator', 'wowok-messenger', 'wowok-tools']
+      related: ['wowok-provider', 'wowok-arbitrator', 'wowok-messenger']
     },
 
     // === PROVIDER ROLE ===
     {
       name: 'wowok-provider',
-      description: 'Service provider guide — create Service, design Machine workflow, configure Allocators for fund distribution, handle order fulfillment and customer service via Messenger. Use when user is a merchant/seller.',
-      version: '1.0.0',
+      description: 'Service provider guide — create Service, design Machine workflow, configure Allocators for fund distribution, handle order fulfillment and customer service via Messenger. Use when user is a merchant/seller. Safety rules and tool reference are served by MCP (schema_query).',
+      version: '2.0.0',
       role: 'provider',
       loading: 'on-demand',
-      related: ['wowok-machine', 'wowok-guard', 'wowok-messenger', 'wowok-tools']
+      related: ['wowok-machine', 'wowok-messenger']
     },
     {
       name: 'wowok-machine',
-      description: 'Machine workflow design — state machines, node definitions, progress tracking, forward/guard logic. Used by providers to design order processing workflows.',
-      version: '1.0.0',
+      description: 'Machine workflow design — state machines, node definitions, progress tracking, forward/guard logic (R-M1-11 compliant: fund movement via Allocators, never via Machine terminal nodes). Used by providers to design order processing workflows.',
+      version: '2.0.0',
       role: 'provider',
       loading: 'on-demand',
-      related: ['wowok-provider', 'wowok-guard']
+      related: ['wowok-provider']
     },
 
     // === ARBITRATOR ROLE ===
     {
       name: 'wowok-arbitrator',
       description: 'Arbitration service operation — create Arbitration, receive evidence via Messenger, organize voting processes, manage compensation funds, extract fees. Use when user operates dispute resolution.',
-      version: '1.0.0',
+      version: '2.0.0',
       role: 'arbitrator',
       loading: 'on-demand',
-      related: ['wowok-order', 'wowok-messenger', 'wowok-tools']
+      related: ['wowok-order', 'wowok-messenger']
     },
 
     // === SHARED / ALL ROLES ===
     {
       name: 'wowok-messenger',
       description: 'Encrypted messaging — end-to-end encrypted communication, WTS evidence generation, conversation management. Used by all roles for secure off-chain communication and arbitration evidence.',
-      version: '1.0.0',
+      version: '2.0.0',
       role: 'shared',
       loading: 'on-demand',
       related: ['wowok-order', 'wowok-provider', 'wowok-arbitrator']
     },
     {
-      name: 'wowok-tools',
-      description: 'MCP tool usage mastery — query_toolkit, onchain_operations, messenger_operation, schema_query, and all 13 tools with correct parameter formats. ALWAYS loaded for all roles.',
-      version: '1.0.0',
-      role: 'shared',
-      loading: 'always',
-      related: ['wowok-safety']
-    },
-    {
-      name: 'wowok-safety',
-      description: 'Safety protocol — dry-run validation, user confirmation checkpoints, execute with authorization. ALWAYS loaded for protection against mistakes.',
-      version: '1.0.0',
-      role: 'shared',
-      loading: 'always',
-      related: ['wowok-tools']
-    },
-    {
       name: 'wowok-output',
       description: 'Output processing — post-processes all WoWok tool responses for human-readable presentation. Handles address resolution, name mapping, amount formatting, and data visualization. ALWAYS loaded for all roles.',
-      version: '1.0.0',
+      version: '2.0.0',
       role: 'shared',
       loading: 'always',
-      related: ['wowok-tools']
-    },
-    {
-      name: 'wowok-guard',
-      description: 'Guard design mastery — programmable trust rules, multi-signature authorization, guard2file export/import. Used by providers and arbitrators for complex validation logic.',
-      version: '1.0.0',
-      role: 'shared',
-      loading: 'on-demand',
-      related: ['wowok-provider', 'wowok-machine']
+      related: []
     },
 
     // === ONBOARDING / PLANNING / AUDIT (L3+L4 BRIDGE) ===
     {
       name: 'wowok-onboard',
-      description: 'First-touch onboarding — guides a new user from zero to their first published Service in a structured 10-round dialogue. Use when a new user says "I want to open a shop" or has no published Service yet.',
-      version: '1.0.0',
+      description: 'First-touch onboarding — guides a new user from zero to their first published Service in a structured 10-round dialogue. Industry mode defaults (freelance/rental/education/travel/...) are served by MCP project_operation recommend_industry. Use when a new user says "I want to open a shop" or has no published Service yet.',
+      version: '2.0.0',
       role: 'shared',
       loading: 'on-demand',
-      related: ['wowok-scenario', 'wowok-tools', 'wowok-provider', 'wowok-safety', 'wowok-guard', 'wowok-machine']
-    },
-    {
-      name: 'wowok-scenario',
-      description: 'Industry mode templates — freelance, rental, digital goods, travel, subscription. Pre-fills Permission indexes, Machine node graphs, Guard bindings, and Allocation splits based on business type.',
-      version: '1.0.0',
-      role: 'shared',
-      loading: 'on-demand',
-      related: ['wowok-onboard', 'wowok-provider', 'wowok-machine', 'wowok-guard']
+      related: ['wowok-provider', 'wowok-machine']
     },
     {
       name: 'wowok-planner',
-      description: 'Main planning Skill for the Harness Plan Loop — converts natural language intent into an Object Dependency Graph (ODG). Covers 5 scenario templates: freelance, rental, digital_goods, travel_package, general. Hand-off protocol to Harness documented.',
-      version: '1.0.0',
+      description: 'Main planning Skill for the Harness Plan Loop — converts natural language intent into an Object Dependency Graph (ODG). Industry templates are served by MCP scenario-modes; this skill retains the planning dialogue and Hand-off protocol to Harness.',
+      version: '2.0.0',
       role: 'shared',
       loading: 'on-demand',
-      related: ['wowok-onboard', 'wowok-scenario', 'wowok-auditor', 'wowok-provider']
+      related: ['wowok-onboard', 'wowok-auditor', 'wowok-provider']
     },
     {
       name: 'wowok-auditor',
-      description: 'Pre-publish audit Skill for the Harness Verify Loop — checks Guard completeness, Machine soundness, fund flow correctness, and publish readiness before irreversible publish operations. 4 audit rule tables with 32 total checks.',
-      version: '1.0.0',
+      description: 'Pre-publish audit Skill for the Harness Verify Loop — checks Guard completeness, Machine soundness (R-M1-11), fund flow correctness, and publish readiness before irreversible publish operations. 4 audit rule tables with 32 total checks.',
+      version: '2.0.0',
       role: 'shared',
       loading: 'on-demand',
-      related: ['wowok-planner', 'wowok-provider', 'wowok-safety', 'wowok-guard', 'wowok-machine']
+      related: ['wowok-planner', 'wowok-provider', 'wowok-machine']
     }
   ]
 };
@@ -205,28 +211,34 @@ export function getRoleSkills(): RoleSkills[] {
 /**
  * AI skill selection helper
  * Returns recommended skills based on user intent keywords
+ *
+ * Note: Guard design / tool usage / safety / industry-mode questions are now
+ * served directly by the MCP knowledge layer (schema_query actions
+ * get_guard_design_patterns / get_tool_reference / get_safety_rules, and
+ * project_operation recommend_industry) — no skill installation required.
  */
 export function recommendSkills(intent: string): Skill[] {
   const lower = intent.toLowerCase();
-  
+
   // Provider keywords
   if (/\b(create service|merchant|seller|provider|build service|allocators?|machine design)\b/.test(lower)) {
     return getSkillsByRole('provider');
   }
-  
+
   // Customer keywords
   if (/\b(place order|buy|purchase|customer|order status|track progress|dispute|compensation)\b/.test(lower)) {
     return getSkillsByRole('customer');
   }
-  
+
   // Arbitrator keywords
   if (/\b(arbitration|arbitrator|dispute resolution|voting|evidence|arb object)\b/.test(lower)) {
     return getSkillsByRole('arbitrator');
   }
-  
-  // Guard keywords
-  if (/\b(guard design|validation rules?|multi.sig|permission|authorization)\b/.test(lower)) {
-    return [getSkillByName('wowok-guard')!];
+
+  // Guard/tool/safety/scenario keywords → no dedicated skill anymore.
+  // Return empty and let the AI consult the MCP knowledge layer instead.
+  if (/\b(guard design|validation rules?|multi.sig|safety|industry mode|scenario)\b/.test(lower)) {
+    return [];
   }
 
   // Default: return all on-demand skills
@@ -286,4 +298,47 @@ export function negotiateAllSkills(mcpVersion: string): Array<{
     version: s.version,
     mode: negotiateSkillMode(mcpVersion, s.version),
   }));
+}
+
+// ============================================================
+// Skill Migration (GLM5-31 §3.2)
+// ============================================================
+
+/**
+ * Detect deprecated skills still installed on the client and tell the user
+ * where their content now lives.
+ *
+ * The 4 sunk skills (wowok-safety/tools/scenario/guard) keep working after
+ * the MCP upgrade (their calls are answered by the newer MCP), but their
+ * content is stale — the MCP knowledge layer is the single source of truth.
+ * Users should uninstall them to avoid the AI reading outdated rules.
+ *
+ * @param installedSkills names of skills currently installed on the client
+ * @returns deprecated hits + a human-readable migration message
+ */
+export function checkSkillMigration(installedSkills: string[]): {
+  deprecated: string[];
+  migration_targets: Record<string, string>;
+  message: string;
+} {
+  const deprecated = installedSkills.filter((s) =>
+    (DEPRECATED_SKILLS as readonly string[]).includes(s),
+  );
+
+  const migration_targets: Record<string, string> = {};
+  for (const s of deprecated) {
+    migration_targets[s] = SKILL_MIGRATION_MAP[s as DeprecatedSkill];
+  }
+
+  return {
+    deprecated,
+    migration_targets,
+    message:
+      deprecated.length > 0
+        ? `Skills [${deprecated.join(', ')}] have been migrated to the MCP knowledge layer ` +
+          `(GLM5-31 sink refactor). Their content is now served directly by the MCP server — ` +
+          `you can safely uninstall them:\n` +
+          deprecated.map((s) => `  - ${s} → ${SKILL_MIGRATION_MAP[s as DeprecatedSkill]}`).join('\n')
+        : '',
+  };
 }

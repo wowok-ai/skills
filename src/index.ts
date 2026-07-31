@@ -9,5 +9,11 @@ export {
   getSkillsByRole,
   getSkillsByLoading,
   getRoleSkills,
-  recommendSkills
+  recommendSkills,
+  negotiateSkillMode,
+  negotiateAllSkills,
+  checkSkillMigration,
+  DEPRECATED_SKILLS,
+  SKILL_MIGRATION_MAP
 } from './skills';
+export type { DeprecatedSkill } from './skills';

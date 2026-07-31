@@ -26,7 +26,8 @@ when_to_use:
 Converts natural-language intent into an executable Object Dependency Graph (ODG) and phased execution plan. Deterministic-first: rules and scenario templates decide the shape; the LLM only clarifies ambiguity and translates free text into typed fields.
 
 > **Layer**: L3 Skill, primary planner for L4 Harness Plan Loop
-> **Related Skills**: [wowok-onboard](../wowok-onboard/SKILL.md) (guided execution), [wowok-scenario](../wowok-scenario/SKILL.md) (scenario templates), [wowok-tools](../wowok-tools/SKILL.md) (MCP reference), [wowok-machine](../wowok-machine/SKILL.md) (workflow design), [wowok-guard](../wowok-guard/SKILL.md) (Guard design), [wowok-safety](../wowok-safety/SKILL.md) (immutability rules), [wowok-provider](../wowok-provider/SKILL.md) (post-plan operations)
+> **Related Skills**: [wowok-onboard](../wowok-onboard/SKILL.md) (guided execution), [wowok-machine](../wowok-machine/SKILL.md) (workflow design), [wowok-provider](../wowok-provider/SKILL.md) (post-plan operations)
+> Industry modes, Guard design patterns, safety rules, and tool references now live in the MCP knowledge layer — query via `project_operation` (`recommend_industry` / `list_modes`) and `schema_query` (`get_guard_design_patterns` / `get_safety_rules` / `get_tool_reference`).
 
 ---
 

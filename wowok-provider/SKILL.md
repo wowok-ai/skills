@@ -244,7 +244,7 @@ Order (per purchase, runtime-created)
 └── allocation → Allocation (optional, created at runtime; triggered via Progress.forward)
 
 Cross-object references:
-- Guard is referenced by 9 object types via diverse nested paths (see wowok-guard SKILL for full schema):
+- Guard is referenced by 9 object types via diverse nested paths (full schema via MCP `schema_query` action='get_guard_design_patterns'):
   - Service.buy_guard (top-level Option<address>)
   - Machine.forward.guard (per-node dynamic table; SDK does not expose — requires query_table)
   - Allocation.allocators[].guard (array element — graph-builder edge fieldName: allocator_guard)

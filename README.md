@@ -46,8 +46,10 @@ WOWOK_SKILLS_TARGETS=claude,agents npm install -g @wowok/skills
 
 | Mode | Skills | Behavior |
 |------|--------|----------|
-| **Always** | `wowok-tools`, `wowok-safety`, `wowok-output` | Metadata always in prompt (~100 tokens each). AI auto-loads full content when needed. |
-| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-guard`, `wowok-machine`, `wowok-onboard`, `wowok-scenario`, `wowok-planner`, `wowok-auditor` | AI matches description to task. Only loaded when relevant. |
+| **Always** | `wowok-output` | Metadata always in prompt (~100 tokens). AI auto-loads full content when needed. |
+| **On-demand** | `wowok-provider`, `wowok-arbitrator`, `wowok-order`, `wowok-messenger`, `wowok-machine`, `wowok-onboard`, `wowok-planner`, `wowok-auditor` | AI matches description to task. Only loaded when relevant. |
+
+> **v2.0 migration**: The 4 rule-reference skills (`wowok-tools`, `wowok-safety`, `wowok-scenario`, `wowok-guard`) were sunk into the MCP knowledge layer (GLM5-31) and are no longer installed. Their content is served by the MCP server itself — `schema_query` actions `get_tool_reference` / `get_safety_rules` / `get_guard_design_patterns`, and `project_operation` actions `recommend_industry` / `list_modes`. Old copies in your skills directory are detected and warned about during install.
 
 ## Quick Start
 
@@ -118,7 +120,7 @@ This copies skills to the project's `.*/skills/` directories. Commit to git for 
 
 ```bash
 # Disable a specific skill:
-rm -rf ~/.claude/skills/wowok-guard
+rm -rf ~/.claude/skills/wowok-machine
 
 # Re-enable it:
 npm install -g @wowok/skills
@@ -183,15 +185,13 @@ const providerSkill = getSkillByName('wowok-provider');
 
 ## Available Skills
 
-### Always Loaded (3 skills — foundational layer)
+### Always Loaded (1 skill — foundational layer)
 
 | Skill | Purpose | Role |
 |-------|---------|------|
-| `wowok-tools` | MCP tool reference — 17 sub-tools, schema-gated execution, schema-inexpressible constraints, supporting objects decision guide | All Roles |
-| `wowok-safety` | Safety protocol — dry-run → confirm → execute, immutability rules, confirmation checkpoints | All Roles |
 | `wowok-output` | Output processing — address resolution, name mapping, amount formatting, data visualization | All Roles |
 
-### On-Demand (10 skills — contextually loaded)
+### On-Demand (8 skills — contextually loaded)
 
 | Skill | Purpose | Role |
 |-------|---------|------|
@@ -199,12 +199,19 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-arbitrator` | Arbitration service — create Arbitration, handle disputes, organize voting, manage fees | Arbitrator |
 | `wowok-order` | Customer order lifecycle — pre-purchase due diligence (E1-E10), consensus building, order creation, progress advancement, arbitration | Customer |
 | `wowok-messenger` | Encrypted messaging — E2E communication, WTS evidence, anti-spam strategy, Contact object lifecycle | All Roles |
-| `wowok-guard` | Guard design mastery — programmable trust rules, 4 data source classifications, verifier constraint levels, 33 creation/runtime constraints | All Roles |
 | `wowok-machine` | Machine workflow design — state machines, node/pair/forward graph, immutability rules, dependency-first build order | Service Provider |
 | `wowok-onboard` | First-touch onboarding — 10-round dialogue from zero to first published Service, SQLite-based project pipeline integration | New Users |
-| `wowok-scenario` | Industry mode templates — freelance, rental, education, travel, subscription presets with audit checklists and failure playbooks | All Roles |
-| `wowok-planner` | Planning skill — converts natural language intent into Object Dependency Graph (ODG), 5 scenario templates | All Roles |
-| `wowok-auditor` | Pre-publish audit — Guard completeness, Machine soundness, fund flow correctness, 32 audit checks | All Roles |
+| `wowok-planner` | Planning skill — converts natural language intent into Object Dependency Graph (ODG), industry-mode aware via MCP | All Roles |
+| `wowok-auditor` | Pre-publish audit — Guard completeness, Machine soundness, fund flow correctness, publish readiness | All Roles |
+
+### Sunk to MCP Knowledge Layer (v2.0 — no longer skills)
+
+| Former Skill | Now Served By |
+|--------------|---------------|
+| `wowok-tools` | MCP `schema_query` action='get_tool_reference' |
+| `wowok-safety` | MCP `schema_query` action='get_safety_rules' + runtime confirm-gate on every write |
+| `wowok-scenario` | MCP `project_operation` actions 'recommend_industry' / 'list_modes' / 'create_project' |
+| `wowok-guard` | MCP `schema_query` actions 'get_guard_design_patterns' / 'get_guard_templates' |
 
 ## Related Projects
 

@@ -16,21 +16,46 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 
+/**
+ * Retained skills (post GLM5-31 sink refactor) — only these are installed.
+ * The 4 rule-reference skills (wowok-safety/tools/scenario/guard) were sunk
+ * into the MCP knowledge layer and are served by the MCP server directly:
+ *   - wowok-safety   → schema_query action='get_safety_rules'
+ *   - wowok-tools    → schema_query action='get_tool_reference'
+ *   - wowok-scenario → project_operation recommend_industry / create_project
+ *   - wowok-guard    → schema_query action='get_guard_design_patterns'
+ */
 const SKILL_DIRS = [
   'wowok-provider',
   'wowok-arbitrator',
   'wowok-order',
   'wowok-messenger',
-  'wowok-guard',
   'wowok-machine',
   'wowok-output',
-  'wowok-tools',
-  'wowok-safety',
   'wowok-onboard',
-  'wowok-scenario',
   'wowok-planner',
   'wowok-auditor',
 ];
+
+/**
+ * Deprecated skills removed in the GLM5-31 sink refactor. They are NEVER
+ * installed, but preuninstall/init still clean them up from legacy installs
+ * and warn the user where the content now lives.
+ */
+const LEGACY_SKILL_DIRS = [
+  'wowok-guard',
+  'wowok-tools',
+  'wowok-safety',
+  'wowok-scenario',
+];
+
+/** Where each deprecated skill's content now lives (migration message). */
+const SKILL_MIGRATION_MAP = {
+  'wowok-safety': "MCP schema_query action='get_safety_rules'",
+  'wowok-tools': "MCP schema_query action='get_tool_reference'",
+  'wowok-scenario': "MCP project_operation action='recommend_industry' / 'create_project'",
+  'wowok-guard': "MCP schema_query action='get_guard_design_patterns'",
+};
 
 const CLIENT_DIRS = {
   claude: path.join(os.homedir(), '.claude', 'skills'),
@@ -172,7 +197,9 @@ function installSkills(targetDir, target) {
 function uninstallSkills(targetDir) {
   let count = 0;
 
-  for (const dir of SKILL_DIRS) {
+  // Remove both retained and legacy (deprecated) skills — legacy dirs may
+  // still exist from pre-refactor installs and must be cleaned up.
+  for (const dir of [...SKILL_DIRS, ...LEGACY_SKILL_DIRS]) {
     const dirPath = path.join(targetDir, dir);
     if (fs.existsSync(dirPath)) {
       removeDir(dirPath);
@@ -182,6 +209,23 @@ function uninstallSkills(targetDir) {
   }
 
   return count;
+}
+
+/**
+ * Detect deprecated skills still present in a target dir and print a
+ * migration hint (GLM5-31 §3.2). Returns the list of legacy dirs found.
+ */
+function warnLegacySkills(targetDir) {
+  const found = LEGACY_SKILL_DIRS.filter((dir) => fs.existsSync(path.join(targetDir, dir)));
+  if (found.length > 0) {
+    console.warn(`[wowok-skills] ⚠ MIGRATION: deprecated skills detected in ${targetDir}:`);
+    for (const dir of found) {
+      console.warn(`[wowok-skills]   - ${dir} → content now served by ${SKILL_MIGRATION_MAP[dir]}`);
+    }
+    console.warn('[wowok-skills]   These skills are stale (MCP knowledge layer is the source of truth).');
+    console.warn('[wowok-skills]   Remove them with: wowok-skills uninit  (or delete the folders above)');
+  }
+  return found;
 }
 
 function getTargets() {
@@ -206,6 +250,8 @@ function main() {
       console.log(`[wowok-skills] → ${dir}`);
       const count = installSkills(dir, target);
       total += count;
+      // GLM5-31 §3.2: warn about stale pre-refactor skills still present.
+      warnLegacySkills(dir);
     }
 
     console.log(`[wowok-skills] Done — ${total} skills installed across ${targets.length} client(s).`);
@@ -256,7 +302,7 @@ function main() {
 
 function countExisting(targetDir) {
   let count = 0;
-  for (const dir of SKILL_DIRS) {
+  for (const dir of [...SKILL_DIRS, ...LEGACY_SKILL_DIRS]) {
     if (fs.existsSync(path.join(targetDir, dir))) {
       count++;
     }

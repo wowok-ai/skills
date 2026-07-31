@@ -134,11 +134,11 @@ When user asks about field meanings:
 
 # Related Skills
 
-| Skill | Purpose |
+| Skill / MCP Knowledge | Purpose |
 |-------|---------|
-| [wowok-safety](../wowok-safety/SKILL.md) | Pre-operation safety checks |
-| [wowok-guard](../wowok-guard/SKILL.md) | Guard design & validation |
-| [wowok-tools](../wowok-tools/SKILL.md) | Tool selection patterns |
+| MCP `schema_query` action='get_safety_rules' | Pre-operation safety checks (sunk from wowok-safety) |
+| MCP `schema_query` action='get_guard_design_patterns' | Guard design & validation (sunk from wowok-guard) |
+| MCP `schema_query` action='get_tool_reference' | Tool selection patterns (sunk from wowok-tools) |
 | [wowok-order](../wowok-order/SKILL.md) | Order lifecycle (buyer) |
 | [wowok-provider](../wowok-provider/SKILL.md) | Service management (merchant) |
 | [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | Dispute resolution |

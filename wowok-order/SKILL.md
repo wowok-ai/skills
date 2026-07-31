@@ -15,7 +15,8 @@ when_to_use:
 # WoWok Customer Guide
 
 > **Role**: Customer (Buyer/Order Holder)  
-> **Provider Guide**: [wowok-provider](../wowok-provider/SKILL.md) | **Arbitration Guide**: [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | **Guard Design**: [wowok-guard](../wowok-guard/SKILL.md) | **Machine**: [wowok-machine](../wowok-machine/SKILL.md) | **Messenger**: [wowok-messenger](../wowok-messenger/SKILL.md) | **Safety**: [wowok-safety](../wowok-safety/SKILL.md) | **Tools**: [wowok-tools](../wowok-tools/SKILL.md)
+> **Provider Guide**: [wowok-provider](../wowok-provider/SKILL.md) | **Arbitration Guide**: [wowok-arbitrator](../wowok-arbitrator/SKILL.md) | **Machine**: [wowok-machine](../wowok-machine/SKILL.md) | **Messenger**: [wowok-messenger](../wowok-messenger/SKILL.md)
+> Guard design patterns, safety rules, and tool references now live in the MCP knowledge layer — query via `schema_query` actions `get_guard_design_patterns`, `get_safety_rules`, `get_tool_reference`.
 
 ---
 
@@ -112,7 +113,7 @@ Use `wip_file` → `op: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wi
 
 ### E4 — Guards Analysis
 
-Guard structure and instruction reference: [wowok-guard](../wowok-guard/SKILL.md).
+Guard structure and instruction reference: MCP `schema_query` action='get_guard_design_patterns' (design patterns) and action='get_guard_templates' (ready-made templates).
 
 **Step 1**: Collect unique Guard IDs from E3 Machine JSON (`forward.guard.guard`), E1 `order_allocators`, E1 `buy_guard`. Deduplicate.
 

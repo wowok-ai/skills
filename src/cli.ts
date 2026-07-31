@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import * as os from 'os';
-import { getSkills, getSkillByName, getRoleSkills, recommendSkills, getSkillsByRole } from './skills';
+import { getSkills, getSkillByName, getRoleSkills, recommendSkills, getSkillsByRole, checkSkillMigration, DEPRECATED_SKILLS } from './skills';
 import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT_TARGETS } from './types';
 
 /**
@@ -14,24 +14,29 @@ import { SkillRole, ClientTarget, CLIENT_SKILL_DIRS, CLIENT_FILE_EXT, ALL_CLIENT
  * - Customer: wowok-order
  * - Provider: wowok-provider, wowok-machine
  * - Arbitrator: wowok-arbitrator
- * - Shared: wowok-guard, wowok-tools, wowok-safety, wowok-output
- * - Onboarding: wowok-onboard, wowok-scenario, wowok-planner, wowok-auditor
+ * - Shared: wowok-messenger, wowok-output
+ * - Onboarding: wowok-onboard, wowok-planner, wowok-auditor
+ *
+ * GLM5-31 sink refactor: wowok-guard/tools/safety/scenario were sunk into
+ * the MCP knowledge layer and are no longer installed (see DEPRECATED_SKILLS).
  */
 const SKILL_DIRS = [
   'wowok-order',
   'wowok-provider',
   'wowok-machine',
   'wowok-arbitrator',
-  'wowok-guard',
   'wowok-messenger',
   'wowok-output',
-  'wowok-tools',
-  'wowok-safety',
   'wowok-onboard',
-  'wowok-scenario',
   'wowok-planner',
   'wowok-auditor',
 ];
+
+/**
+ * Deprecated skill dirs — never installed, but uninit still removes them
+ * from legacy installs so users can clean up pre-refactor installations.
+ */
+const LEGACY_SKILL_DIRS: string[] = [...DEPRECATED_SKILLS];
 
 /**
  * Role display names for CLI output
@@ -488,6 +493,14 @@ function cmdInit(targetArg: string | undefined, withMcp: boolean): void {
 
     totalCount += count;
     console.log(`[wowok-skills] Done — ${count} skills installed to ${targetDir}`);
+
+    // GLM5-31 §3.2: detect stale pre-refactor skills and print migration hint.
+    const legacyFound = LEGACY_SKILL_DIRS.filter((dir) => fs.existsSync(path.join(targetDir, dir)));
+    if (legacyFound.length > 0) {
+      const migration = checkSkillMigration(legacyFound);
+      console.warn(`\n[wowok-skills] ⚠ ${migration.message}`);
+      console.warn('[wowok-skills] Remove them with: wowok-skills uninit\n');
+    }
   }
 
   if (targets.length > 1) {
@@ -531,7 +544,9 @@ function cmdUninit(targetArg?: string): void {
     const targetDir = path.join(cwd, skillsDir);
     let count = 0;
 
-    for (const dir of SKILL_DIRS) {
+    // Remove both retained and legacy (deprecated) skills — legacy dirs may
+    // still exist from pre-refactor installs and must be cleaned up.
+    for (const dir of [...SKILL_DIRS, ...LEGACY_SKILL_DIRS]) {
       const dirPath = path.join(targetDir, dir);
       if (fs.existsSync(dirPath)) {
         removeDir(dirPath);
