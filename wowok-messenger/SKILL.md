@@ -25,7 +25,7 @@ always: false
 End-to-end encrypted messaging with tamper-proof audit trails.
 
 > **Role**: Any WoWok participant
-> All 16 operations with full parameter types and constraints are in the MCP schema (`messenger_operation`). This document focuses on **design decisions and strategy** not captured by the schema.
+> All 17 operations with full parameter types and constraints are in the MCP schema (`messenger_operation`). This document focuses on **design decisions and strategy** not captured by the schema.
 > **Related Skills**: [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (WTS evidence in disputes), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-provider](../wowok-provider/SKILL.md) (service provider perspective)
 > Guard design patterns and safety rules now live in the MCP knowledge layer — query via `schema_query` actions `get_guard_design_patterns` / `get_safety_rules`.
 
@@ -72,7 +72,7 @@ The on-chain **Contact** object (`operation_type: "contact"`) is the bridge betw
 
 **When to create**: Before Service publish, when `customer_required` is set (Service.um must point to a Contact). Reuse an existing Contact if you serve multiple Services with the same support channel.
 
-**Lifecycle**: Contact is mutable (unlike Proof/Guard). `im_add`/`im_remove` require permission index 453 (CONTACT_IM). No events emitted on IM mutations — poll `ims[]` field. If Contact is bound to `Permission.um` via `permission_um_set`, clear that binding BEFORE deleting the Contact (else dangling pointer). Full field constraints: MCP `schema_query` action='get' object_type='contact'.
+**Lifecycle**: Contact is mutable (unlike Proof/Guard). `im_add`/`im_remove` require permission index 453 (CONTACT_IM). No events emitted on IM mutations — poll `ims[]` field. If Contact is bound to `Permission.um` via `permission_um_set`, clear that binding BEFORE deleting the Contact (else dangling pointer). Full field constraints: MCP `schema_query` action='get' name='contact'.
 
 ---
 
@@ -86,6 +86,7 @@ Two approaches, depending on need:
 
 - **Quick glance** — `watch_conversations` with `unreadOnly: true` lists all conversations with unread messages, sorted by activity. Each conversation shows a preview of the last messages.
 - **Deep dive** — `watch_messages` with a specific `peerAddress` to view the full conversation with a particular counterparty. Supports keyword search, time-range filtering, direction filter, and status filter.
+- **Server sync** — `pull_messages` fetches the latest messages from the server into local storage (optional `limit` caps batch size). Use this first when the local view looks stale (e.g. after downtime or on a new device session), then read via `watch_conversations` / `watch_messages`.
 
 **Design note**: By default, retrieving messages auto-marks them as viewed (`viewedAt` timestamp). Set `skipAutoMarkViewed: true` if you want to peek without marking read.
 

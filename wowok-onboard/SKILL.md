@@ -78,6 +78,8 @@ The onboarding flow is backed by the MCP SQLite-based project pipeline. Each ste
 | 3. Build Graph | After R8 | `build_graph` → object dependency graph from added objects | — |
 | 4. Evaluate | After graph built | `evaluate_project` (evaluation_type='risk') → risk assessment | CRITICAL risks block R9 |
 
+> **Async mode**: `build_graph` / `evaluate_project` accept `async_mode: true` for large projects — the call returns immediately with a `task_id`. Poll `query_task_status` with that `task_id` until `status: "completed"` before reading results / proceeding to the next step. Default is synchronous (`async_mode` omitted) — fine for the ≤10-object onboarding scale.
+
 ## R1-R10 Build Order
 
 | Round | Object | MCP Operation | Key Decision |

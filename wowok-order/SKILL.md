@@ -2,7 +2,7 @@
 name: wowok-order
 description: |
   WoWok Customer Guide — complete buyer order lifecycle: pre-purchase due diligence
-  (E1-E10), consensus building, order creation, progress advancement, and arbitration.
+  (E1-E11), consensus building, order creation, progress advancement, and arbitration.
 when_to_use:
   - User is a customer/buyer placing or managing orders
   - User wants to evaluate services before purchasing
@@ -42,7 +42,7 @@ Allocation evaluates when Progress reaches **any** configured node (not just exi
 
 ## Phase 1: Pre-Purchase Due Diligence (MANDATORY GATE)
 
-> **⛔ Complete E1-E10 in order. User must explicitly confirm every item.**
+> **⛔ Complete E1-E11 in order. User must explicitly confirm every item.**
 > **⚠️ = explain risk, wait for decision. 🔴 = strongly advise against purchase.**
 
 ---
@@ -63,7 +63,7 @@ From E1 `sales[]`. Skip `suspension === true` items.
 
 **WIP Verification** (mandatory when `wip_hash` non-empty):
 
-Use `wip_file` → `op: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wip_hash>"`.
+Use `wip_file` → `type: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wip_hash>"`.
 
 - `wip_hash` empty → no on-chain commitment (auto-verified, weaker evidence)
 - Verification fails → 🔴 **WIP tampered after publish**
@@ -201,9 +201,23 @@ For matched: present value, ask "correct?" and "OK to send?". For missing: ask u
 
 ---
 
+### E11 — Trust Score Synthesis (Preorder Advice)
+
+Aggregate E1–E10 into a decision-grade assessment via `trust_score`:
+
+`wowok({ tool: "trust_score", data: { service: "<service_id>", depth: "preorder", order_amount: "<planned_amount>" } })`
+
+- Returns trust score + per-dimension risks + preorder advice (order confidence, game strategies, preference match, industry risks, `blocking_reminders`); non-empty `blocking_reminders` → ⛔ resolve with user BEFORE Phase 2.
+- Comparing multiple candidates → add `compare_with: ["<id2>", ...]` (1–9, same `depth: "preorder"`): output gains a `comparison` block with per-metric bests — **NO overall ranking**; present trade-offs, the buyer decides.
+- Optional `preferences` / `user_metrics` reflect the buyer's own priorities.
+
+> Fast pre-screen: at E1 you may call `depth: "evaluate"` (default) for a quick score; 🔴 `risk_score` (<50) → advise early abort, skip E2–E10.
+
+---
+
 ### Pre-Purchase GATE
 
-**Abort conditions**: E1 `bPublished=false`/`bPaused=true` → ABORT; E8 `um=null` → ABORT; E3 no-refund + E6 no-arb → strongly advise ABORT; E4 ambiguous Guards → user MUST manually review.
+**Abort conditions**: E1 `bPublished=false`/`bPaused=true` → ABORT; E8 `um=null` → ABORT; E3 no-refund + E6 no-arb → strongly advise ABORT; E4 ambiguous Guards → user MUST manually review; E11 `blocking_reminders` → resolve with user BEFORE proceeding.
 
 **Any ⚠️** → explain risk, wait for user decision. **All OK** → Phase 2.
 
@@ -370,7 +384,7 @@ For precise control, pass an explicit array of `{id, type}` objects, or pass the
 
 ### Phase Dependency
 
-E1 (Service) → E2 (Products/WIP), E8 (Contact), E10 (Privacy), E7 (Compensation), E6 (Arbitrations) run in parallel after E1. E3 (Machine) → E4 (Guards) → E5 (Allocators) is a strict chain. E9 (Reputation) follows E3.
+E1 (Service) → E2 (Products/WIP), E8 (Contact), E10 (Privacy), E7 (Compensation), E6 (Arbitrations) run in parallel after E1. E3 (Machine) → E4 (Guards) → E5 (Allocators) is a strict chain. E9 (Reputation) follows E3. E11 (Trust Score) runs LAST — it aggregates all prior findings.
 
 ### ⚠️ Critical Attention Items
 

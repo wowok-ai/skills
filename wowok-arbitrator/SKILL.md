@@ -30,7 +30,7 @@ The following content has been pushed down to the MCP knowledge layer and is app
 |---------|---------------------|-------------|
 | Guard design rules (structural layers, data source classification, voting_guard table design) | `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`) | `project_operation.evaluate_project` (via `assessGuardRisks`) |
 | Safety rules (confirmation levels, immutability, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.evaluate_project` |
-| Arbitration-specific risks | `knowledge/arb-risk.ts` (`assessArbitrationRisks`) | `project_operation.evaluate_project` |
+| Arbitration-specific risks | `knowledge/arbitration-risk.ts` (`assessArbitrationRisks`) | `project_operation.evaluate_project` |
 
 This Skill keeps the arbitration **conversation flow**, **evidence collection** scripts, and **dispute resolution** guidance — the MCP layer handles the rule evaluation.
 

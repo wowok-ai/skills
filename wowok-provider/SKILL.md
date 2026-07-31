@@ -314,7 +314,7 @@ Required submission: Order ID (matching the Guard's b_submission identifier)
 Immutable product commitment for arbitration evidence.
 
 ```
-Create:  wowok({ tool: "wip_file", data: { op: "generate", ... } }) → markdown_text + images → outputPath
+Create:  wowok({ tool: "wip_file", data: { type: "generate", ... } }) → markdown_text + images → outputPath
 Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", ... } }) → sales.sales[{
           name, price, stock, wip: "<URL>", wip_hash: "" (auto)
         }]
@@ -324,6 +324,16 @@ Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", .
 
 - Add: `compensation_fund_add` | Lock: `setting_lock_duration_add` (default 30 days = 2592000000ms, configurable via `setting_lock_duration_add`)
 - **Withdraw**: Pause Service → Wait lock duration → `compensation_fund_receive`
+
+### Payment Tokens & Stablecoin Bridging (Mainnet Only)
+
+WOW is the default settlement token. For stablecoin-denominated revenue (fiat-pegged pricing, large cross-period escrow), mainnet funds move via `bridge_operation`:
+
+- `query_supported_tokens` / `query_supported_evm_chains` — discover supported Bridge tokens (ETH/WETH/WBTC/USDC/USDT) and chains
+- `cross_chain_wow_to_evm` / `cross_chain_evm_to_wow` — WOW↔EVM transfer (mainnet env required; assets route through the auto-managed activeEvmAccount)
+- `query_transfer_status` / `query_transfer_list` — track transfers; `manage_evm_rpc` — handle EVM RPC rate limits (429)
+
+> Supported token addresses per network: `wowok_buildin_info` → 'mainnet bridge tokens'. Bridge is mainnet-only — testnet has no cross-chain path.
 
 ---
 
