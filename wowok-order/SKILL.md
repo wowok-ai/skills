@@ -313,7 +313,7 @@ Before calling `order.receive`, query what the Order has received to verify ther
 }
 ```
 
-**Expected response**: A `ReceivedBalance` object with `token_type`, `balance`, and `received[]` array of `CoinWrapper` objects. If empty, there is nothing to withdraw yet.
+**Expected response**: A `ReceivedBalance` object with `token_type`, `balance`, `received[]` array of `CoinWrapper` objects, and `_money_display` annotation (unit-converted values with decimals reminder). If empty, there is nothing to withdraw yet.
 
 #### Step 2: Call `order.receive` with `"recently"` (simplest form)
 
