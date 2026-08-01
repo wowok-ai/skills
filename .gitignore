@@ -10,6 +10,7 @@
 **/package-local.json
 /skill-deploy.sh
 /examples
+.claude/
 
 # testing
 /coverage

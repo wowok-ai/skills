@@ -1,6 +1,6 @@
 {
   "name": "@wowok/skills",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "WoWok AI Skills for Claude and other AI assistants - Dialogue orchestration layer on top of the WoWok MCP server (rules/reference knowledge is served by MCP directly since v2.0.0)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

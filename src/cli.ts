@@ -731,9 +731,15 @@ function main() {
 }
 
 function parseTargetArg(rest: string[]): string | undefined {
+  // Check for --target <value> first
   const idx = rest.indexOf('--target');
   if (idx !== -1 && idx + 1 < rest.length) {
     return rest[idx + 1];
+  }
+  // Check for positional argument (first non-flag arg)
+  const positional = rest.find(a => !a.startsWith('--'));
+  if (positional && ALL_CLIENT_TARGETS.includes(positional as any)) {
+    return positional;
   }
   return undefined;
 }

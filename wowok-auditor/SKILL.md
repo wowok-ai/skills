@@ -53,7 +53,7 @@ This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completen
 3. **FAIL blocks, WARN asks**: A FAIL verdict blocks R10 publish until fixed. A WARN verdict proceeds after explicit user acknowledgement. PASS is silent.
 4. **Blast-radius first**: Before reporting, classify each issue by irreversibility — a Guard logic bug post-publish is permanent; an untested Guard is recoverable.
 5. **Semantic-aware**: Use the `semantic` field returned by recent operations (`semantic.created`, `semantic.modified`, `semantic.released`, `semantic.events`) to cross-check that the intended roles were actually created/modified/released.
-6. **Tiered**: A Tier-1 audit (single Service + single Guard) skips R4 Machine soundness if no Machine is bound. Tier-3 runs every rule including cross-Machine dependency chains.
+6. **Tiered**: A Tier-1 audit (single Service + single Guard) skips Machine soundness if no Machine is bound. Tier-3 runs every rule including cross-Machine dependency chains.
 
 ---
 

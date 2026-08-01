@@ -50,7 +50,7 @@ The onboarding skill dismantles the "16 operation_type × 14 object_type" wall. 
 
 - Converts "I want to open a shop" into a 10-round guided build plan
 - Industry defaults auto-applied via `project_operation.create_project` (pass `project_industry` parameter; defaults sourced from MCP `knowledge/scenario-modes.ts`)
-- Enforces dependency order: Permission → Service → Machine → Progress → Guard → Allocation → Order → Publish
+- Enforces dependency order: Permission → Machine (create) → Guards → Machine (bind guards+publish) → Service Phase 1 (configure) → Service Phase 2 (publish) → Test Order → Mainnet
 - Persists checkpoints after each round via `local_info_operation` so users can resume
 - Hands off to [wowok-provider](../wowok-provider/SKILL.md) once the Service is published
 
@@ -63,7 +63,7 @@ The onboarding skill dismantles the "16 operation_type × 14 object_type" wall. 
 
 ### Output Contract
 
-A published Service with: published Machine, bound Progress, validated Guards, configured order_allocators, and one successful test order digest. Handoff packet includes all object IDs and the post-publish verification report.
+A published Service with: published Machine, published Service, validated Guards, configured order_allocators, and one successful test order digest (order → progress advance → allocation). Handoff packet includes all object IDs and the post-publish verification report.
 
 ---
 
@@ -74,26 +74,43 @@ The onboarding flow is backed by the MCP SQLite-based project pipeline. Each ste
 | Step | Rounds | MCP Action | Gate |
 |------|--------|------------|------|
 | 1. Create Project | R1-R2 | `create_project` (pass `project_industry`) → project record + scenario defaults | — |
-| 2. Add Objects | R3-R8 | `add_object` for each on-chain object (Service, Machine, Guards, Allocators) | — |
-| 3. Build Graph | After R8 | `build_graph` → object dependency graph from added objects | — |
+| 2. Add Objects | R2-R7 | `add_object` for each on-chain object (Permission, Machine, Guards, Service) | — |
+| 3. Build Graph | After R7 | `build_graph` → object dependency graph from added objects | — |
 | 4. Evaluate | After graph built | `evaluate_project` (evaluation_type='risk') → risk assessment | CRITICAL risks block R9 |
 
 > **Async mode**: `build_graph` / `evaluate_project` accept `async_mode: true` for large projects — the call returns immediately with a `task_id`. Poll `query_task_status` with that `task_id` until `status: "completed"` before reading results / proceeding to the next step. Default is synchronous (`async_mode` omitted) — fine for the ≤10-object onboarding scale.
 
-## R1-R10 Build Order
+## R1-R10 Build Order (MCP-Validated)
 
-| Round | Object | MCP Operation | Key Decision |
-|-------|--------|---------------|--------------|
-| R1 | Account | `account_operation.gen` + `faucet` | New or reuse? |
-| R2 | Industry mode | `project_operation.create_project` (pass `project_industry`) | Which driving mode? |
-| R3 | Service | `onchain_operations.service` CREATE | Name, type_parameter, description |
-| R4 | Permission | `onchain_operations.permission` CREATE/REUSE | Index 1000 = provider/merchant (customer uses `namedOperator:""` = OrderHolder; arbiter is NOT a Permission index — arbiters live in `Arbitration.voting_guard`) |
-| R5 | Machine | `onchain_operations.machine` CREATE | Nodes, forwards (mode defaults from MCP) |
-| R6 | Progress | `onchain_operations.progress` CREATE + bind | Mirror Machine nodes |
-| R7 | Guards | `onchain_operations.guard` CREATE + `gen_passport` test | 5 Guard templates (mode defaults from MCP) |
-| R8 | Allocation | `onchain_operations.allocation` CREATE + `service.order_allocators` | Fund split (mode defaults from MCP) |
-| R9 | Test order | `onchain_operations.order` CREATE + `progress` advance + `allocation.alloc_by_guard` | Full flow dry run |
-| R10 | Publish | `onchain_operations.machine` publish + `service` publish | Pre-publish audit must PASS |
+**Core principles (from MCP schema):**
+- `service.machine` must reference a **published** Machine (Service cannot bind unpublished Machine)
+- `service.order_allocators` is L1-locked — MUST be set BEFORE `service.publish` (per service.move:503)
+- Guard uses **LocalMark NAME** in table to break circular dependency (Guard→Service→Guard)
+- `order_new` (test order) only works when `service.bPublished=true` (else E_NOT_PUBLISHED)
+- **Recommended order**: Permission → Machine (create nodes/forwards) → Guards → Machine (bind guards to forwards) → Machine (publish) → Service Phase 1 (configure) → Service Phase 2 (publish) → Test Order
+
+| Round | Phase | Object | MCP Operation | Key Decision |
+|-------|-------|--------|---------------|--------------|
+| R1 | Foundation | Project + Account | `project_operation.create_project` (pass `project_industry`) + `account_operation.gen` + `faucet` | Industry mode + new/reuse account |
+| R2 | Foundation | Permission | `onchain_operations.permission` CREATE/REUSE | Index 1000 = provider |
+| R3 | Foundation | Machine | `onchain_operations.machine` CREATE (nodes/forwards, guards optional inline) | Nodes, forwards, optional inline guards |
+| R4 | Foundation | Guards | `onchain_operations.guard` CREATE (multiple) | Buy guard, accept guard, refund guard — use LocalMark NAME for Service references |
+| R5 | Foundation | Machine guard binding | `onchain_operations.machine` MODIFY (bind guards to forwards) | `op: "add forward"` or `op: "set"` to update forward guard fields; Machine must still be unpublished |
+| R6 | Foundation | Machine publish | `onchain_operations.machine` publish | Machine must be published before Service can reference it |
+| R7 | Revenue | Service Phase 1 | `onchain_operations.service` CREATE (no publish) + set `machine` + `order_allocators` + `buy_guard` + `sales` + `arbitrations` (if compensation) | All L1-locked fields (machine, order_allocators) MUST be set here |
+| R8 | Audit | Pre-publish audit | `machineNode2file` export + `guard2file` export + `project_operation.evaluate_project` | All CRITICAL risks must be fixed before R9 |
+| R9 | Publish | Service Phase 2 | `onchain_operations.service` publish=true | Only flips publish flag; L1 fields already locked |
+| R10 | Test + Mainnet | Test order + Mainnet | `onchain_operations.service` `order_new` → `onchain_operations.progress` advance → `onchain_operations.allocation` `alloc_by_guard` → Re-run R2-R9 on mainnet | Full flow dry run: order → progress → allocation; Recommend testnet first, then mainnet |
+
+**Guard binding to Machine forwards**: Two approaches:
+1. **Inline (R3)**: Set guards directly in `MachineForwardSchema.guard` during Machine CREATE — guards must already exist
+2. **Deferred (R5)**: Create Machine first without guards (R3), create Guards (R4), then bind guards to forwards via `op: "add forward"` or `op: "set"` — allows Guards to reference Machine by LocalMark name
+
+Use approach 2 when Guards need to reference the Machine (e.g., verify current node or forward name). Use approach 1 for simple Guards that don't reference the Machine.
+
+**Circular dependency handling**: Guard that references Service → create Guard first with LocalMark NAME in table (not address), then reference Guard by name in Service Phase 1. LocalMark name is resolved to address at transaction build time.
+
+**R-M1-11 compliance** (rental/refund scenarios): Machine MUST use routing nodes (`return_approved`, `damage_confirmed`, `arbiter_rule`), NOT terminal nodes (`deposit_refunded`, `refunded`). Refund is handled by Allocator, not Machine terminal nodes.
 
 ---
 
@@ -129,7 +146,7 @@ Before declaring onboarding complete, verify ALL items. Each is a hard gate — 
 | 4 | Allocators configured | Each Allocator `sharing[].sharing` Rate entries sum to **10000** (Rate mode); or `Amount` mode values set. For rental/refund scenarios, verify Allocators' `trigger_node` references the routing nodes (e.g., `return_approved`) — NOT missing (else R-M1-11 refund path is broken) |
 | 5 | Service created with all bindings | `query_toolkit` (onchain_objects, type=service) → machine, order_allocators, buy_guard all non-empty |
 | 6 | Service published | `query_toolkit` (onchain_objects, type=service) → `bPublished: true` |
-| 7 | Test order placed | R9 test order created + Progress advanced + Allocator triggered successfully |
+| 7 | Test order placed | R9 test order created via `service.order_new` + Progress advanced + Allocator triggered successfully |
 
 > If any item fails, do NOT proceed to handoff. Fix the underlying issue, then re-verify. Use `project_operation.evaluate_project` (risk) to auto-detect missing bindings.
 

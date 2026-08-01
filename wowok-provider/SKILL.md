@@ -112,10 +112,9 @@ All Tool: references below are sub-tools invoked via wowok({ tool: "<name>", dat
 STEP 1: Foundation
 ├── Permission — REUSE existing (strongly recommended)
 │     Tool: "onchain_operations" (permission) | Fields: name, type_parameter
-├── Service (unpublished) — CREATE new
-│     Tool: "onchain_operations" (service) | Fields: name, type_parameter, permission
 └── Machine (unpublished) — CREATE new or REUSE template
       Tool: "onchain_operations" (machine) | Fields: nodes, pairs, forwards
+      ⚠️ Machine nodes define the workflow; forward guards can be set inline here
       Discovery: "query_toolkit" (account_list, local_mark_list, onchain_objects)
       Template: "machineNode2file" (export existing for editing)
 
@@ -130,40 +129,41 @@ STEP 2: Trust Layer
          - Reward guard → pass/fail only
       Guard design patterns: MCP `knowledge/guard-design-patterns.ts` (auto-applied via `evaluate_project`)
 
-STEP 3: Business Logic (MODIFY)
-├── Machine — bind Guards to forwards
-│     Tool: "onchain_operations" (machine)
-├── Service — set Allocators
-│     Tool: "onchain_operations" (service) | Fields: order_allocators
-├── Arbitrations (optional) — REUSE existing Arb services
-│     Tool: "onchain_operations" (service) | Fields: arbitrations.list
-├── Compensation Fund (optional): compensation_fund_add + setting_lock_duration_add (default 30 days, configurable)
-│     Tool: "onchain_operations" (service)
-└── Reward (optional) — incentive pools
+STEP 3: Business Logic (MODIFY Machine)
+├── Machine — bind Guards to forwards (update existing forwards with guard fields)
+│     Tool: "onchain_operations" (machine) | Fields: node (op: "add forward" / "set" with updated forwards including guard)
+│     ⚠️ Machine is still unpublished here — guards can be freely bound/unbound
+├── Machine — publish (locks nodes/pairs/forwards permanently)
+│     Tool: "onchain_operations" (machine) | publish: true
+│     ⚠️ After publish, nodes/forwards are IMMUTABLE — verify via machineNode2file first
+└── Service (unpublished) — CREATE with machine + order_allocators + buy_guard + sales
+      Tool: "onchain_operations" (service) | Fields: object (with permission), machine, order_allocators, buy_guard, sales
+      ⚠️ machine must reference a PUBLISHED Machine (else Service publish will fail)
+      ⚠️ order_allocators is L1-locked — MUST be set before Service publish
 
 STEP 4: Publication
-├── Publish Machine → IMMUTABLE
-│     Tool: "onchain_operations" (machine) | publish: true
-├── Bind Machine to Service
-│     Tool: "onchain_operations" (service) | machine: "<machine_id>"
-└── Publish Service → machine/allocators LOCKED
-      Tool: "onchain_operations" (service) | publish: true
-
-      ⚠️ Pre-Publish Verification:
-      1. Re-check PRE-FLIGHT: all R1-R7 still confirmed?
-      2. guard2file export Guards → review
-      3. machineNode2file export Machine → review
-      4. Allocator splits match user's stated model?
-      5. Permission indexes: every permissionIndex in Machine forwards has entities granted? (call permission "add perm by index" for missing ones)
-      6. Arbitration Permission isolation: Arbitration uses a SEPARATE Permission object (not the Service's Permission)? Different owner/admin? (critical for mainnet trust)
-      7. Warn: publish = immutable. Proceed?
+├── Pre-Publish Verification (export and review):
+│     1. machineNode2file → verify Machine nodes/forwards (published, immutable)
+│     2. guard2file → verify Guard logic
+│     3. project_operation evaluate_project (risk) → fix CRITICAL findings
+│     4. Permission indexes: every permissionIndex in Machine forwards has entities granted?
+│     5. Arbitration Permission isolation (if compensation_fund > 0)
+├── Service — publish (locks machine/order_allocators)
+│     Tool: "onchain_operations" (service) | object: "<service_name>", publish: true
+│     ⚠️ L1-LOCKED: machine and order_allocators are permanently frozen
+└── Post-publish (mutable fields):
+      description, location, sales, discount, buy_guard, customer_required, um (Contact), rewards (add), arbitrations (add), repositories (add)
 
 STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 ├── description, location
 ├── sales (products with WIP) — ⛔ user MUST provide: name, price, stock, WIP
 ├── customer_required
-└── um — Contact (REUSE existing or CREATE new)
-      ⚠️ If customer_required is set → um MUST be set
+├── um — Contact (REUSE existing or CREATE new)
+│     ⚠️ If customer_required is set → um MUST be set
+└── Test Order — verify full flow works
+      Tool: "onchain_operations" (service) | order_new: { buy: { items, total_pay } }
+      ⚠️ Requires Service bPublished=true (else E_NOT_PUBLISHED)
+      After order: progress advance → allocation.alloc_by_guard → verify fund distribution
 ```
 
 ### Object Reuse & Immutability
@@ -181,17 +181,17 @@ STEP 5: Post-Publish (MODIFY Service — mutable after publish)
 
 Deploy a Service in two phases to handle Guard↔Service circular dependencies via LocalMark names. Both phases call `onchain_operations` (operation_type: "service"); they differ by `publish` flag and binding completeness.
 
-**Phase 1 — CREATE (no publish)**: Build the full object graph with LocalMark name references so addresses can resolve later.
+**Phase 1 — CREATE (no publish)**: Build the full object graph with LocalMark name references so addresses can resolve later. Machine must be PUBLISHED before this phase.
 
 ```
 onchain_operations.service {
-  name: "<service_local_mark>",
-  type_parameter, permission,
-  machine: "<machine_local_mark>",            # reference by name
+  object: {name: "<service_name>", type_parameter, permission},
+  machine: "<published_machine_name_or_address>",   # must be published
   order_allocators: [{ guard: "<guard_local_mark>", sharing: [...] }, ...],
   arbitrations: { list: ["<arb_local_mark>", ...] },
-  buy_guard: "<buy_guard_local_mark>",         # reference by name — defers resolution
-  publish: false                                # CRITICAL: do not publish yet
+  buy_guard: "<buy_guard_local_mark>",               # LocalMark name — defers resolution
+  sales: [{ name, price, stock, wip: "<URL>" }],
+  publish: false                                      # CRITICAL: do not publish yet
 }
 ```
 
@@ -199,7 +199,7 @@ onchain_operations.service {
 
 ```
 onchain_operations.service {
-  object: "<service_local_mark>",   # target the existing draft by name
+  object: "<service_name>",   # target the existing draft by name
   publish: true
 }
 ```
