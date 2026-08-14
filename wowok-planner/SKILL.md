@@ -75,20 +75,35 @@ The ODG (Object Dependency Graph) is the single output artifact, persisted via `
   "status": "confirmed",
   "account": "merchant_v1",
   "objects": [
-    { "id": "obj_permission", "type": "permission", "status": "planned", "reversible": true, "dependencies": [], "user_decisions": { "reuse": false, "indexes": { "provider": 1000 } } },
-    { "id": "obj_service", "type": "service", "status": "planned", "reversible": true, "dependencies": ["obj_permission"], "user_decisions": { "name": "...", "publish": "deferred" } },
-    { "id": "obj_machine", "type": "machine", "status": "planned", "reversible": false, "dependencies": ["obj_permission"], "user_decisions": { "nodes": [...], "forwards": [...], "publish": "deferred" } },
-    { "id": "obj_arbitration", "type": "arbitration", "status": "planned", "reversible": true, "dependencies": [], "user_decisions": { "voting_guard_count": 3, "fee_balance": "1000 WOW", "note": "arbiters live in voting_guard, NOT Permission index 1500" } }
+    { "id": "obj_account", "type": "account", "status": "created", "reversible": true, "dependencies": [], "user_decisions": { "reuse": false, "network": "testnet" } },
+    { "id": "obj_permission", "type": "permission", "status": "planned", "reversible": true, "dependencies": ["obj_account"], "user_decisions": { "reuse": false, "indexes": { "provider": 1000 } } },
+    { "id": "obj_service", "type": "service", "status": "planned", "reversible": true, "dependencies": ["obj_permission"], "user_decisions": { "name": "...", "publish": "deferred", "note": "DRAFT first — Guards reference it by LocalMark NAME to break the Guard↔Service cycle" } },
+    { "id": "obj_machine", "type": "machine", "status": "planned", "reversible": false, "dependencies": ["obj_service", "obj_permission"], "user_decisions": { "nodes": [...], "forwards": [...], "publish": "deferred" } },
+    { "id": "obj_guard_*", "type": "guard", "status": "planned", "reversible": false, "dependencies": ["obj_machine", "obj_service"], "user_decisions": { "logic": "...", "note": "references machine node names + service name via LocalMark NAME" } },
+    { "id": "obj_treasury", "type": "treasury", "status": "planned", "reversible": true, "dependencies": ["obj_permission"], "user_decisions": { "reuse": false, "note": "optional fund pool for organizations; referenced by order_allocators as Entity recipient" } },
+    { "id": "obj_contact", "type": "contact", "status": "planned", "reversible": true, "dependencies": ["obj_permission", "obj_account"], "user_decisions": { "reuse": false, "messenger": true, "anti_spam": "open", "note": "Service.um → Contact → ims[]; messenger enabled + anti-spam configured" } },
+    { "id": "obj_arbitration", "type": "arbitration", "status": "planned", "reversible": true, "dependencies": ["obj_permission"], "user_decisions": { "reuse": true, "note": "REUSE third-party; permission MUST differ from Service (E_ARBITRATION_PERMISSION_CONFLICT); compensation_fund > 0 requires non-empty arbitrations" } }
   ],
   "phases": [
-    { "phase": 1, "objects": ["obj_permission"], "gate": "user_confirm" },
-    { "phase": 2, "objects": ["obj_service", "obj_machine", "obj_arbitration"], "gate": "risk_check" },
-    { "phase": 3, "objects": ["obj_guard_*"], "gate": "passport_test" },
-    { "phase": 4, "objects": ["obj_allocator_*"], "gate": "allocation_audit" },
-    { "phase": 5, "objects": ["publish"], "gate": "final_audit" }
+    { "phase": 1, "objects": ["obj_account", "obj_permission"], "gate": "user_confirm" },
+    { "phase": 2, "objects": ["obj_service"], "gate": "user_confirm", "note": "Service DRAFT created BEFORE Machine so Guards can reference it by name" },
+    { "phase": 3, "objects": ["obj_machine", "obj_guard_*"], "gate": "risk_check", "note": "Machine + Guards designed together; guards bound to forwards before publish" },
+    { "phase": 4, "objects": ["publish_machine", "obj_treasury", "obj_allocator_*"], "gate": "allocation_audit", "note": "Machine published; Treasury (optional) created before order_allocators references it" },
+    { "phase": 5, "objects": ["obj_contact", "obj_arbitration"], "gate": "user_confirm", "note": "Contact + third-party Arbitration configured BEFORE publish; arbitration.permission != service.permission" },
+    { "phase": 6, "objects": ["publish_service"], "gate": "final_audit" }
   ],
   "risk_assessment": { "critical": [], "warnings": [], "irreversible_count": 1 }
 }
 ```
 
 Each object has: `id`, `type`, `status` (planned/created/published), `reversible` (true/false), `dependencies` (other object IDs), `user_decisions` (typed fields). Phases gate progression — `risk_check` calls `evaluate_project` (evaluation_type='risk'), `final_audit` runs the pre-publish audit checklist (see wowok-auditor).
+
+**Dependency-chain ordering rules (authoritative, verified from Move/SDK):**
+1. **Service DRAFT is created BEFORE Machine** — Guards reference the Service by LocalMark NAME, so the Service skeleton must exist first to break the Guard↔Service circular dependency.
+2. **Machine + Guards are designed together** (one phase) — a forward's Guard depends on the Machine's node names; the Allocator's Guard depends on both Machine and Service.
+3. **Machine publishes before Service binds it** — `service.machine` must reference a *published* Machine.
+4. **`order_allocators` is L1-locked** — set it before `service.publish`; personal merchants route to Permission owner, organizations route to a Treasury (`Entity` recipient).
+5. **Contact (customer service)** is configured before Service publish — `Service.um → Contact → ims[]`, with the local account enabled as messenger and anti-spam set.
+6. **Arbitration is third-party and before publish** — `arbitration.permission != service.permission` (`E_ARBITRATION_PERMISSION_CONFLICT`); `compensation_fund > 0` requires non-empty `arbitrations` (`E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`).
+
+These rules are the single source of truth for the dependency chain; the phase list above is their concrete serialization. Hand-off to `wowok-onboard` (Review opening + 12 rounds) follows this same chain.

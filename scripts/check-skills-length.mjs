@@ -52,8 +52,8 @@ function findSkillFiles(root) {
         const fullPath = join(root, entry);
         const stat = statSync(fullPath);
         if (stat.isDirectory()) {
-            // Skip node_modules, .git, .trae, scripts, src
-            if (["node_modules", ".git", ".trae", "scripts", "src"].includes(entry)) continue;
+            // Skip node_modules, .git, .trae, scripts, src, and install-target copies (.claude, .agents)
+            if (["node_modules", ".git", ".trae", "scripts", "src", ".claude", ".agents"].includes(entry)) continue;
             results.push(...findSkillFiles(fullPath));
         } else if (entry === "SKILL.md") {
             results.push(fullPath);

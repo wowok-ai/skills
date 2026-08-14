@@ -26,11 +26,11 @@ Build trust through fair dispute resolution. Arbitration services enable neutral
 
 The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
 
-| Content | MCP Knowledge Module | Applied Via |
-|---------|---------------------|-------------|
-| Guard design rules (structural layers, data source classification, voting_guard table design) | `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`) | `project_operation.evaluate_project` (via `assessGuardRisks`) |
-| Safety rules (confirmation levels, immutability, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.evaluate_project` |
-| Arbitration-specific risks | `knowledge/arbitration-risk.ts` (`assessArbitrationRisks`) | `project_operation.evaluate_project` |
+| Content | Access via (MCP action) | Applied Via |
+|---------|--------------------------|-------------|
+| Guard design rules (structural layers, data source classification, voting_guard table design) | `schema_query` action='get_guard_design_patterns' | `project_operation.evaluate_project` |
+| Safety rules (confirmation levels, immutability, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `project_operation.evaluate_project` |
+| Arbitration-specific risks | auto-applied | `project_operation.evaluate_project` |
 
 This Skill keeps the arbitration **conversation flow**, **evidence collection** scripts, and **dispute resolution** guidance — the MCP layer handles the rule evaluation.
 
@@ -146,7 +146,7 @@ Customer dispute creates Arb directly at (1). State (0) entered only via `reset`
 
 **Voting Flow**: Voter selects a voting guard → System verifies voter's Passport against that guard → Calculates weight based on guard's rule → Applies weight to selected propositions. One vote per voter per case.
 
-> **Guard Design Reference**: Voting guard construction rules (table design, computation trees, `GuardIdentifier` submission-type requirements) now live in the MCP knowledge layer — see `knowledge/guard-design-patterns.ts` (`GUARD_DESIGN_PATTERNS`), auto-applied via `project_operation.evaluate_project`. Test voting logic with `gen_passport` before finalizing.
+> **Guard Design Reference**: Voting guard construction rules (table design, computation trees, `GuardIdentifier` submission-type requirements) now live in the MCP knowledge layer — query via `schema_query` action='get_guard_design_patterns', auto-applied via `project_operation.evaluate_project`. Test voting logic with `gen_passport` before finalizing.
 
 ---
 

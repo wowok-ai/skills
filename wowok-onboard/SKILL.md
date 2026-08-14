@@ -2,14 +2,17 @@
 name: wowok-onboard
 description: |
   WoWok First-Touch Onboarding — guides a new user from zero to their first
-  published Service in a structured 10-round dialogue. Bridges the operation_type
-  wall and the object_type wall by sequencing every MCP call into a dependency-
-  correct build order.
+  published Service through a user-driven, dependency-aware build sequence
+  (Review opening + 12 rounds). Bridges the operation_type wall and the
+  object_type wall by sequencing every MCP call into a dependency-correct
+  build order, while giving the user a reuse/customize/discover choice for
+  every component.
 
   Use when a new user says "I want to open a shop", "I want to sell something",
   "how do I start", or has no published Service yet. Produces a complete merchant
   capability stack: Permission + Service (published) + Machine (published) +
-  Progress (bound) + Guards + Allocation, verified by a test order.
+  Progress (bound) + Guards + Allocation + Contact (customer-service) +
+  Arbitration (third-party), verified by a user-driven test order.
 
   Not for existing merchants tuning operations — hand off to wowok-provider.
 when_to_use:
@@ -22,9 +25,9 @@ when_to_use:
 
 # WoWok First-Touch Onboarding
 
-Guides a new merchant from zero to first published Service in 10 rounds. Each round collects one core decision, calls specific MCP operations, and verifies success before advancing.
+Guides a new merchant from zero to first published Service in a **Review opening + 12 user-driven rounds**. Every round collects explicit user decisions (never fabricated), offers a **reuse / customize / discover** choice per component, and verifies success before advancing.
 
-> **Related Skills**: [wowok-provider](../wowok-provider/SKILL.md) (post-onboard operations), [wowok-machine](../wowok-machine/SKILL.md) (workflow design)
+> **Related Skills**: [wowok-provider](../wowok-provider/SKILL.md) (post-onboard operations), [wowok-machine](../wowok-machine/SKILL.md) (workflow design), [wowok-messenger](../wowok-messenger/SKILL.md) (customer-service Contact), [wowok-arbitrator](../wowok-arbitrator/SKILL.md) (third-party Arbitration)
 
 ---
 
@@ -32,121 +35,245 @@ Guides a new merchant from zero to first published Service in 10 rounds. Each ro
 
 The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
 
-| Content | MCP Knowledge Module | Applied Via |
-|---------|---------------------|-------------|
-| Scenario mode details (per-industry Permission/Machine/Guard/Allocator defaults) | `knowledge/scenario-modes.ts` (`SCENARIO_MODES`, `matchScenarioMode`, `inferScenarioTraits`) | `project_operation.create_project` — auto-applied when `project_industry` parameter is passed |
-| Safety rules (immutability, confirmation, object reuse) | `knowledge/safety-rules.ts` (`CONFIRMATION_RULES`) | Pre-publish checks + `project_operation.evaluate_project` |
-| Guard / Machine design rules | `knowledge/guard-design-patterns.ts`, `machine-risk.ts` | `project_operation.evaluate_project` |
+| Content | Access via (MCP action) | Applied Via |
+|---------|--------------------------|-------------|
+| Scenario mode defaults (per-industry Permission/Machine/Guard/Allocator) | `project_operation` action='list_modes' / 'create_project' | Auto-applied when `project_industry` is passed to `create_project` |
+| Safety rules (immutability, confirmation, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `project_operation.evaluate_project` |
+| Guard / Machine / Arbitration / Treasury design rules | `schema_query` action='get_guard_design_patterns' | `project_operation.evaluate_project` |
 
-This Skill keeps the **overall onboarding flow** and **R1-R10 build order** (see below). Pass the user's industry to `create_project` (via `project_industry` parameter) and the MCP layer auto-fills the scenario defaults — no need to look up per-industry presets manually.
-
----
-
-## Overview
-
-The onboarding skill dismantles the "16 operation_type × 14 object_type" wall. Instead of presenting users with a flat tool catalog, it walks them through a dependency-correct build sequence where each round maps to one object type and references exactly the MCP operations needed.
-
-### What This Skill Does
-
-- Converts "I want to open a shop" into a 10-round guided build plan
-- Industry defaults auto-applied via `project_operation.create_project` (pass `project_industry` parameter; defaults sourced from MCP `knowledge/scenario-modes.ts`)
-- Enforces dependency order: Permission → Machine (create) → Guards → Machine (bind guards+publish) → Service Phase 1 (configure) → Service Phase 2 (publish) → Test Order → Mainnet
-- Persists checkpoints after each round via `local_info_operation` so users can resume
-- Hands off to [wowok-provider](../wowok-provider/SKILL.md) once the Service is published
-
-### When to Invoke
-
-- New user with no published Service on the current account
-- User explicitly asks to set up / open / start a shop
-- User resumes a previously interrupted onboarding (read checkpoint first)
-- Do NOT invoke for: tuning an existing Service, handling live orders, dispute resolution
-
-### Output Contract
-
-A published Service with: published Machine, published Service, validated Guards, configured order_allocators, and one successful test order digest (order → progress advance → allocation). Handoff packet includes all object IDs and the post-publish verification report.
+This Skill keeps the **overall onboarding flow**, the **dependency-aware build order**, and the **user-driving interaction rhythm** (see below). Pass the user's industry to `create_project` (via `project_industry` parameter) and the MCP layer auto-fills the scenario defaults.
 
 ---
 
-## MCP Project Pipeline Integration
+## Core Interaction Principles
 
-The onboarding flow is backed by the MCP SQLite-based project pipeline. Each step produces verifiable state — the AI MUST honor risk/blocking findings by stopping and fixing reported issues:
+These four principles govern EVERY round. They are non-negotiable and replace the old "linear script" model.
 
-| Step | Rounds | MCP Action | Gate |
-|------|--------|------------|------|
-| 1. Create Project | R1-R2 | `create_project` (pass `project_industry`) → project record + scenario defaults | — |
-| 2. Add Objects | R2-R7 | `add_object` for each on-chain object (Permission, Machine, Guards, Service) | — |
-| 3. Build Graph | After R7 | `build_graph` → object dependency graph from added objects | — |
-| 4. Evaluate | After graph built | `evaluate_project` (evaluation_type='risk') → risk assessment | CRITICAL risks block R9 |
+1. **Review-first**: Before the first user choice, the AI MUST output a review that states (a) its understanding of the user's task, (b) the dependency-chain overview, and (c) the interaction contract. Only AFTER this review is the first choice presented.
+2. **User-driven**: Every round is driven by an explicit user decision. The AI provides a `recommend` option but NEVER auto-advances. The user may pause at any important round to ask questions.
+3. **Reuse / Customize / Discover (三选一)**: For every component (Permission, Machine, Guard, Contact, Treasury, Arbitration, etc.), the AI MUST present three avenues — **reuse an existing object** (with its benefit), **customize a new object** (with its sub-task ability), or **discover an object** from other projects / the system. All three are mandatory to surface.
+4. **Default-config disclosure**: Before creating any new object, the AI MUST disclose the default configuration and important information (purpose, key settings, caveats), then let the user decide. No silent defaults.
 
-> **Async mode**: `build_graph` / `evaluate_project` accept `async_mode: true` for large projects — the call returns immediately with a `task_id`. Poll `query_task_status` with that `task_id` until `status: "completed"` before reading results / proceeding to the next step. Default is synchronous (`async_mode` omitted) — fine for the ≤10-object onboarding scale.
+---
 
-## R1-R10 Build Order (MCP-Validated)
+## Dependency Chain (Authoritative ODG)
 
-**Core principles (from MCP schema):**
-- `service.machine` must reference a **published** Machine (Service cannot bind unpublished Machine)
-- `service.order_allocators` is L1-locked — MUST be set BEFORE `service.publish` (per service.move:503)
-- Guard uses **LocalMark NAME** in table to break circular dependency (Guard→Service→Guard)
-- `order_new` (test order) only works when `service.bPublished=true` (else E_NOT_PUBLISHED)
-- **Recommended order**: Permission → Machine (create nodes/forwards) → Guards → Machine (bind guards to forwards) → Machine (publish) → Service Phase 1 (configure) → Service Phase 2 (publish) → Test Order
+The build order is driven by the object dependency graph verified from on-chain constraints. This is the single narrative used across all rounds:
 
-| Round | Phase | Object | MCP Operation | Key Decision |
-|-------|-------|--------|---------------|--------------|
-| R1 | Foundation | Project + Account | `project_operation.create_project` (pass `project_industry`) + `account_operation.gen` + `faucet` | Industry mode + new/reuse account |
-| R2 | Foundation | Permission | `onchain_operations.permission` CREATE/REUSE | Index 1000 = provider |
-| R3 | Foundation | Machine | `onchain_operations.machine` CREATE (nodes/forwards, guards optional inline) | Nodes, forwards, optional inline guards |
-| R4 | Foundation | Guards | `onchain_operations.guard` CREATE (multiple) | Buy guard, accept guard, refund guard — use LocalMark NAME for Service references |
-| R5 | Foundation | Machine guard binding | `onchain_operations.machine` MODIFY (bind guards to forwards) | `op: "add forward"` or `op: "set"` to update forward guard fields; Machine must still be unpublished |
-| R6 | Foundation | Machine publish | `onchain_operations.machine` publish | Machine must be published before Service can reference it |
-| R7 | Revenue | Service Phase 1 | `onchain_operations.service` CREATE (no publish) + set `machine` + `order_allocators` + `buy_guard` + `sales` + `arbitrations` (if compensation) | All L1-locked fields (machine, order_allocators) MUST be set here |
-| R8 | Audit | Pre-publish audit | `machineNode2file` export + `guard2file` export + `project_operation.evaluate_project` | All CRITICAL risks must be fixed before R9 |
-| R9 | Publish | Service Phase 2 | `onchain_operations.service` publish=true | Only flips publish flag; L1 fields already locked |
-| R10 | Test + Mainnet | Test order + Mainnet | `onchain_operations.service` `order_new` → `onchain_operations.progress` advance → `onchain_operations.allocation` `alloc_by_guard` → Re-run R2-R9 on mainnet | Full flow dry run: order → progress → allocation; Recommend testnet first, then mainnet |
+```
+Account (account + network)
+ └─ Permission (centralized access control — referenced by ALL objects)
+     ├─ Service DRAFT (skeleton first → Guards reference it by LocalMark NAME, breaks Guard↔Service cycle)
+     ├─ Machine nodes/forwards (business workflow)
+     │    └─ Guards (depend on node names + service name) → bind to forwards (unpublished) → PUBLISH Machine (immutable)
+     └─ Service Phase 1: bind machine + buy_guard + sales + order_allocators
+          ├─ Sales (WIP URL + hash) · order_allocators (split → owner/Treasury) · Contact (Service.um → ims[])
+          ├─ Arbitration (third-party; permission ≠ Service)
+          └─ optional + audit → PUBLISH Service (L1-locked) → TEST ORDER
+```
 
-**Guard binding to Machine forwards**: Two approaches:
-1. **Inline (R3)**: Set guards directly in `MachineForwardSchema.guard` during Machine CREATE — guards must already exist
-2. **Deferred (R5)**: Create Machine first without guards (R3), create Guards (R4), then bind guards to forwards via `op: "add forward"` or `op: "set"` — allows Guards to reference Machine by LocalMark name
+**Irreversibility constraints (Move/SDK-verified):**
+- `service.machine` must reference a **published** Machine; `order_allocators` + `arbitrations` are **L1-locked** (set before publish); Machine nodes/forwards and Guard logic are **immutable after publish** — bind everything while unpublished.
+- `compensation_fund > 0` REQUIRES non-empty `arbitrations` (`E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` 25); Arbitration MUST NOT share the Service's Permission (`E_ARBITRATION_PERMISSION_CONFLICT` 33 — owner would control dispute resolution).
+- Guard references Service/Machine by **LocalMark NAME** (not address) to break the Guard↔Service cycle.
 
-Use approach 2 when Guards need to reference the Machine (e.g., verify current node or forward name). Use approach 1 for simple Guards that don't reference the Machine.
+---
 
-**Circular dependency handling**: Guard that references Service → create Guard first with LocalMark NAME in table (not address), then reference Guard by name in Service Phase 1. LocalMark name is resolved to address at transaction build time.
+## Review Opening Protocol (before R1)
 
-**R-M1-11 compliance** (rental/refund scenarios): Machine MUST use routing nodes (`return_approved`, `damage_confirmed`, `arbiter_rule`), NOT terminal nodes (`deposit_refunded`, `refunded`). Refund is handled by Allocator, not Machine terminal nodes.
+When a new user expresses intent ("open a shop", "sell something"), the AI MUST output this review FIRST, then ask the first question:
+
+1. **Understanding framework** — restate what the AI understood: what the user sells, the rough industry, the business model.
+2. **Dependency-chain overview** — show the chain above (abridged), so the user sees the whole journey and where they can intervene.
+3. **Interaction contract** — state clearly:
+   - Every round is driven by the user; the AI provides a `recommend` but waits for confirmation.
+   - The user may pause at any round to ask questions or revisit an earlier decision.
+   - Every component offers **reuse / customize / discover**.
+   - Any default configuration is disclosed BEFORE the user decides.
+4. **First question** — confirm the understanding is correct, then proceed to R1.
+
+> ⚠️ The first user-choice interaction MUST NOT happen before this review is complete.
+
+---
+
+## R1-R12 Build Order
+
+Each round below lists: **Semantic meaning**, **Core elements to confirm**, **Default config** (disclosed before the user decides), **Reuse / Customize / Discover**, and **Dependencies**. (Order: R1 Account → R2 Permission → R3 Service draft → R4 Machine+Guards → R5 publish Machine → R6 Sales → R7 order_allocators → R8 Contact → R9 Arbitration → R10 optional+audit → R11 publish Service → R12 test order.)
+
+---
+
+### R1 — Account & Network
+
+- **Semantic meaning**: Decide WHO operates on-chain (fund ownership + signing identity) and WHERE (testnet vs mainnet). This identity owns all subsequent objects and receives settlement.
+- **Core elements to confirm**:
+  - Account: **reuse an existing account** (name/address) or **create new** (default name).
+  - Network: **testnet first** (recommended) or **mainnet directly**.
+  - Industry mode: pass to `create_project` as `project_industry` — see the Industry Selection Guide below.
+- **Default config**: new account with a default name; testnet network; industry mode auto-fills scenario defaults (Machine shape, Guards, Allocator).
+- **Reuse / Customize / Discover**: Reuse an existing account (benefit: keeps objects under one identity) — or create new.
+- **Dependencies**: none (foundation).
+
+### R2 — Permission (access control)
+
+- **Semantic meaning**: Permission is the **central control point** answering "who can operate this service's objects". Index 1000+ are user-defined roles (indexes 0–999 are built-in). Reusing one Permission across services keeps a single, auditable control surface.
+- **Core elements to confirm**:
+  - **Reuse an existing Permission** (strongly recommended) OR **create new**.
+  - If new: `name`, `type_parameter`, and indexes (e.g. `1000 = provider`).
+- **Default config**: a new Permission with index `1000 = provider`.
+- **Reuse / Customize / Discover**: Reuse is strongly recommended (benefit: centralized control, no orphan Permission). Discover: check `local_mark_list` / `account_list` for existing Permissions.
+- **Dependencies**: Account (R1).
+
+### R3 — Service DRAFT (skeleton first)
+
+- **Semantic meaning**: The Service is your brand's on-chain identity. Creating a **draft first** (unpublished) lets later Guards reference it by **LocalMark NAME**, breaking the Guard↔Service circular dependency (Guard needs Service name; Service needs Guard address). The draft is fully editable until publish.
+- **Core elements to confirm**:
+  - Service `name` and `type_parameter` (what kind of service).
+- **Default config**: unpublished draft; only name + type_parameter set now; machine/order_allocators/sales filled in R5–R7.
+- **Reuse / Customize / Discover**: New Service (you have none). Name is the brand identity — confirm it carefully.
+- **Dependencies**: Permission (R2).
+
+### R4 — Business Flow + Permissions + Acceptance (Machine + Guards, INTEGRATED)
+
+- **Semantic meaning**: The **core round** — design the order's state transitions (Machine nodes/forwards), WHO can advance each transition (forward permissions), and WHAT must be verified at each step (Guard acceptance). These three are designed together because a forward's Guard depends on the Machine's node names, and the Allocator's Guard depends on both Machine and Service.
+- **Internal sub-order** (disclosed to the user):
+  1. Define Machine **nodes + forwards** (business states + transitions) — permissions resolved from R2's Permission indexes.
+  2. Define **Guards** (acceptance logic) — reference machine node names + service name via LocalMark NAME.
+  3. **Bind** Guards to forwards (still unpublished, reversible).
+- **Core elements to confirm** (all three, explicitly):
+  - Business flow: node list + forward paths.
+  - Permissions: per-forward `namedOperator` (`""`=OrderHolder / role name) or `permissionIndex`.
+  - Acceptance: per-forward Guard (or inline) — what must be verified before the transition executes.
+- **Default config**: the industry mode's `machine_shape` + `guards` (query `project_operation` action='list_modes'). Disclose these defaults FIRST, then let the user accept or customize.
+- **Reuse / Customize / Discover**: Reuse an existing Machine template (`machineNode2file` export) or an existing Guard (`guard2file`). Customize: define your own nodes/forwards/guards. Discover: `machineNode2file` / `local_mark_list` for other projects' Machines/Guards.
+- **Dependencies**: Service draft (R3) + Permission (R2).
+- **R-M1-11 compliance**: Machine MUST use business-state nodes (e.g. `cancelled`, `returned`, `return_approved`), NOT dispute/refund terminal nodes (`refunded`, `deposit_refunded`, `disputed`, `arb`). Refund routes via Allocator; dispute routes via Arbitration.
+
+### R5 — Publish Machine
+
+- **Semantic meaning**: Freeze the business workflow on-chain. After this, nodes/forwards are **immutable**.
+- **Core elements to confirm**: confirm the Machine topology is final (export `machineNode2file` for backup/verification first).
+- **Default config**: n/a — confirmation gate.
+- **Reuse / Customize / Discover**: n/a (publication, not creation).
+- **Dependencies**: R4.
+
+### R6 — Sales (products with WIP)
+
+- **Semantic meaning**: Define the sellable products — name, price, stock, and the **WIP file** (work-in-progress / product description). The WIP is a **public URL + hash** (`Sale.wip` = URL, `Sale.wip_hash` = hash), which customers fetch to understand the deliverable.
+- **Core elements to confirm** (per product):
+  - `name`, `price` (u64, min unit), `stock`.
+  - `wip` (URL) + `wip_hash` — **the WIP MUST be deployed to a public endpoint** (on-chain only stores the URL + hash, not the file).
+- **WIP public deployment (strongly recommended sub-task)**: user provides web/doc material → AI generates the WIP file + deploys to a public URL (recommend GitHub Pages / free static hosting).
+- **Default config**: n/a — products are user business decisions (never fabricated).
+- **Reuse / Customize / Discover**: Reuse an existing `sales` item (rare). Customize: define your own products. Discover: n/a.
+- **Dependencies**: Service draft (R3).
+
+### R7 — order_allocators (fund distribution + Treasury)
+
+- **Semantic meaning**: Define how order funds are distributed — your revenue model. This is written to `service.order_allocators` and is **L1-locked after publish**, so it must be correct now.
+- **Core elements to confirm**:
+  - Allocation mode per terminal outcome: **amount** (fixed) / **rate** (basis points, sum = 10000) / **surplus** (remainder, at most one).
+  - Recipient (`who`): `{Entity: name_or_address}` / `{GuardIdentifier: N}` / `{Signer: "signer"}`.
+- **Merchant-type guidance (disclosed to the user)**:
+  - **Personal merchant** → route funds to the **Permission owner** (`Entity` referencing the owner's account) — simple, single-owner revenue.
+  - **Organization / multi-party** → route funds to a **Treasury** object (referenced as an `Entity` recipient; `Treasury.receive` index 253 intakes CoinWrapper). The AI MUST offer to **new or select a Treasury** via a sub-task, and surface a list of existing Treasury objects (query `onchain_objects` type=treasury) for convenience.
+- **Default config**: industry mode's `allocator` strategy (e.g. `retail_d2c` = Merchant 97% + Processor 3% rate split). Disclose, then let the user confirm or change.
+- **Reuse / Customize / Discover**: Reuse an existing Allocator pattern / Treasury. Customize the split. Discover other projects' allocator/Treasury setups.
+- **Dependencies**: Machine published (R5); Guards (R4); Service draft (R3).
+- **⚠️ L1-LOCKED**: `order_allocators` MUST be set here — after `service.publish` it is permanently frozen.
+
+### R8 — Contact (customer-service channel)
+
+- **Semantic meaning**: Contact is the bridge between the Service and Messenger: `Service.um → Contact → ims[]` (messenger endpoint addresses). Customers query the Contact's `ims[]` to find where to send messages. Without it, your service has no customer-service inbox.
+- **Core elements to confirm**:
+  - **Reuse an existing Contact** OR **create new**.
+  - If new: configure the **local account as messenger** (`account_operation` → messenger, `enabled: true`) and set **anti-spam** policy.
+- **Default config** (disclosed before creation):
+  - Contact is **mutable**; `im_add`/`im_remove` require permission index `453` (CONTACT_IM).
+  - Messenger must be `enabled: true` or the account has no endpoint.
+  - **Anti-spam four-layer model** (Blacklist → Friends → Guard → Stranger one-message limit): **Open** (public storefront) / **Guarded** (verified strangers) / **Closed** (friends-only) / **Defensive** (open + blacklist).
+- **Reuse / Customize / Discover**: Reuse an existing Contact (one inbox for multiple services). Customize: new Contact + own messenger/anti-spam. Discover: `local_mark_list` for existing Contacts.
+- **Dependencies**: Permission (R2) + Account (R1). Must happen BEFORE R11 (Service publish) if `customer_required` is set.
+
+### R9 — Arbitration (third-party dispute resolution)
+
+- **Semantic meaning**: Route disputes to an independent third party so neither you nor the customer controls the verdict — this builds trust. **Optional but strongly recommended.**
+- **Core elements to confirm**:
+  - **Skip** arbitration, OR **REUSE an existing third-party Arbitration** (recommended).
+  - ⚠️ **Do NOT create your own Arbitration for your own Service** — `service.arbitration_add` asserts `arbitration.permission != service.permission` (`E_ARBITRATION_PERMISSION_CONFLICT`, 33): if the Arbitration shares your Service's Permission, you (the owner) would control dispute resolution, breaking fairness.
+  - If adding arbitration: also configure the **compensation fund** (see below).
+- **Compensation fund**: internal `Balance<T>` on the Service (NOT a Treasury object), consumed by `arbitration::compensation_claim`. If `compensation_fund > 0`, `arbitrations` MUST be non-empty (else publish aborts `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` 25). Deposit via `compensation_fund_add`; withdraw via `compensation_fund_withdraw` requires `bPaused=true` + lock elapsed. Amount = user decision (cover realistic payouts).
+- **Reuse / Customize / Discover**: Reuse an existing Arbitration (safety rules mark arbitration as `always_reuse` — query `schema_query` action='get_safety_rules'; customers choose from established arbiters). Discover: query `onchain_objects` type=arbitration for existing Arb services.
+- **Dependencies**: Service draft (R3) + Permission (R2). Must happen BEFORE R11 (Service publish) if compensation_fund is configured.
+
+### R10 — Optional Components + Pre-Publish Audit
+
+- **Semantic meaning**: Add optional trust/attraction components (Reward for loyalty, supply-chain promises, Repository), then run a **final risk audit** before publishing.
+- **Core elements to confirm** (each optional, each with default disclosure + reuse/customize/discover):
+  - Reward (discounts/loyalty).
+  - Supply-chain promises / Repository.
+  - Audit: `evaluate_project` (risk) — fix ALL CRITICAL findings.
+- **Default config**: none required — these are opt-in. The audit itself is mandatory.
+- **Reuse / Customize / Discover**: each optional component can be created or discovered.
+- **Dependencies**: R1–R9.
+
+### R11 — Publish Service
+
+- **Semantic meaning**: Make the service live. Irreversible — `machine`, `order_allocators`, and `arbitrations` become permanently frozen.
+- **Core elements to confirm**: confirm publish (Phase 2: only flips `publish: true`; all L1 fields were set in R5–R9).
+- **Default config**: n/a — confirmation gate.
+- **Reuse / Customize / Discover**: n/a.
+- **Dependencies**: R10 audit passed.
+
+### R12 — Test Order (user-driven, next-node disclosure)
+
+- **Semantic meaning**: Run a real order end-to-end to verify the flow. Unlike other rounds, this one advances through the Machine step by step, with the AI disclosing every reachable next node before each move.
+- **Core elements to confirm**:
+  - **Test account**: which account places the order — default is the **service-creation account**, but the user may choose another account to simulate a buyer.
+  - **Advance path**: at each node, the user chooses which next node to advance to.
+- **Per-node disclosure (before each advance)**: state current node + all reachable next nodes; for each, the operation (`order.progress` for `namedOperator=""` / `progress.operate` otherwise), required permission, Guard acceptance (`retained_submission`), and business meaning.
+- **Default config**: test account = service-creation account.
+- **Reuse / Customize / Discover**: n/a (verification).
+- **Dependencies**: Service published (R11) — `order_new` requires `bPublished=true`.
+- **Sequence**: `order_new` → query current node's forwards → user picks a next node → advance (`order.progress` / `progress.operate`) → repeat until terminal → `allocation.alloc_by_guard` → verify fund distribution.
 
 ---
 
 ## Industry Selection Guide
 
-When the user describes their business (R2), match to one of the supported industry modes. The MCP layer auto-fills scenario defaults when `project_industry` is passed to `create_project`.
+When the user describes their business (R1), match to one of the built-in industry modes. Query the authoritative list via `project_operation` action='list_modes' — 8 entries (7 industries + `general` fallback). The MCP layer auto-fills scenario defaults when `project_industry` is passed to `create_project`.
 
 | Industry | Mode | One-line Description |
 |----------|------|----------------------|
-| `general` | `general` | Free-form / hybrid — no presets, full manual control |
-| `retail` | `general` (retail profile) | Physical goods sales with stock + WIP product listings |
-| `service` | `general` (service profile) | Intangible services (consulting, design) — milestone delivery |
-| `rental` | `rental` | Equipment / vehicle / property rental with deposit escrow + return inspection (R-M1-11 compliant — uses `return_approved`/`damage_confirmed`/`arbiter_rule` routing nodes, NO `deposit_refunded`/`deposit_deducted`/`refunded` terminal nodes; topology auto-applied by `project_operation.create_project` with `project_industry='rental'` from MCP `knowledge/scenario-modes.ts`) |
 | `freelance` | `freelance` | Design / dev / consulting — milestone allocation + acceptance gate |
-| `education` | `education` | Courses / training / tutoring — periodic release per session attendance |
+| `rental` | `rental` | Equipment / vehicle / property rental — deposit escrow + return inspection |
+| `education` | `education` | Courses / training / tutoring — per-session release + attendance gate |
 | `travel` | `travel` | Custom tours / multi-segment trips — multi-tier allocation per segment |
 | `subscription` | `subscription` | SaaS / content membership / periodic service — periodic charge + cancel guard |
+| `retail` | `retail` | Marketplace / physical goods — logistics WIP + refund assurance |
+| `retail_d2c` | `retail_d2c` | Direct-to-Consumer (Shopify-style) — independent storefront + Allocation escrow (no platform custody; withdraw_guard + refund_guard; Merchant 97% + Processor 3%) |
+| `general` | `general` | Free-form / hybrid — no presets, full manual control (fallback) |
 
-> If unsure which fits, call `project_operation` action='recommend_industry' with the user's business description — it returns top-3 industry matches with reference examples. To iterate a mode mid-onboarding, use action='derive_user_mode' / 'evolve_user_mode' (user mode registry in MCP).
+> If unsure which fits, call `project_operation` action='recommend_industry' with the user's business description. To iterate a mode mid-onboarding, use action='derive_user_mode' / 'evolve_user_mode' (user mode registry in MCP).
 
 ---
 
 ## Deployment Checklist
 
-Before declaring onboarding complete, verify ALL items. Each is a hard gate — a missing item blocks successful order flow.
+Before declaring onboarding complete, verify ALL items. Each is a hard gate.
 
 | # | Item | How to Verify |
 |---|------|---------------|
 | 1 | Permission created | `query_toolkit` (onchain_objects, type=permission) returns object |
 | 2 | Machine published | `query_toolkit` (onchain_objects, type=machine) → `bPublished: true` |
-| 2b | **R-M1-11 compliance** (rental / deposit / refund scenarios only) | `machineNode2file` export → grep node names; MUST NOT contain `deposit_refunded`/`deposit_deducted`/`refunded`; MUST contain routing nodes (`return_approved`/`damage_confirmed`/`arbiter_rule`) with bound Allocators (item 4) |
+| 2b | **R-M1-11 compliance** | `machineNode2file` export → grep node names; MUST NOT contain `deposit_refunded`/`deposit_deducted`/`refunded`/`disputed`/`arb`; MUST contain business-state routing nodes with bound Allocators |
 | 3 | Guards created | `query_toolkit` (onchain_objects, type=guard) returns all expected guards |
-| 4 | Allocators configured | Each Allocator `sharing[].sharing` Rate entries sum to **10000** (Rate mode); or `Amount` mode values set. For rental/refund scenarios, verify Allocators' `trigger_node` references the routing nodes (e.g., `return_approved`) — NOT missing (else R-M1-11 refund path is broken) |
-| 5 | Service created with all bindings | `query_toolkit` (onchain_objects, type=service) → machine, order_allocators, buy_guard all non-empty |
-| 6 | Service published | `query_toolkit` (onchain_objects, type=service) → `bPublished: true` |
-| 7 | Test order placed | R9 test order created via `service.order_new` + Progress advanced + Allocator triggered successfully |
+| 4 | Sales configured | `query_toolkit` (onchain_objects, type=service) → `sales[]` non-empty, each with `wip` URL + `wip_hash` |
+| 5 | Allocators configured | Each Allocator `sharing[].sharing` Rate entries sum to **10000** (Rate mode); or `Amount` mode values set. Verify `trigger_node` references correct business-state nodes |
+| 6 | Service bindings | `query_toolkit` (onchain_objects, type=service) → machine, order_allocators, buy_guard all non-empty |
+| 7 | Contact (if `customer_required`) | `query_toolkit` (onchain_objects, type=contact) → `ims[]` non-empty; messenger `enabled: true` |
+| 8 | Arbitration (if compensation_fund > 0) | `query_toolkit` (onchain_objects, type=service) → `arbitrations[]` non-empty; `arbitration.permission != service.permission` |
+| 9 | Service published | `query_toolkit` (onchain_objects, type=service) → `bPublished: true` |
+| 10 | Test order placed | Test order created via `service.order_new` + Progress advanced (user-driven) + Allocator triggered successfully |
 
 > If any item fails, do NOT proceed to handoff. Fix the underlying issue, then re-verify. Use `project_operation.evaluate_project` (risk) to auto-detect missing bindings.
 
@@ -159,7 +286,11 @@ Before declaring onboarding complete, verify ALL items. Each is a hard gate — 
 | `dynamicFieldNotFound` | SDK cannot resolve a dynamic field reference | Set `env.account` (account not configured) — pass account in the tool call wrapper |
 | `Circular dependency` (Guard ↔ Service creation) | Guard needs Service address; Service needs Guard address | Use **LocalMark NAME** (not address) in Guard query table — pattern documented in MCP `schema_query` action='get_guard_design_patterns' |
 | `order.balance invalid` | Used wrong field for order amount | Use `order.amount` (not `order.balance` — `balance` is residual escrow, `amount` is original payment) |
-| Allocator `rate sum != 10000` | Rate-mode Allocator sharing percentages don't sum to 100% | Ensure all `sharing[].sharing` values in Rate mode sum to exactly **10000** basis points (e.g., 80% = 8000) |
-| `IMPACK_GUARD_NOT_FOUND` (gen_passport) | Repository query with `quote_guard = Some(addr)` | `impack_list` is empty during verify phase — only `quote_guard = None` passes; see MCP `schema_query` action='get_guard_design_patterns' |
-| `Permission denied` (Progress advance, abort code 5) | Wrong operation path for forward's `namedOperator` | Empty `namedOperator` → use `order.progress`; non-empty → use `progress.operate`; `permissionIndex` → use `progress.operate` |
-| Allocator never fires (refund stuck) — R-M1-11 violation | Machine has a node like `deposit_refunded` instead of routing node `return_approved`; or Allocator's `trigger_node` is missing/mispelled | Rename node to `return_approved` / `damage_confirmed`; bind Allocator to that node; R-M1-11 is auto-enforced by MCP pre-publish checks and `project_operation.evaluate_project` |
+| Allocator `rate sum != 10000` | Rate-mode Allocator sharing percentages don't sum to 100% | Ensure all `sharing[].sharing` values in Rate mode sum to exactly **10000** basis points |
+| `IMPACK_GUARD_NOT_FOUND` (gen_passport) | Repository query with `quote_guard = Some(addr)` | `impack_list` is empty during verify phase — only `quote_guard = None` passes |
+| `Permission denied` (Progress advance, abort code 5) | Wrong operation path for forward's `namedOperator` | Empty `namedOperator` → `order.progress`; non-empty → `progress.operate`; `permissionIndex` → `progress.operate` |
+| Allocator never fires (refund stuck) — R-M1-11 violation | Machine has `deposit_refunded` instead of routing node `return_approved`; or Allocator `trigger_node` missing/mispelled | Rename node to business-state node; bind Allocator to that node |
+| `E_ARBITRATION_PERMISSION_CONFLICT` (33) | Adding an Arbitration whose permission == Service permission | REUSE a third-party Arbitration with a DIFFERENT Permission |
+| `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` (25) | `compensation_fund > 0` but `arbitrations` empty | Add an Arbitration before publishing, or withdraw the compensation fund |
+| Contact has no inbox | Messenger not enabled, or `ims[]` empty | `account_operation` → messenger `enabled: true`; add local account to Contact `ims[]` via `im_add` (permission index 453) |
+| Contact `im_add`/`im_remove` rejected | Wrong permission index | Use permission index `453` (CONTACT_IM) |

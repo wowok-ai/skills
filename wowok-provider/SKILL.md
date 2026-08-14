@@ -30,13 +30,13 @@ when_to_use:
 
 The following rule tables have been pushed down to the MCP knowledge layer and are automatically applied during project operations. You do NOT need to manually check these — the MCP server enforces them.
 
-| Rule Category | MCP Knowledge Module | Applied By |
-|---------------|---------------------|------------|
-| Safety rules (confirmation, immutability, object reuse) | `knowledge/safety-rules.ts` | `evaluate_project` + `onchain_operations` pre-publish |
-| Guard design patterns | `knowledge/guard-design-patterns.ts` | `evaluate_project` (guard risk assessment) |
-| Machine topology rules | `knowledge/machine-risk.ts` | `evaluate_project` (machine risk assessment) |
-| Scenario mode defaults | `knowledge/scenario-modes.ts` | `create_project` (pass `project_industry` parameter) |
-| Tool reference (gas, faucet, wrappers) | `knowledge/tools-reference.ts` | All tool calls automatically |
+| Rule Category | Access via (MCP action) | Applied By |
+|---------------|--------------------------|------------|
+| Safety rules (confirmation, immutability, object reuse) | `schema_query` action='get_safety_rules' | `evaluate_project` + `onchain_operations` pre-publish |
+| Guard design patterns | `schema_query` action='get_guard_design_patterns' | `evaluate_project` (guard risk assessment) |
+| Machine topology rules | auto-applied | `evaluate_project` (machine risk assessment) |
+| Scenario mode defaults | `project_operation` action='list_modes' | `create_project` (pass `project_industry` parameter) |
+| Tool reference (gas, faucet, wrappers) | `schema_query` action='get_tool_reference' | All tool calls automatically |
 
 **How to use**: Call `project_operation` with `action: "evaluate_project"` (evaluation_type='risk') after completing your puzzle — the MCP server will automatically apply all relevant safety rules and return risk findings.
 
@@ -48,24 +48,17 @@ The following rule tables have been pushed down to the MCP knowledge layer and a
 
 ### The Golden Rule
 
-```
-NEVER guess what the user sells, how their workflow operates, or how funds are distributed.
-These are BUSINESS decisions that ONLY the user can make.
-
-User hasn't provided it → ASK.
-User provides incomplete info → ASK for clarification.
-User says "just make something up" → REFUSE and explain why each item matters.
-```
+> **Golden Rule**: NEVER guess what the user sells, how their workflow operates, or how funds are distributed — these are BUSINESS decisions only the user can make. Not provided → ASK; incomplete → ASK to clarify; "just make something up" → REFUSE and explain why each item matters.
 
 ### Required Items
 
-For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"** OR **"Create new: `<details>`"**
+For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"** OR **"Create new: `<details>`"** OR **"Discover from system / other projects"** — reuse / customize / discover, all three avenues must be surfaced.
 
 | # | Item | User Must Provide | Why Not Fabricate |
 |---|------|-------------------|--------------------|
 | **R1** | **Account** | Account name/address. Default `""` is fine. | Safe default exists |
 | **R2** | **Permission** | Existing Permission to reuse, OR name + type_parameter for new. **Reuse strongly recommended.** | Controls access to ALL your services |
-| **R3** | **Service** | Service name, type_parameter. What kind of service? | Your brand identity on-chain |
+| **R3** | **Service (DRAFT)** | Service name, type_parameter. Create the draft FIRST (unpublished) so Guards can reference it by LocalMark NAME. | Your brand identity on-chain; breaks Guard↔Service cycle |
 | **R4** | **Machine** | Nodes, state transitions (pairs), forward paths. | IS your business process |
 | **R5** | **Guards** | For each Guard: validation logic, conditions. Reuse or define new. | Enforces your business rules |
 | **R6** | **Guard Bindings** | Which Guard validates which Machine forward? | Wrong binding = unauthorized access |
@@ -75,7 +68,7 @@ For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"*
 
 | # | Item | Trigger | User Must Provide |
 |---|------|---------|-------------------|
-| **C1** | **Contact (um)** | If `customer_required` is set | Contact name/ID |
+| **C1** | **Contact (um)** | If `customer_required` is set (or customer service is desired) | Contact name/ID; if NEW → local account as messenger (`enabled: true`) + anti-spam profile (Open/Guarded/Closed/Defensive) |
 | **C2** | **WIP Files** | Physical goods | Product description, images |
 | **C3** | **Sales Products** | Listing products | Name, price, stock, WIP per product |
 
@@ -104,109 +97,27 @@ STEP 0: Present checklist R1-R7 to user
 
 ## Service Build Lifecycle
 
-Once R1-R7 confirmed, execute in strict order. All operations use R1 (Account) as `env.account`.
+Once R1-R7 confirmed, execute in strict order. Sub-tools are invoked via `wowok({ tool: "<name>", data: { operation_type: "<type>", ... } })`; all use R1 (Account) as `env.account`.
 
-```
-All Tool: references below are sub-tools invoked via wowok({ tool: "<name>", data: { operation_type: "<type>", ... } })
+**STEP 1 — Foundation**: Account (`account_operation` gen) → Permission (`onchain_operations` permission) → Service DRAFT (`onchain_operations` service, `publish: false` — Guards reference it by LocalMark NAME) → Machine unpublished (`onchain_operations` machine: nodes/pairs/forwards). Discovery `query_toolkit` (account_list/local_mark_list/onchain_objects); template `machineNode2file`.
 
-STEP 1: Foundation
-├── Permission — REUSE existing (strongly recommended)
-│     Tool: "onchain_operations" (permission) | Fields: name, type_parameter
-└── Machine (unpublished) — CREATE new or REUSE template
-      Tool: "onchain_operations" (machine) | Fields: nodes, pairs, forwards
-      ⚠️ Machine nodes define the workflow; forward guards can be set inline here
-      Discovery: "query_toolkit" (account_list, local_mark_list, onchain_objects)
-      Template: "machineNode2file" (export existing for editing)
+**STEP 2 — Trust Layer (Guards)**: `onchain_operations` guard (logic/instructions). Design per target: buy_guard / allocator / reward = pass/fail only; machine forward guard = retained_submission needs `b_submission: true` entries matching types. Patterns: `schema_query` action='get_guard_design_patterns'.
 
-STEP 2: Trust Layer
-└── Guards — CREATE new or REUSE existing
-      Tool: "onchain_operations" (guard) | Fields: logic, instructions
-      Template: "guard2file" (export existing for editing)
-      ⚠️ Design your Guard tables based on how the target object reads data:
-         - buy_guard → pass/fail only, no data extraction
-         - Allocator guard → pass/fail only
-         - Machine forward guard → if retained_submission is used, ensure b_submission:true entries match expected types
-         - Reward guard → pass/fail only
-      Guard design patterns: MCP `knowledge/guard-design-patterns.ts` (auto-applied via `evaluate_project`)
+**STEP 3 — Bind + Publish Machine, Bind Service**: `onchain_operations` machine (`add forward`/`set` with guard) → machine `publish: true` (nodes/forwards IMMUTABLE; verify via machineNode2file) → `onchain_operations` service bind machine + buy_guard (machine must be PUBLISHED).
 
-STEP 3: Business Logic (MODIFY Machine)
-├── Machine — bind Guards to forwards (update existing forwards with guard fields)
-│     Tool: "onchain_operations" (machine) | Fields: node (op: "add forward" / "set" with updated forwards including guard)
-│     ⚠️ Machine is still unpublished here — guards can be freely bound/unbound
-├── Machine — publish (locks nodes/pairs/forwards permanently)
-│     Tool: "onchain_operations" (machine) | publish: true
-│     ⚠️ After publish, nodes/forwards are IMMUTABLE — verify via machineNode2file first
-└── Service (unpublished) — CREATE with machine + order_allocators + buy_guard + sales
-      Tool: "onchain_operations" (service) | Fields: object (with permission), machine, order_allocators, buy_guard, sales
-      ⚠️ machine must reference a PUBLISHED Machine (else Service publish will fail)
-      ⚠️ order_allocators is L1-locked — MUST be set before Service publish
+**STEP 4 — Products (Sales + WIP)**: `onchain_operations` service sales (name/price/stock/wip/wip_hash); ⛔ user provides name/price(u64 min unit)/stock. `wip` = public URL + hash (on-chain stores URL+hash, not file); AI sub-task: generate WIP from web/doc → deploy to public URL (GitHub Pages). `wip <= MAX_WIP_LENGTH`, `wip_hash <= MAX_WIP_HASH_LENGTH`.
 
-STEP 4: Publication
-├── Pre-Publish Verification (export and review):
-│     1. machineNode2file → verify Machine nodes/forwards (published, immutable)
-│     2. guard2file → verify Guard logic
-│     3. project_operation evaluate_project (risk) → fix CRITICAL findings
-│     4. Permission indexes: every permissionIndex in Machine forwards has entities granted?
-│     5. Arbitration Permission isolation (if compensation_fund > 0)
-├── Service — publish (locks machine/order_allocators)
-│     Tool: "onchain_operations" (service) | object: "<service_name>", publish: true
-│     ⚠️ L1-LOCKED: machine and order_allocators are permanently frozen
-└── Post-publish (mutable fields):
-      description, location, sales, discount, buy_guard, customer_required, um (Contact), rewards (add), arbitrations (add), repositories (add)
+**STEP 5 — Revenue (order_allocators + Treasury)**: `onchain_operations` service order_allocators (L1-locked). Mode: amount / rate (bps sum=10000) / surplus. Recipient: `{Entity}` / `{GuardIdentifier}` / `{Signer}`. Personal → Permission owner (Entity); Org → Treasury (`Treasury.receive` index 253). Offer new/select Treasury (query onchain_objects type=treasury).
 
-STEP 5: Post-Publish (MODIFY Service — mutable after publish)
-├── description, location
-├── sales (products with WIP) — ⛔ user MUST provide: name, price, stock, WIP
-├── customer_required
-├── um — Contact (REUSE existing or CREATE new)
-│     ⚠️ If customer_required is set → um MUST be set
-└── Test Order — verify full flow works
-      Tool: "onchain_operations" (service) | order_new: { buy: { items, total_pay } }
-      ⚠️ Requires Service bPublished=true (else E_NOT_PUBLISHED)
-      After order: progress advance → allocation.alloc_by_guard → verify fund distribution
-```
+**STEP 6 — Customer Service (Contact + Messenger)**: `onchain_operations` contact (ims) + `account_operation` messenger (`enabled: true`). Contact mutable; `im_add`/`im_remove` need permission index 453 (CONTACT_IM). Anti-spam profiles: Open / Guarded / Closed / Defensive. Bind `onchain_operations` service `um` (if customer_required).
 
-### Object Reuse & Immutability
+**STEP 7 — Trust (Arbitration + compensation_fund)**: REUSE third-party Arbitration (MUST NOT share Service's Permission — E_ARBITRATION_PERMISSION_CONFLICT 33; don't create your own). `compensation_fund_add` (internal Balance<T>, not Treasury); fund>0 requires non-empty arbitrations (E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND 25); withdraw needs bPaused + lock elapsed.
 
-| Object | Reuse Strategy | When Locked |
-|--------|---------------|-------------|
-| **Permission** | **Strongly recommended** — centralized control | Never |
-| Machine | Reuse via `machineNode2file` template | After publish |
-| Contact (um) | Reuse existing customer service Contact | Never |
-| Arbitration | Always reuse existing Arb services | — |
-| Guard | Reuse if logic matches | After creation |
-| Service | — | After publish: machine, order_allocators frozen |
+**STEP 8 — Publication**: pre-publish verify — (1) machineNode2file, (2) guard2file, (3) evaluate_project risk → fix CRITICAL, (4) permission indexes granted, (5) arb permission isolation, (6) contact ims+enabled → `onchain_operations` service `publish: true` (L1-LOCKED: machine/order_allocators/arbitrations).
 
-### Service Step-by-Step Update (Two-Phase Deployment)
+**STEP 9 — Post-publish + Test Order**: mutable fields (description/location/sales/customer_required/rewards add/repositories add). Test order: `order_new` (requires bPublished, else E_NOT_PUBLISHED) → disclose next nodes → advance (order.progress / progress.operate) → alloc_by_guard → verify distribution. User chooses test account (default: service-creation account).
 
-Deploy a Service in two phases to handle Guard↔Service circular dependencies via LocalMark names. Both phases call `onchain_operations` (operation_type: "service"); they differ by `publish` flag and binding completeness.
-
-**Phase 1 — CREATE (no publish)**: Build the full object graph with LocalMark name references so addresses can resolve later. Machine must be PUBLISHED before this phase.
-
-```
-onchain_operations.service {
-  object: {name: "<service_name>", type_parameter, permission},
-  machine: "<published_machine_name_or_address>",   # must be published
-  order_allocators: [{ guard: "<guard_local_mark>", sharing: [...] }, ...],
-  arbitrations: { list: ["<arb_local_mark>", ...] },
-  buy_guard: "<buy_guard_local_mark>",               # LocalMark name — defers resolution
-  sales: [{ name, price, stock, wip: "<URL>" }],
-  publish: false                                      # CRITICAL: do not publish yet
-}
-```
-
-**Phase 2 — PUBLISH**: After all referenced objects (Machine, Guards, Allocators) are created/published, re-call to publish.
-
-```
-onchain_operations.service {
-  object: "<service_name>",   # target the existing draft by name
-  publish: true
-}
-```
-
-> The SDK resolves all LocalMark names → on-chain addresses at publish time. Phase 1 + Phase 2 together replace the "create draft → mutate → publish" sequence in STEP 1-4 of the Service Build Lifecycle when circular dependencies exist.
-
-**Post-publish mutability** (SDK-LOCKED vs mutable):
+### Post-Publish Mutability (SDK-LOCKED vs mutable)
 
 | Field | After Publish |
 |-------|---------------|
