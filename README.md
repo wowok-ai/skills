@@ -200,7 +200,7 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-order` | Customer order lifecycle — pre-purchase due diligence (E1-E10), consensus building, order creation, progress advancement, arbitration | Customer |
 | `wowok-messenger` | Encrypted messaging — E2E communication, WTS evidence, anti-spam strategy, Contact object lifecycle | All Roles |
 | `wowok-machine` | Machine workflow design — state machines, node/pair/forward graph, immutability rules, dependency-first build order | Service Provider |
-| `wowok-onboard` | First-touch onboarding — 10-round dialogue from zero to first published Service, SQLite-based project pipeline integration | New Users |
+| `wowok-onboard` | First-touch onboarding — Review opening + 12-round user-driven dialogue from zero to first published Service, SQLite-based project pipeline integration | New Users |
 | `wowok-planner` | Planning skill — converts natural language intent into Object Dependency Graph (ODG), industry-mode aware via MCP | All Roles |
 | `wowok-auditor` | Pre-publish audit — Guard completeness, Machine soundness, fund flow correctness, publish readiness | All Roles |
 

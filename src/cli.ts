@@ -456,7 +456,7 @@ function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>
   process.exit(1);
 }
 
-function cmdInit(targetArg: string | undefined, withMcp: boolean): void {
+function cmdInit(targetArg: string | undefined, withMcp: boolean, referrer?: string): void {
   const cwd = process.cwd();
   const pkgRoot = getPackageRoot();
   const targets = getTargets(targetArg);
@@ -531,6 +531,14 @@ function cmdInit(targetArg: string | undefined, withMcp: boolean): void {
   } else {
     console.log('');
     console.log('[wowok-skills] --no-mcp: MCP server setup skipped (skills only).');
+  }
+
+  // ─── Airdrop referrer (--referrer <addr|name>) ─────────────────────
+  // Persist it in the MCP data dir; the MCP auto-injects it into every call,
+  // so it is recorded on-chain at the user's first real on-chain interaction.
+  // No manual "tell your AI" step needed.
+  if (referrer) {
+    saveReferrer(referrer);
   }
 }
 
@@ -646,8 +654,10 @@ function printUsage(): void {
   console.log('  get <name>              Show skill details');
   console.log('  role <role>             List skills for a role (customer|provider|arbitrator|shared)');
   console.log('  recommend <intent>      Recommend skills based on user intent');
-  console.log('  init [--target <t>] [--no-mcp]     Install skills to project (default: .claude/skills/ with MCP)');
-  console.log('                              --no-mcp   Skip MCP server setup (skills only)');
+  console.log('  init [--target <t>] [--no-mcp] [--referrer <addr|name>]   Install skills to project (default: .claude/skills/ with MCP)');
+  console.log('                              --no-mcp     Skip MCP server setup (skills only)');
+  console.log('                              --referrer   Save the airdrop referrer; auto-recorded on first on-chain interaction');
+  console.log('  referrer <addr|name>      Save the airdrop referrer GLOBALLY (no project needed)');
   console.log('  uninit [--target <t>]   Remove skills from project');
   console.log('');
   console.log('Targets:');
@@ -714,14 +724,26 @@ function main() {
       break;
 
     case 'init': {
-      const withMcp = !args.includes('--no-mcp');
-      cmdInit(parseTargetArg(args.slice(1)), withMcp);
+      const rest = args.slice(1);
+      const withMcp = !rest.includes('--no-mcp');
+      const referrer = parseReferrerArg(rest);
+      cmdInit(parseTargetArg(rest), withMcp, referrer);
       break;
     }
 
     case 'uninit':
       cmdUninit(parseTargetArg(args.slice(1)));
       break;
+
+    case 'referrer': {
+      const value = args[1];
+      if (!value || value.startsWith('--')) {
+        console.error('Error: Referrer address or name required — wowok-skills referrer <addr|name>');
+        process.exit(1);
+      }
+      saveReferrer(value);
+      break;
+    }
 
     default:
       console.error(`Unknown command: ${command}`);
@@ -742,6 +764,46 @@ function parseTargetArg(rest: string[]): string | undefined {
     return positional;
   }
   return undefined;
+}
+
+function parseReferrerArg(rest: string[]): string | undefined {
+  const idx = rest.indexOf('--referrer');
+  if (idx !== -1 && idx + 1 < rest.length) {
+    const v = rest[idx + 1].trim();
+    return v || undefined;
+  }
+  return undefined;
+}
+
+/** Wow MCP data dir — mirrors @wowok/wowok getWowMcpDir(): dirname(wowDir)/mcp. */
+function wowMcpDir(): string {
+  const home = os.homedir();
+  let wowDir: string;
+  if (process.env.WOWOK_DATA_DIR) {
+    wowDir = process.env.WOWOK_DATA_DIR;
+  } else if (process.platform === 'win32') {
+    wowDir = path.join(home, '.wow', 'V1');
+  } else if (process.platform === 'darwin') {
+    wowDir = path.join(home, 'Library', 'Application Support', '.wow', 'V1');
+  } else {
+    const xdgConfig = process.env.XDG_CONFIG_HOME;
+    if (xdgConfig) {
+      wowDir = path.join(xdgConfig, '.wow', 'V1');
+    } else {
+      const xdgData = process.env.XDG_DATA_HOME;
+      wowDir = xdgData ? path.join(xdgData, '.wow', 'V1') : path.join(home, '.wow', 'V1');
+    }
+  }
+  return path.join(path.dirname(wowDir), 'mcp');
+}
+
+/** Persist the airdrop referrer so the MCP auto-injects it on every call. */
+function saveReferrer(referrer: string): void {
+  const dir = wowMcpDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'referrer'), referrer.trim() + '\n', 'utf-8');
+  console.log(`[wowok-skills] airdrop referrer saved: ${referrer.trim()}`);
+  console.log('[wowok-skills] it is auto-recorded on your first on-chain interaction.');
 }
 
 main();

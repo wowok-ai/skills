@@ -122,7 +122,7 @@ export const wowokSkills: SkillConfig = {
     // === ONBOARDING / PLANNING / AUDIT (L3+L4 BRIDGE) ===
     {
       name: 'wowok-onboard',
-      description: 'First-touch onboarding — guides a new user from zero to their first published Service in a structured 10-round dialogue. Industry mode defaults (freelance/rental/education/travel/...) are served by MCP project_operation recommend_industry. Use when a new user says "I want to open a shop" or has no published Service yet.',
+      description: 'First-touch onboarding — guides a new user from zero to their first published Service through a Review opening + 12-round user-driven dialogue. Industry mode defaults (freelance/rental/education/travel/...) are served by MCP project_operation recommend_industry. Use when a new user says "I want to open a shop" or has no published Service yet.',
       version: '2.0.0',
       role: 'shared',
       loading: 'on-demand',

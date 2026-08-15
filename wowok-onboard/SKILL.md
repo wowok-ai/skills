@@ -40,6 +40,8 @@ The following content has been pushed down to the MCP knowledge layer and is app
 | Scenario mode defaults (per-industry Permission/Machine/Guard/Allocator) | `project_operation` action='list_modes' / 'create_project' | Auto-applied when `project_industry` is passed to `create_project` |
 | Safety rules (immutability, confirmation, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `project_operation.evaluate_project` |
 | Guard / Machine / Arbitration / Treasury design rules | `schema_query` action='get_guard_design_patterns' | `project_operation.evaluate_project` |
+| Common mistakes (field/unit/workflow pitfalls) | `wowok_buildin_info` action='common mistakes' | Tool calls (proactive warnings) |
+| Deployment checklist (publish readiness) | `project_operation` action='evaluate_project' | deployment-scanner D-01..D-20 |
 
 This Skill keeps the **overall onboarding flow**, the **dependency-aware build order**, and the **user-driving interaction rhythm** (see below). Pass the user's industry to `create_project` (via `project_industry` parameter) and the MCP layer auto-fills the scenario defaults.
 
@@ -240,57 +242,16 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 
 ## Industry Selection Guide
 
-When the user describes their business (R1), match to one of the built-in industry modes. Query the authoritative list via `project_operation` action='list_modes' — 8 entries (7 industries + `general` fallback). The MCP layer auto-fills scenario defaults when `project_industry` is passed to `create_project`.
-
-| Industry | Mode | One-line Description |
-|----------|------|----------------------|
-| `freelance` | `freelance` | Design / dev / consulting — milestone allocation + acceptance gate |
-| `rental` | `rental` | Equipment / vehicle / property rental — deposit escrow + return inspection |
-| `education` | `education` | Courses / training / tutoring — per-session release + attendance gate |
-| `travel` | `travel` | Custom tours / multi-segment trips — multi-tier allocation per segment |
-| `subscription` | `subscription` | SaaS / content membership / periodic service — periodic charge + cancel guard |
-| `retail` | `retail` | Marketplace / physical goods — logistics WIP + refund assurance |
-| `retail_d2c` | `retail_d2c` | Direct-to-Consumer (Shopify-style) — independent storefront + Allocation escrow (no platform custody; withdraw_guard + refund_guard; Merchant 97% + Processor 3%) |
-| `general` | `general` | Free-form / hybrid — no presets, full manual control (fallback) |
-
-> If unsure which fits, call `project_operation` action='recommend_industry' with the user's business description. To iterate a mode mid-onboarding, use action='derive_user_mode' / 'evolve_user_mode' (user mode registry in MCP).
+When the user describes their business (R1), query the authoritative industry list via `project_operation` action='list_modes' — 8 entries: `freelance` / `rental` / `education` / `travel` / `subscription` / `retail` / `retail_d2c` / `general`. If unsure which fits, call `project_operation` action='recommend_industry' with the business description. Pass the chosen `project_industry` to `create_project` — MCP auto-fills the scenario defaults (Machine shape, Guards, Allocator). Mid-onboarding iteration: `derive_user_mode` / `evolve_user_mode`.
 
 ---
 
 ## Deployment Checklist
 
-Before declaring onboarding complete, verify ALL items. Each is a hard gate.
-
-| # | Item | How to Verify |
-|---|------|---------------|
-| 1 | Permission created | `query_toolkit` (onchain_objects, type=permission) returns object |
-| 2 | Machine published | `query_toolkit` (onchain_objects, type=machine) → `bPublished: true` |
-| 2b | **R-M1-11 compliance** | `machineNode2file` export → grep node names; MUST NOT contain `deposit_refunded`/`deposit_deducted`/`refunded`/`disputed`/`arb`; MUST contain business-state routing nodes with bound Allocators |
-| 3 | Guards created | `query_toolkit` (onchain_objects, type=guard) returns all expected guards |
-| 4 | Sales configured | `query_toolkit` (onchain_objects, type=service) → `sales[]` non-empty, each with `wip` URL + `wip_hash` |
-| 5 | Allocators configured | Each Allocator `sharing[].sharing` Rate entries sum to **10000** (Rate mode); or `Amount` mode values set. Verify `trigger_node` references correct business-state nodes |
-| 6 | Service bindings | `query_toolkit` (onchain_objects, type=service) → machine, order_allocators, buy_guard all non-empty |
-| 7 | Contact (if `customer_required`) | `query_toolkit` (onchain_objects, type=contact) → `ims[]` non-empty; messenger `enabled: true` |
-| 8 | Arbitration (if compensation_fund > 0) | `query_toolkit` (onchain_objects, type=service) → `arbitrations[]` non-empty; `arbitration.permission != service.permission` |
-| 9 | Service published | `query_toolkit` (onchain_objects, type=service) → `bPublished: true` |
-| 10 | Test order placed | Test order created via `service.order_new` + Progress advanced (user-driven) + Allocator triggered successfully |
-
-> If any item fails, do NOT proceed to handoff. Fix the underlying issue, then re-verify. Use `project_operation.evaluate_project` (risk) to auto-detect missing bindings.
+Before declaring onboarding complete, run `project_operation` action='evaluate_project' (risk) — MCP auto-checks machine binding, order_allocators, buy_guard, arbitration isolation, R-M1-11 compliance, and publish readiness (deployment-scanner D-01..D-20). Fix ALL CRITICAL findings, then verify the remaining hard gates via `query_toolkit` (onchain_objects). The authoritative checklist is served by MCP — do not re-derive it here.
 
 ---
 
 ## Common Errors
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `dynamicFieldNotFound` | SDK cannot resolve a dynamic field reference | Set `env.account` (account not configured) — pass account in the tool call wrapper |
-| `Circular dependency` (Guard ↔ Service creation) | Guard needs Service address; Service needs Guard address | Use **LocalMark NAME** (not address) in Guard query table — pattern documented in MCP `schema_query` action='get_guard_design_patterns' |
-| `order.balance invalid` | Used wrong field for order amount | Use `order.amount` (not `order.balance` — `balance` is residual escrow, `amount` is original payment) |
-| Allocator `rate sum != 10000` | Rate-mode Allocator sharing percentages don't sum to 100% | Ensure all `sharing[].sharing` values in Rate mode sum to exactly **10000** basis points |
-| `IMPACK_GUARD_NOT_FOUND` (gen_passport) | Repository query with `quote_guard = Some(addr)` | `impack_list` is empty during verify phase — only `quote_guard = None` passes |
-| `Permission denied` (Progress advance, abort code 5) | Wrong operation path for forward's `namedOperator` | Empty `namedOperator` → `order.progress`; non-empty → `progress.operate`; `permissionIndex` → `progress.operate` |
-| Allocator never fires (refund stuck) — R-M1-11 violation | Machine has `deposit_refunded` instead of routing node `return_approved`; or Allocator `trigger_node` missing/mispelled | Rename node to business-state node; bind Allocator to that node |
-| `E_ARBITRATION_PERMISSION_CONFLICT` (33) | Adding an Arbitration whose permission == Service permission | REUSE a third-party Arbitration with a DIFFERENT Permission |
-| `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` (25) | `compensation_fund > 0` but `arbitrations` empty | Add an Arbitration before publishing, or withdraw the compensation fund |
-| Contact has no inbox | Messenger not enabled, or `ims[]` empty | `account_operation` → messenger `enabled: true`; add local account to Contact `ims[]` via `im_add` (permission index 453) |
-| Contact `im_add`/`im_remove` rejected | Wrong permission index | Use permission index `453` (CONTACT_IM) |
+Known field-name / unit / workflow pitfalls are served by `wowok_buildin_info` action='common mistakes' (filter by `operation` or `category`). Error-code guidance (`E_ARBITRATION_PERMISSION_CONFLICT` 33, `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` 25, R-M1-11 refund routing) already appears in the R-rounds above plus MCP `schema_query` action='get_safety_rules' / 'get_guard_design_patterns'. Consult those instead of a duplicated table.

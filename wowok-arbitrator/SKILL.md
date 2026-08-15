@@ -36,6 +36,17 @@ This Skill keeps the arbitration **conversation flow**, **evidence collection** 
 
 ---
 
+## Core Interaction Principles
+
+These four principles govern every arbitration build/handle step. They mirror the wowok-onboard model and are non-negotiable.
+
+1. **Review-first**: State (a) what the AI understood about the arbitration, (b) the dependency order to build, and (c) the interaction contract — before the first choice.
+2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances.
+3. **Reuse / Customize / Discover (三选一)**: For every component (Permission, Voting/Usage Guards, Contact), surface all three avenues — reuse an existing object, customize a new one, or discover from other projects / the system.
+4. **Default-config disclosure**: Disclose a new object's default config + important info + caveats BEFORE the user decides. No silent defaults.
+
+---
+
 ## ⚠️ PRE-FLIGHT: Required Items Checklist
 
 **THIS SECTION IS MANDATORY.** Before ANY arbitration service creation, the AI MUST collect explicit user confirmation for EVERY required item. **Do NOT skip, do NOT fabricate, do NOT proceed with missing items.**
@@ -133,20 +144,7 @@ Customer dispute creates Arb directly at (1). State (0) entered only via `reset`
 
 ### Voting Modes
 
-**1. Open Voting** (`voting_guard: []`)
-- Arbitrator casts votes directly (weight = 1)
-- Best for: Small trusted panels, centralized resolution
-
-**2. Guard-Based Voting** (`voting_guard: [{guard, vote_weight}, ...]`)
-- Voters authenticate via Passport + Guard
-- Weight determined by `vote_weight` rule:
-  - `FixedValue(u32)`: Equal weight for all qualified voters
-  - `GuardIdentifier(u8)`: Dynamic weight from credential (e.g., reputation score, token balance)
-- Max 50 guards — enables tiered voting (experts + community, token-holders + NFT-holders)
-
-**Voting Flow**: Voter selects a voting guard → System verifies voter's Passport against that guard → Calculates weight based on guard's rule → Applies weight to selected propositions. One vote per voter per case.
-
-> **Guard Design Reference**: Voting guard construction rules (table design, computation trees, `GuardIdentifier` submission-type requirements) now live in the MCP knowledge layer — query via `schema_query` action='get_guard_design_patterns', auto-applied via `project_operation.evaluate_project`. Test voting logic with `gen_passport` before finalizing.
+**Open** (`voting_guard: []`): arbitrator casts votes directly (weight = 1). **Guard-based** (`voting_guard: [{guard, vote_weight}, ...]`): voters authenticate via Passport + Guard; weight from `FixedValue(u32)` or `GuardIdentifier(u8)`; max 50 guards (tiered voting). Voting guard construction rules (table design, computation trees, `GuardIdentifier` requirements) are served by MCP `schema_query` action='get_guard_design_patterns'. Test with `gen_passport` before finalizing.
 
 ---
 
@@ -238,13 +236,6 @@ Providers list approved Arbitrations in their Service. Customers choose from thi
 
 ### Common Pitfalls
 
-| Pitfall | Consequence | Prevention |
-|---------|------------|------------|
-| **Paused Arbitration** | All disputes silently rejected | Verify `pause: false` after configuration |
-| **Wrong Guard design** | Must create replacement Guard | Test with `gen_passport` before creating |
-| **Past deadline** | Vote cannot be finalized | Set future timestamps only |
-| **Empty reset feedback** | Customer doesn't know what to fix | Always provide feedback on reset |
-| **Early withdrawal** | Funds locked for 30 days if not finished | Wait for Finished state |
-| **Unverified evidence** | Ruling based on invalid claims | Always verify WTS first |
+Served by `wowok_buildin_info` action='common mistakes' + MCP `schema_query` action='get_safety_rules'. Key ones: paused Arbitration rejects disputes silently (verify `pause: false`); wrong Guard design is immutable (test with `gen_passport` first); non-finished withdrawal has a 30-day lock; always `verify_wts` before ruling.
 
 ---

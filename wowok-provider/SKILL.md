@@ -42,6 +42,17 @@ The following rule tables have been pushed down to the MCP knowledge layer and a
 
 ---
 
+## Core Interaction Principles
+
+These four principles govern every service build/modify step. They mirror the wowok-onboard model and are non-negotiable.
+
+1. **Review-first**: State (a) what the AI understood about the service, (b) the dependency order to build/modify, and (c) the interaction contract — before the first choice.
+2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances. The user may pause at any important step.
+3. **Reuse / Customize / Discover (三选一)**: For every component (Permission, Machine, Guard, Treasury, Contact, Arbitration, etc.), surface all three avenues — reuse an existing object (benefit), customize a new one (sub-task ability), or discover from other projects / the system.
+4. **Default-config disclosure**: Disclose a new object's default config + important info + caveats BEFORE the user decides. No silent defaults.
+
+---
+
 ## ⚠️ PRE-FLIGHT: Required Items Checklist
 
 **THIS SECTION IS MANDATORY.** Before ANY service creation or publication, the AI MUST collect explicit user confirmation for EVERY required item. **Do NOT skip, do NOT fabricate, do NOT proceed with missing items.**
@@ -119,10 +130,7 @@ Once R1-R7 confirmed, execute in strict order. Sub-tools are invoked via `wowok(
 
 ### Post-Publish Mutability (SDK-LOCKED vs mutable)
 
-| Field | After Publish |
-|-------|---------------|
-| `buy_guard`, `sales`, `description`, `repositories` (add), `rewards` (add) | **Mutable** |
-| `machine`, `order_allocators`, `arbitrations` | **SDK-LOCKED** (immutable — fork required to change) |
+Served by MCP `schema_query` action='get_safety_rules' (immutability-after-publish). Summary: `buy_guard` / `sales` / `description` / `repositories` / `rewards` are mutable; `machine` / `order_allocators` / `arbitrations` are SDK-LOCKED (fork required to change).
 
 ---
 
@@ -133,76 +141,17 @@ Once R1-R7 confirmed, execute in strict order. Sub-tools are invoked via `wowok(
 > **Boundary conditions**: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible. Use `get_project_detail` to check whether a project has published objects.
 
 ```
-Service (merchant storefront)
-├── permission → Permission (required, mutable after publish)
-├── machine → Machine (required, IMMUTABLE after publish per service.move:633 assert!(!self.bPublished))
-├── order_allocators → Allocators inline struct (optional, IMMUTABLE after publish per service.move:503; each Order creates an independent Allocation at runtime)
-├── arbitrations → Arbitration[] (optional, mutable after publish, max 20)
-├── compensation_fund → Balance<T> value (optional, mutable after publish; NOT a Treasury address — Treasury is an independent object)
-├── repositories → Repository[] (optional, mutable after publish; consensus repository refs)
-├── sales → ServiceSale[] (optional, mutable after publish; inline product listings with name/price/stock/wip — NOT a Repository ref)
-├── rewards → Reward[] (optional, mutable after publish)
-├── um → Contact (optional, mutable after publish; customer service)
-├── customer_required → string[] (optional, mutable after publish; personal info mark names, not a direct Personal ref)
-└── buy_guard → Guard (optional, mutable after publish; gates order placement)
-
-Order (per purchase, runtime-created)
-├── builder → Customer (immutable after creation)
-├── service → Service snapshot (immutable after creation)
-├── machine → Machine (immutable after creation)
-├── progress → Progress (immutable after binding)
-├── dispute → Arb[] (optional; Arb addresses pushed on dispute per order.move:93, immutable once set — NOT an Arbitration ref)
-└── allocation → Allocation (optional, created at runtime; triggered via Progress.forward)
-
-Cross-object references:
-- Guard is referenced by 9 object types via diverse nested paths (full schema via MCP `schema_query` action='get_guard_design_patterns'):
-  - Service.buy_guard (top-level Option<address>)
-  - Machine.forward.guard (per-node dynamic table; SDK does not expose — requires query_table)
-  - Allocation.allocators[].guard (array element — graph-builder edge fieldName: allocator_guard)
-  - Arbitration.voting_guard[].guard (array element) + Arbitration.usage_guard (top-level Option)
-  - Reward.guards[].guard (array element — graph-builder edge fieldName: guard)
-  - Repository.policies[].write_guard[].guard (deeply nested) + Repository.policies[].quote_guard
-  - Treasury.external_deposit_guard[].guard + Treasury.external_withdraw_guard[].guard (dual arrays)
-  - Demand.guards[].guard (array element — graph-builder edge fieldName: guard)
-  - Passport.info[].guard (verification snapshot, read-only)
-- Machine is referenced by 4 object types (Service.machine, Order.machine, Progress.machine, Order snapshot)
-- Permission is the central hub — 11 objects hold BuiltinPermissionIndex
+Service → permission, machine (immutable), order_allocators (immutable),
+          arbitrations, compensation_fund (Balance<T>, NOT a Treasury ref),
+          repositories, sales, rewards, um (Contact), customer_required, buy_guard
+Order (runtime) → builder, service snapshot, machine, progress, dispute (Arb[]), allocation
 ```
+
+Cross-object references (which 9 object types hold a Guard and which 4 hold a Machine) are served by MCP `schema_query` action='get_guard_design_patterns'. Permission is the central hub — 11 objects hold BuiltinPermissionIndex.
 
 ### Allocators + Machine Integration
 
-Design together for coherent fund flow. **Allocation Modes** (execute in order):
-1. **Amount** — Fixed U64 per recipient
-2. **Rate** — Basis points (10000 = 100%)
-3. **Surplus** — Receives remainder (max 1)
-
-```
-Example: Delivery workflow
-"delivered" → "order_complete" (threshold: 1)
-└── Forward: "customer_signed"    → Allocator: 95% merchant, 5% platform
-
-"delivered" → "package_lost" (threshold: 2)
-├── Forward: "customer_reports_lost"
-├── Forward: "merchant_confirms_lost"
-└── Allocator: 100% to order (buyer withdraws)
-```
-
-### Recipient Types in Allocators
-
-Each `sharing[].who` field determines where funds go. Choose the correct type based on who the recipient is and whether their address is known at Service creation time.
-
-| Type | Syntax | Resolves To | When to Use |
-|------|--------|-------------|-------------|
-| `Entity` | `{"Entity": {"name_or_address": "travel_service"}}` | Fixed address (resolved from account/mark/address) | Known recipient at creation time (merchant, platform) |
-| `GuardIdentifier` | `{"GuardIdentifier": N}` | Address from Guard table index N (submitted at runtime) | Dynamic recipient known only at order time (customer/Order ID) |
-| `Signer` | `{"Signer": "signer"}` | The caller of `alloc_by_guard` | Rare — only when the caller should receive all funds |
-
-> **⚠️ Common Mistake**: Using `{"Signer": "signer"}` for all sharing entries causes ALL funds to go to whoever calls `alloc_by_guard`, making differentiated splits (e.g., 80% merchant + 20% customer) impossible. Use `Entity` for known recipients and `GuardIdentifier` for dynamic ones.
-
-**Design Pattern for Customer Refunds**:
-- Merchant receipt → `{"Entity": {"name_or_address": "<service_name>"}}` — funds go to the Service object
-- Customer refund → `{"GuardIdentifier": 0}` — funds go to the Order object (customer as builder can withdraw)
-- The allocation Guard must have `identifier: 0` with `b_submission: true` and `value_type: "Address"` to accept the Order ID at runtime
+Design together for coherent fund flow. **Allocation modes** (amount / rate / surplus) and **recipient types** (`Entity` / `GuardIdentifier` / `Signer`) are served by MCP allocation knowledge — the authoritative table + customer-refund design pattern live there. Summary: `Entity` = fixed known recipient; `GuardIdentifier` = runtime-submitted address (customer/Order ID); `Signer` = the `alloc_by_guard` caller (rare — don't use for all entries or splits collapse to one recipient).
 
 ### Triggering Allocation Distribution
 
@@ -280,15 +229,7 @@ Before forking, verify necessity via `get_project_detail` → `has_published_obj
 | Order | Fund escrow | Read-only |
 | **Progress** | Workflow state | **Operate this** — `hold: true` (lock) → work → `hold: false` (submit) |
 
-**⚠ Progress Routing Rule** (critical):
-
-| Forward `namedOperator` | Required Operation | Why |
-|------------------------|--------------------|-----|
-| `""` (empty = OrderHolder) | `order.progress` | Uses `order.has_op_permission` — order owner/agents authorized |
-| `"<role_name>"` (non-empty) | `progress.operate` | Uses Progress named_operator namespace |
-| `None` + `permissionIndex` | `progress.operate` | Uses Permission object entity table |
-
-Wrong path → "Permission denied" (Move abort code 5). The empty-string `namedOperator` is set automatically by `service::buy` — the customer becomes the operator. Providers who need to act on a forward should either use a non-empty `namedOperator` (and `progress.operate`) or use `permissionIndex` (requiring a custom permission grant in the Service's Permission object).
+**⚠ Progress Routing Rule** (critical): served by MCP `schema_query` action='get_safety_rules' (operation classification). Summary: empty `namedOperator` (`""`) → `order.progress`; non-empty role name or `permissionIndex` → `progress.operate`. Wrong path → "Permission denied" (abort code 5).
 
 **AI Reminder**: When fulfilling, check `customer_required` fields. Missing → prompt via Messenger.
 

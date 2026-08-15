@@ -9,6 +9,8 @@
  *   WOWOK_SKILLS_TARGETS  Comma-separated client targets (claude,cursor,windsurf,codebuddy,codex,trae,qoder,roo,copilot)
  *                         Defaults to "claude". Example: "claude,cursor,trae"
  *   WOWOK_SKILLS_NO_MCP   Set to "1" or "true" to skip MCP server management (default: auto-install MCP)
+ *   WOWOK_REFERRER        Airdrop referrer (address or name) to record during global install —
+ *                         saved once so the MCP auto-injects it on first on-chain interaction.
  */
 
 const fs = require('fs');
@@ -72,6 +74,44 @@ const CLIENT_DIRS = {
 
 function getPackageRoot() {
   return path.resolve(__dirname, '..');
+}
+
+/**
+ * Wow MCP data dir — mirrors @wowok/wowok getWowMcpDir(): dirname(wowDir)/mcp.
+ * Windows: %USERPROFILE%\.wow\mcp · macOS: ~/Library/Application Support/.wow/mcp
+ * Linux: ~/.config/.wow/mcp (or XDG fallbacks) · WOWOK_DATA_DIR override.
+ */
+function wowMcpDir() {
+  const home = os.homedir();
+  let wowDir;
+  if (process.env.WOWOK_DATA_DIR) {
+    wowDir = process.env.WOWOK_DATA_DIR;
+  } else if (process.platform === 'win32') {
+    wowDir = path.join(home, '.wow', 'V1');
+  } else if (process.platform === 'darwin') {
+    wowDir = path.join(home, 'Library', 'Application Support', '.wow', 'V1');
+  } else {
+    const xdgConfig = process.env.XDG_CONFIG_HOME;
+    if (xdgConfig) {
+      wowDir = path.join(xdgConfig, '.wow', 'V1');
+    } else {
+      const xdgData = process.env.XDG_DATA_HOME;
+      wowDir = xdgData ? path.join(xdgData, '.wow', 'V1') : path.join(home, '.wow', 'V1');
+    }
+  }
+  return path.join(path.dirname(wowDir), 'mcp');
+}
+
+/**
+ * Persist the airdrop referrer so the MCP auto-injects it on every call.
+ * Also used by `wowok-skills referrer <addr>` and `init --referrer`.
+ */
+function saveReferrer(referrer) {
+  const dir = wowMcpDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'referrer'), String(referrer).trim() + '\n', 'utf-8');
+  console.log(`[wowok-skills] airdrop referrer saved: ${String(referrer).trim()}`);
+  console.log('[wowok-skills] it is auto-recorded on your first on-chain interaction.');
 }
 
 function copyDir(src, dest) {
@@ -283,6 +323,18 @@ function main() {
 
       console.log('[wowok-skills] MCP server setup complete.');
     }
+
+    // ─── Airdrop referrer from WOWOK_REFERRER (single-command global install) ──
+    const referrer = process.env.WOWOK_REFERRER;
+    if (referrer && referrer.trim()) {
+      console.log('');
+      saveReferrer(referrer);
+    }
+
+    // ─── Project-install reminder ──────────────────────────────────────────
+    console.log('');
+    console.log('[wowok-skills] Skills installed GLOBALLY + MCP server registered (default).');
+    console.log('[wowok-skills] To ALSO install skills into a project, run `wowok-skills init` inside it.');
   } else if (event === 'preuninstall') {
     const targets = Object.keys(CLIENT_DIRS);
     console.log('[wowok-skills] Removing skills from all client dirs...');
