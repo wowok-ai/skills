@@ -2,12 +2,13 @@
  * WoWok Skills installer
  *
  * npm lifecycle integration:
- *   postinstall  → copy SKILL.md folders to ~/.claude/skills/ (and more via env)
+ *   postinstall  → copy SKILL.md folders to ALL client skill dirs by default
+ *                   (no need to pick a client — skills fit everywhere)
  *   preuninstall → remove SKILL.md folders from all installed client dirs
  *
  * Environment variables:
- *   WOWOK_SKILLS_TARGETS  Comma-separated client targets (claude,cursor,windsurf,codebuddy,codex,trae,qoder,roo,copilot)
- *                         Defaults to "claude". Example: "claude,cursor,trae"
+ *   WOWOK_SKILLS_TARGETS  Comma-separated client targets to override the default (all).
+ *                         Rarely needed — the default installs to every supported client.
  *   WOWOK_SKILLS_NO_MCP   Set to "1" or "true" to skip MCP server management (default: auto-install MCP)
  *   WOWOK_REFERRER        Airdrop referrer (address or name) to record during global install —
  *                         saved once so the MCP auto-injects it on first on-chain interaction.
@@ -71,6 +72,10 @@ const CLIENT_DIRS = {
   agents: path.join(os.homedir(), '.agents', 'skills'), // deprecated alias
   copilot: path.join(os.homedir(), '.github', 'prompts'),
 };
+
+const ALL_CLIENT_TARGETS = [
+  'claude', 'cursor', 'windsurf', 'codebuddy', 'codex', 'trae', 'qoder', 'roo', 'copilot',
+];
 
 function getPackageRoot() {
   return path.resolve(__dirname, '..');
@@ -271,7 +276,7 @@ function warnLegacySkills(targetDir) {
 function getTargets() {
   const envTargets = process.env.WOWOK_SKILLS_TARGETS;
   if (!envTargets) {
-    return ['claude'];
+    return [...ALL_CLIENT_TARGETS];
   }
   return envTargets.split(',').map(t => t.trim()).filter(t => CLIENT_DIRS[t]);
 }
@@ -333,8 +338,8 @@ function main() {
 
     // ─── Project-install reminder ──────────────────────────────────────────
     console.log('');
-    console.log('[wowok-skills] Skills installed GLOBALLY + MCP server registered (default).');
-    console.log('[wowok-skills] To ALSO install skills into a project, run `wowok-skills init` inside it.');
+    console.log('[wowok-skills] Skills installed GLOBALLY + MCP server registered (all clients).');
+    console.log('[wowok-skills] To ALSO install skills into a project, cd into it and run `wowok-skills init`.');
   } else if (event === 'preuninstall') {
     const targets = Object.keys(CLIENT_DIRS);
     console.log('[wowok-skills] Removing skills from all client dirs...');

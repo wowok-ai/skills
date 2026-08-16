@@ -431,10 +431,7 @@ function restartMcpServer(): void {
 }
 
 function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>[] {
-  if (!targetArg || targetArg === 'claude') {
-    return ['claude'];
-  }
-  if (targetArg === 'all') {
+  if (!targetArg || targetArg === 'all') {
     return [...ALL_CLIENT_TARGETS];
   }
   if (ALL_CLIENT_TARGETS.includes(targetArg as any)) {
@@ -452,7 +449,7 @@ function getTargets(targetArg: string | undefined): Exclude<ClientTarget, 'all'>
   console.error('  qoder        .qoder/skills/        (Qoder / Qoder CN)');
   console.error('  roo          .roo/skills/          (Roo Code)');
   console.error('  copilot      .github/prompts/      (GitHub Copilot)');
-  console.error('  all          All of the above');
+  console.error('  all          All of the above (default)');
   process.exit(1);
 }
 
@@ -654,13 +651,13 @@ function printUsage(): void {
   console.log('  get <name>              Show skill details');
   console.log('  role <role>             List skills for a role (customer|provider|arbitrator|shared)');
   console.log('  recommend <intent>      Recommend skills based on user intent');
-  console.log('  init [--target <t>] [--no-mcp] [--referrer <addr|name>]   Install skills to project (default: .claude/skills/ with MCP)');
+  console.log('  init [--target <t>] [--no-mcp] [--referrer <addr|name>]   Install skills to project (default: ALL clients with MCP)');
   console.log('                              --no-mcp     Skip MCP server setup (skills only)');
   console.log('                              --referrer   Save the airdrop referrer; auto-recorded on first on-chain interaction');
   console.log('  referrer <addr|name>      Save the airdrop referrer GLOBALLY (no project needed)');
-  console.log('  uninit [--target <t>]   Remove skills from project');
+  console.log('  uninit [--target <t>]   Remove skills from project (default: ALL clients)');
   console.log('');
-  console.log('Targets:');
+  console.log('Targets (--target <t> — omit to install all clients):');
   console.log('  claude       .claude/skills/       (Claude Code)');
   console.log('  cursor       .cursor/rules/        (Cursor IDE)');
   console.log('  windsurf     .windsurf/skills/     (Windsurf / Codeium)');
@@ -670,18 +667,17 @@ function printUsage(): void {
   console.log('  qoder        .qoder/skills/        (Qoder / Qoder CN)');
   console.log('  roo          .roo/skills/          (Roo Code)');
   console.log('  copilot      .github/prompts/      (GitHub Copilot)');
-  console.log('  all          All of the above');
+  console.log('  all          All of the above (default)');
   console.log('');
   console.log('Examples:');
   console.log('  wowok-skills list');
   console.log('  wowok-skills get wowok-provider');
   console.log('  wowok-skills role provider');
   console.log('  wowok-skills recommend "create a service"');
-  console.log('  wowok-skills init');
-  console.log('  wowok-skills init --target agents');
-  console.log('  wowok-skills init --target all');
+  console.log('  wowok-skills init                   # All clients (default)');
+  console.log('  wowok-skills init --target claude   # One client only');
   console.log('  wowok-skills init --no-mcp');
-  console.log('  wowok-skills init --target cursor --no-mcp');
+  console.log('  wowok-skills uninit                 # All clients (default)');
 }
 
 function main() {
