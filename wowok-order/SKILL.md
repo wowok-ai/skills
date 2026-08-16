@@ -246,6 +246,13 @@ Key fields: `reminders[]` (`required` blocks purchase; `recommended` = strong ca
 
 **Red lines** (do not purchase): no arb + no refund path, OR `compensation_ratio < 0.5`. **Post-purchase**: monitor refund Allocator triggers, WIP hash mismatch, merchant unreachable (>3d warning, >7d arb), evidence collection (≥3 items). **Runtime toggle**: `config_operation` → `action: "toggle"`, `service: "order_monitor"` (default OFF).
 
+**Plug-in evaluation** (`evaluation_operation` tool — read result, do NOT recompute):
+- `service_risk` — 4-dimension risk (workflow/fund/trust/behavior) via the pluggable engine; inject red lines (`requirements`) or unplug dimensions (`overrides`).
+- `demand_match` / `service_match` — rank candidate services/demands against a capability vector (industry/region/price/trust/capabilities).
+- `capability_gap` — unmet requirements vs a service; `compose_service` — combine services to cover a demand.
+- `node_game` / `arb_game` — best-move + payoff at a Progress node / Arb state (pair with `participation_radar` output).
+The role decides and acts; the tool is read-only.
+
 ---
 
 ### Phase Dependency

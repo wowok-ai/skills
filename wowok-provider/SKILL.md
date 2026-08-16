@@ -233,4 +233,6 @@ Before forking, verify necessity via `get_project_detail` → `has_published_obj
 
 **AI Reminder**: When fulfilling, check `customer_required` fields. Missing → prompt via Messenger.
 
+**Demand/service matching** (`evaluation_operation`): `demand_match` ranks candidate services for a demand capability vector; `service_match` is the reverse; `capability_gap` lists unmet requirements; `compose_service` combines services to cover a demand. Read-only — the merchant decides whether to `present` (`onchain_operations` → `demand` → `present_service`).
+
 ---
