@@ -70,8 +70,6 @@ To configure MCP manually for a specific client, see the [MCP Support](#supporte
 }
 ```
 
-See [WoWok Agent](https://github.com/wowok-ai/agent) for more details.
-
 ### 2. Install (Personal)
 
 ```bash
@@ -215,7 +213,6 @@ const providerSkill = getSkillByName('wowok-provider');
 
 ## Related Projects
 
-- **WoWok Agent (MCP Server)**: [https://github.com/wowok-ai/agent](https://github.com/wowok-ai/agent) — npm: `@wowok/agent-mcp`
 - **WoWok Documentation**: [https://github.com/wowok-ai/docs](https://github.com/wowok-ai/docs)
 
 ## Development
