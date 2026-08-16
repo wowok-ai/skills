@@ -176,9 +176,11 @@ Immutable product commitment for arbitration evidence.
 ```
 Create:  wowok({ tool: "wip_file", data: { type: "generate", ... } }) → markdown_text + images → outputPath
 Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", ... } }) → sales.sales[{
-          name, price, stock, wip: "<URL>", wip_hash: "" (auto)
+          name, price, stock, wip: "<public-URL>", wip_hash: "" (auto)
         }]
 ```
+
+> ⚠️ **WIP must be network-deployed.** `sale.wip` is stored ON-CHAIN and every customer fetches it when placing an order. A non-empty `wip` MUST be a publicly reachable URL (GitHub Pages / IPFS / your own website). A local file path (`C:\...`, `/path/file.wip`) or a localhost/LAN URL (`http://localhost:...`, `http://192.168.x.x`) is reachable only from the merchant's machine — it passes merchant-side set-time verification but **aborts customer `order_new` 100%**. Local-network URLs are INTERNAL TEST USE ONLY (set `env.network: "localnet"`); on testnet/mainnet they are rejected. If the WIP cannot be deployed, leave `sale.wip: ""` (TESTING ONLY, WIP verification skipped).
 
 ### Compensation Fund (Optional but Recommended)
 

@@ -165,6 +165,7 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
   - `name`, `price` (u64, min unit), `stock`.
   - `wip` (URL) + `wip_hash` — **the WIP MUST be deployed to a public endpoint** (on-chain only stores the URL + hash, not the file).
 - **WIP public deployment (strongly recommended sub-task)**: user provides web/doc material → AI generates the WIP file + deploys to a public URL (recommend GitHub Pages / free static hosting).
+- **⚠️ NO "set-without-deploy" option**: `sale.wip` is stored ON-CHAIN and every customer fetches it when ordering. The ONLY two valid choices are: (1) deploy the .wip file to a publicly reachable URL and set `wip` to that URL, or (2) leave `wip: ""` (TESTING ONLY — WIP verification skipped). Do NOT offer a placeholder/local path/localhost/LAN URL as `wip` — it passes merchant-side verification but aborts customer `order_new` 100% (INTERNAL TEST USE ONLY: local-network URLs require `env.network: "localnet"`).
 - **Default config**: n/a — products are user business decisions (never fabricated).
 - **Reuse / Customize / Discover**: Reuse an existing `sales` item (rare). Customize: define your own products. Discover: n/a.
 - **Dependencies**: Service draft (R3).
