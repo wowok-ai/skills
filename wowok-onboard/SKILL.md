@@ -221,10 +221,7 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 
 ### R11 — Publish Service
 
-- **Semantic meaning**: Make the service live. Irreversible — `machine`, `order_allocators`, and `arbitrations` become permanently frozen.
-- **Core elements to confirm**: confirm publish (Phase 2: only flips `publish: true`; all L1 fields were set in R5–R9).
-- **Default config**: n/a — confirmation gate.
-- **Reuse / Customize / Discover**: n/a.
+- **Semantic meaning**: Make the service live. Irreversible — `machine`, `order_allocators`, and `arbitrations` become permanently frozen. Confirmation gate (Phase 2: only flips `publish: true`; all L1 fields were set in R5–R9). After publish the Service is immediately orderable — `publish` auto-sets `bPaused=false` (per MCP `ServicePublishedEvent` semantic; do NOT call a separate `pause:false`/unpause operation).
 - **Dependencies**: R10 audit passed.
 
 ### R12 — Test Order (user-driven, next-node disclosure)
@@ -233,11 +230,12 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 - **Core elements to confirm**:
   - **Test account**: which account places the order — default is the **service-creation account**, but the user may choose another account to simulate a buyer.
   - **Advance path**: at each node, the user chooses which next node to advance to.
-- **Per-node disclosure (before each advance)**: state current node + all reachable next nodes; for each, the operation (`order.progress` for `namedOperator=""` / `progress.operate` otherwise), required permission, Guard acceptance (`retained_submission`), and business meaning.
+- **Per-node disclosure (before each advance)**: the MCP injects `semantic.workflow_guidance` (on query_toolkit Progress results: `_workflow_guidance` / `_workflow_guidance_text`) listing **ALL** reachable next nodes with their operator (`namedOperator=""` → order holder / `permissionIndex` → role / named operator), forward, weight, guard, business meaning, and a K3-framed recommendation (gains/risks/consistency). Relay this full list to the user (who can act, with which permission/account), then let the user choose — **AI 推荐、人决策** (K3 P3).
+- **After each advance**: relay `semantic.workflow_receipt` — which account did what, whether the node migrated; if it did NOT migrate and threshold > 0, report threshold / accumulated weight / remaining / who must act next (K3 G4 阈值配合).
 - **Default config**: test account = service-creation account.
 - **Reuse / Customize / Discover**: n/a (verification).
 - **Dependencies**: Service published (R11) — `order_new` requires `bPublished=true`.
-- **Sequence**: `order_new` → query current node's forwards → user picks a next node → advance (`order.progress` / `progress.operate`) → repeat until terminal → `allocation.alloc_by_guard` → verify fund distribution.
+- **Sequence**: `order_new` → read `workflow_guidance` (current node + reachable nodes) → user picks a next node → advance (`order.progress` for `namedOperator=""` / `progress.operate` otherwise) → relay `workflow_receipt` → repeat until terminal → `allocation.alloc_by_guard` → verify fund distribution.
 
 ---
 
