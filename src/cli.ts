@@ -44,6 +44,8 @@ const LEGACY_SKILL_DIRS: string[] = [...DEPRECATED_SKILLS];
 const ROLE_DISPLAY: Record<SkillRole, string> = {
   customer: '👤 Customer',
   provider: '🏪 Provider',
+  supplier: '📦 Supplier',
+  collaborator: '🤝 Collaborator',
   arbitrator: '⚖️  Arbitrator',
   shared: '🛠️  Shared'
 };
@@ -627,9 +629,9 @@ function cmdRecommend(intent: string): void {
 }
 
 function cmdRole(role: string): void {
-  if (!['customer', 'provider', 'arbitrator', 'shared'].includes(role)) {
+  if (!['customer', 'provider', 'supplier', 'collaborator', 'arbitrator', 'shared'].includes(role)) {
     console.error(`Invalid role: ${role}`);
-    console.error('Valid roles: customer, provider, arbitrator, shared');
+    console.error('Valid roles: customer, provider, supplier, collaborator, arbitrator, shared');
     process.exit(1);
   }
   
@@ -649,7 +651,7 @@ function printUsage(): void {
   console.log('Commands:');
   console.log('  list                    List all available skills (by role)');
   console.log('  get <name>              Show skill details');
-  console.log('  role <role>             List skills for a role (customer|provider|arbitrator|shared)');
+  console.log('  role <role>             List skills for a role (customer|provider|supplier|collaborator|arbitrator|shared)');
   console.log('  recommend <intent>      Recommend skills based on user intent');
   console.log('  init [--target <t>] [--no-mcp] [--referrer <addr|name>]   Install skills to project (default: ALL clients with MCP)');
   console.log('                              --no-mcp     Skip MCP server setup (skills only)');

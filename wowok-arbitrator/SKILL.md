@@ -169,7 +169,7 @@ Customer dispute creates Arb directly at (1). State (0) entered only via `reset`
 | **Messenger** (preferred) | Specific evidence, privacy-sensitive | Encrypted, off-chain |
 | **on-chain feedback** | General clarification, procedural | Public, permanent |
 
-**Best-move advice** (`evaluation_operation` → `arb_game`): pass `status` (7-state) + `perspective` (`disputant`/`arbitrator`/`voter`) to get ranked moves (optimal + payoff + risk). Read the result; the role decides and acts.
+**Best-move advice** (`evaluation_operation` → `arb_game`): pass `status` (7-state) + `perspective` (`customer`/`merchant`/`arbitrator`) to get ranked moves (optimal + payoff + risk). Read the result; the role decides and acts.
 
 ---
 

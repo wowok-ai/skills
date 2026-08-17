@@ -28,11 +28,19 @@ import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
  *    - Use when: User is a merchant/service provider building or operating services
  *    - Key actions: Create Service, design Machine workflow, set Allocators, handle customer orders
  *
- * 3. ARBITRATOR (wowok-arbitrator)
+ * 3. SUPPLIER (wowok-supplier)
+ *    - Use when: User is a sub-order provider presenting to a Demand and fulfilling sub-orders
+ *    - Key actions: Present service to Demand, fulfill sub-order via Progress, collect settlement
+ *
+ * 4. COLLABORATOR (wowok-collaborator)
+ *    - Use when: User is an operator executing workflow forwards (internal staff or external named operator)
+ *    - Key actions: Execute permission/named-operator forwards, submit guard evidence
+ *
+ * 5. ARBITRATOR (wowok-arbitrator)
  *    - Use when: User operates an arbitration service for dispute resolution
  *    - Key actions: Create Arbitration, review evidence, organize voting, manage fees
  *
- * 4. SHARED (wowok-messenger, wowok-output, wowok-onboard, wowok-planner, wowok-auditor)
+ * 6. SHARED (wowok-messenger, wowok-output, wowok-onboard, wowok-planner, wowok-auditor)
  *    - Use when: Any role needs encrypted messaging, output formatting, onboarding,
  *      planning, or pre-publish audit
  *    - Always loaded: wowok-output
@@ -89,6 +97,26 @@ export const wowokSkills: SkillConfig = {
       role: 'provider',
       loading: 'on-demand',
       related: ['wowok-provider']
+    },
+
+    // === SUPPLIER ROLE ===
+    {
+      name: 'wowok-supplier',
+      description: 'Supplier (sub-order provider) guide — present your service to a Demand (open or passport-gated), fulfill the resulting sub-order via Progress, and collect settlement from the upstream merchant. Use when the user acts as a supplier answering an RFP/demand.',
+      version: '2.0.0',
+      role: 'supplier',
+      loading: 'on-demand',
+      related: ['wowok-provider', 'wowok-machine', 'wowok-messenger']
+    },
+
+    // === COLLABORATOR ROLE ===
+    {
+      name: 'wowok-collaborator',
+      description: 'Process collaborator guide — execute workflow forwards as internal staff (permission entity) or external operator (named operator). Covers routing, guard-gated evidence submission, and reputation protection. Use when the user is an operator advancing a Machine workflow.',
+      version: '2.0.0',
+      role: 'collaborator',
+      loading: 'on-demand',
+      related: ['wowok-provider', 'wowok-machine', 'wowok-messenger']
     },
 
     // === ARBITRATOR ROLE ===
@@ -191,6 +219,16 @@ export function getRoleSkills(): RoleSkills[] {
       description: 'Merchants and sellers creating services and handling orders'
     },
     {
+      role: 'supplier',
+      roleName: 'Supplier',
+      description: 'Sub-order providers presenting to Demands and fulfilling sub-orders'
+    },
+    {
+      role: 'collaborator',
+      roleName: 'Collaborator',
+      description: 'Process operators (internal permission entities and external named operators)'
+    },
+    {
       role: 'arbitrator',
       roleName: 'Arbitrator',
       description: 'Dispute resolution services and voting organizers'
@@ -228,6 +266,16 @@ export function recommendSkills(intent: string): Skill[] {
   // Customer keywords
   if (/\b(place order|buy|purchase|customer|order status|track progress|dispute|compensation)\b/.test(lower)) {
     return getSkillsByRole('customer');
+  }
+
+  // Supplier keywords
+  if (/\b(supplier|sub.order|present service|present to demand|rfp|open call|fulfill sub.order)\b/.test(lower)) {
+    return getSkillsByRole('supplier');
+  }
+
+  // Collaborator keywords
+  if (/\b(collaborator|operator|permission index|named operator|execute forward|advance workflow)\b/.test(lower)) {
+    return getSkillsByRole('collaborator');
   }
 
   // Arbitrator keywords

@@ -1,7 +1,7 @@
 /**
  * Skill role categories for AI selection
  */
-export type SkillRole = 'customer' | 'provider' | 'arbitrator' | 'shared';
+export type SkillRole = 'customer' | 'provider' | 'supplier' | 'collaborator' | 'arbitrator' | 'shared';
 
 /**
  * Skill loading mode

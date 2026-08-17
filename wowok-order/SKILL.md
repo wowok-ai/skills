@@ -1,22 +1,41 @@
 ---
 name: wowok-order
 description: |
-  WoWok Customer Guide — complete buyer order lifecycle: pre-purchase due diligence
-  (E1-E11), consensus building, order creation, progress advancement, and arbitration.
+  WoWok Buyer Guide — TWO lifecycles in one skill:
+
+  1. PROSPECT (潜在用户尽调, pre-purchase): E1-E11 due diligence + consensus
+     building + trust-score synthesis, ending in a buy/no-buy decision.
+  2. CUSTOMER (已下单履约, post-order): order creation, progress advancement,
+     fund management, and arbitration.
+
+  For suppliers presenting to Demands, see wowok-supplier. For process
+  operators executing workflow forwards, see wowok-collaborator.
 when_to_use:
-  - User is a customer/buyer placing or managing orders
-  - User wants to evaluate services before purchasing
+  - User is a potential buyer evaluating a service BEFORE purchasing (prospect)
+  - User is a customer/buyer placing or managing orders (customer)
+  - User wants to evaluate services, WIP, guards, allocations, arbitration
   - User needs to communicate with sellers via Messenger
   - User asks about order progress, payments, or refunds
   - User wants to file disputes or arbitration claims
-  - User mentions "buy", "order", "purchase", "refund", "dispute", "arbitration"
+  - User mentions "buy", "order", "purchase", "refund", "dispute", "arbitration", "due diligence"
 ---
 
-# WoWok Customer Guide
+# WoWok Buyer Guide
 
-> **Role**: Customer (Buyer/Order Holder)
-> **Guides**: [wowok-provider](../wowok-provider/SKILL.md) · [wowok-arbitrator](../wowok-arbitrator/SKILL.md) · [wowok-machine](../wowok-machine/SKILL.md) · [wowok-messenger](../wowok-messenger/SKILL.md)
+> **Role**: Buyer — two lifecycles: **Prospect** (pre-purchase due diligence) → **Customer** (post-order fulfillment)
+> **Guides**: [wowok-provider](../wowok-provider/SKILL.md) · [wowok-supplier](../wowok-supplier/SKILL.md) · [wowok-arbitrator](../wowok-arbitrator/SKILL.md) · [wowok-machine](../wowok-machine/SKILL.md) · [wowok-messenger](../wowok-messenger/SKILL.md)
 > Guard patterns / safety rules / tool references live in the MCP knowledge layer — query via `schema_query` (`get_guard_design_patterns`, `get_safety_rules`, `get_tool_reference`).
+
+---
+
+## Two Lifecycles
+
+| Lifecycle | Role | Phases | Ends with |
+|-----------|------|--------|-----------|
+| **Prospect** (潜在用户尽调) | You have NOT ordered yet | Phase 1 (E1-E11) + Phase 2 | buy / no-buy decision |
+| **Customer** (已下单履约) | You are the Order `builder` | Phase 3-6 + Fund Management | funds withdrawn / dispute resolved |
+
+The prospect lifecycle is served primarily by MCP `trust_score` (`depth: "preorder"`) and the plug-in `evaluation_operation` — this skill keeps the dialogue flow. The customer lifecycle is on-chain (Order/Progress/Allocation/Arb).
 
 ---
 
@@ -29,7 +48,7 @@ when_to_use:
 
 ---
 
-## Phase 1: Pre-Purchase Due Diligence (MANDATORY GATE)
+## Phase 1: Pre-Purchase Due Diligence (PROSPECT lifecycle — MANDATORY GATE)
 
 > **⛔ Complete E1-E11 in order; user must confirm every item.** **⚠️** = explain risk, wait. **🔴** = strongly advise against.
 
@@ -177,7 +196,7 @@ Clarify via Messenger: deliverables (E2 WIP), timeline (E3 nodes), refund/cancel
 
 ---
 
-## Phase 3: Order Creation
+## Phase 3: Order Creation (CUSTOMER lifecycle)
 
 Not in schema: excess `buy.total_pay` auto-refunded; agents cannot withdraw. Discounts: query `onchain_received` (type `0x2::service::Discount`), filter by `service`, validate time/benchmark; rate = `total_pay × (off / 10000)`; fixed = `min(off, total_pay)`. Post-creation: notify via Messenger with order ID.
 
