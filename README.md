@@ -49,7 +49,7 @@ npm install -g @wowok/skills
 
 ### Step 1 — Install Globally (Personal Use)
 
-One command. Skills install to **all 9 supported AI clients** at once. MCP server auto-installs and registers.
+One command. Skills install to **all 11 supported AI clients** at once. MCP server auto-installs and registers.
 
 ```bash
 npm install -g @wowok/skills
@@ -80,6 +80,8 @@ wowok-skills init --target windsurf
 wowok-skills init --target codebuddy
 wowok-skills init --target qoder
 wowok-skills init --target roo
+wowok-skills init --target cline
+wowok-skills init --target kilo
 wowok-skills init --target copilot
 ```
 

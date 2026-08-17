@@ -38,6 +38,8 @@ const SKILL_DIRS = [
   'wowok-onboard',
   'wowok-planner',
   'wowok-auditor',
+  'wowok-supplier',
+  'wowok-collaborator',
 ];
 
 /**
@@ -69,12 +71,14 @@ const CLIENT_DIRS = {
   trae: path.join(os.homedir(), '.agents', 'skills'),
   qoder: path.join(os.homedir(), '.qoder', 'skills'),
   roo: path.join(os.homedir(), '.roo', 'skills'),
+  cline: path.join(os.homedir(), '.cline', 'skills'),
+  kilo: path.join(os.homedir(), '.kilo', 'skills'),
   agents: path.join(os.homedir(), '.agents', 'skills'), // deprecated alias
   copilot: path.join(os.homedir(), '.github', 'prompts'),
 };
 
 const ALL_CLIENT_TARGETS = [
-  'claude', 'cursor', 'windsurf', 'codebuddy', 'codex', 'trae', 'qoder', 'roo', 'copilot',
+  'claude', 'cursor', 'windsurf', 'codebuddy', 'codex', 'trae', 'qoder', 'roo', 'cline', 'kilo', 'copilot',
 ];
 
 function getPackageRoot() {
@@ -341,7 +345,11 @@ function main() {
     console.log('[wowok-skills] Skills installed GLOBALLY + MCP server registered (all clients).');
     console.log('[wowok-skills] To ALSO install skills into a project, cd into it and run `wowok-skills init`.');
   } else if (event === 'preuninstall') {
-    const targets = Object.keys(CLIENT_DIRS);
+    // Use the same target list as postinstall (ALL_CLIENT_TARGETS) so the
+    // set of dirs we remove from is symmetric with the set we installed to.
+    // Object.keys(CLIENT_DIRS) would additionally include the 'agents' alias
+    // which is identical to 'trae' → redundant.
+    const targets = [...ALL_CLIENT_TARGETS];
     console.log('[wowok-skills] Removing skills from all client dirs...');
 
     let total = 0;
@@ -375,8 +383,140 @@ function countExisting(targetDir) {
 const MCP_PACKAGE = '@wowok/agent-mcp';
 
 /**
+ * Resolve CodeBuddy MCP config file according to its official priority rules.
+ * Reference: https://www.codebuddy.ai/docs/cli/mcp#configuration-file-locations
+ *
+ * USER scope priority (highest → lowest):
+ *   1. ~/.codebuddy/.mcp.json  (recommended)
+ *   2. ~/.codebuddy/mcp.json   (deprecated)
+ *   3. ~/.codebuddy.json       (legacy)
+ *
+ * Read rule : pick the FIRST existing candidate.
+ * Write rule: if any file exists, merge into that first existing file;
+ *             if none exist, create the highest-priority one (.mcp.json).
+ */
+function resolveCodeBuddyMcpFile() {
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, '.codebuddy', '.mcp.json'), // 1. recommended
+    path.join(home, '.codebuddy', 'mcp.json'),  // 2. deprecated
+    path.join(home, '.codebuddy.json'),          // 3. legacy
+  ];
+  const existing = candidates.find((p) => fs.existsSync(p));
+  return existing || candidates[0];
+}
+
+/**
+ * Resolve VS Code globalStorage MCP settings files for a given extension ID.
+ *
+ * VS Code extensions store their settings under:
+ *   <user-data>/User/globalStorage/<extensionId>/settings/<fileName>
+ *
+ * Where <user-data> depends on the platform and the installed VS Code
+ * *variant* (Code, Code - Insiders, VSCodium, Cursor). Only variants whose
+ * User directory actually exists on disk are returned.
+ *
+ *   macOS:   ~/Library/Application Support/{Code,Code - Insiders,VSCodium,Cursor}
+ *   Windows: %APPDATA%\{Code,Code - Insiders,VSCodium,Cursor}
+ *   Linux:   ~/.config/{Code,Code - Insiders,VSCodium,Cursor}
+ */
+function resolveVscodeGlobalStorageFiles(extensionId, fileName) {
+  const home = os.homedir();
+  const vsBaseDirs = (() => {
+    switch (process.platform) {
+      case 'darwin':
+        return [path.join(home, 'Library', 'Application Support')];
+      case 'win32':
+        return [process.env.APPDATA || path.join(home, 'AppData', 'Roaming')];
+      default:
+        return [process.env.XDG_CONFIG_HOME || path.join(home, '.config')];
+    }
+  })();
+
+  const results = [];
+  const vsVariants = ['Code', 'Code - Insiders', 'VSCodium', 'Cursor'];
+  for (const base of vsBaseDirs) {
+    for (const variant of vsVariants) {
+      const vsUserDir = path.join(base, variant, 'User');
+      if (fs.existsSync(vsUserDir)) {
+        results.push(path.join(
+          vsUserDir,
+          'globalStorage',
+          extensionId,
+          'settings',
+          fileName,
+        ));
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Resolve ALL Roo Code MCP config files that should receive the wowok entry.
+ * Roo Code ships in two forms and we should cover BOTH:
+ *
+ *   (A) Standalone CLI config → ~/.roo/mcp_settings.json
+ *       Reference: https://mcp.harishgarg.com/use/apple-script/mcp-server/with/43
+ *
+ *   (B) VS Code extension (rooveterinaryinc.roo-cline) config. The extension
+ *       stores MCP settings inside VS Code's globalStorage under its
+ *       extension ID.
+ *       References:
+ *         - Path convention : https://www.skillmd.ai/skills/mcp-installer-1/
+ *         - macOS/Windows   : https://crosstrade.io/learn/connect-roo-code-to-ninjatrader-8-mcp
+ */
+function resolveRooMcpFiles() {
+  const results = [];
+  // (A) Standalone CLI config — always include this target
+  results.push(path.join(os.homedir(), '.roo', 'mcp_settings.json'));
+  // (B) VS Code extension globalStorage entries
+  results.push(...resolveVscodeGlobalStorageFiles(
+    'rooveterinaryinc.roo-cline',
+    'cline_mcp_settings.json',
+  ));
+  return results;
+}
+
+/**
+ * Resolve ALL Cline (VS Code) MCP config files.
+ * Cline is a VS Code extension that stores MCP settings in globalStorage
+ * under its extension ID (saoudrizwan.claude-dev), filename cline_mcp_settings.json.
+ * Reference: https://www.skillmd.ai/skills/mcp-installer-1/
+ */
+function resolveClineMcpFiles() {
+  return resolveVscodeGlobalStorageFiles(
+    'saoudrizwan.claude-dev',
+    'cline_mcp_settings.json',
+  );
+}
+
+/**
+ * Resolve ALL Kilo Code MCP config files.
+ * Kilo Code reads MCP settings from two separate places (documented by Kilo):
+ *   (A) VS Code extension → globalStorage/kilocode.kilo-code/settings/mcp_settings.json
+ *   (B) CLI              → ~/.kilocode/cli/global/settings/mcp_settings.json
+ * References:
+ *   - https://kilo.ai/docs/features/mcp/using-mcp-in-cli
+ *   - https://github.com/Kilo-Org/kilocode/blob/main/docs/file-locations.md
+ */
+function resolveKiloMcpFiles() {
+  const results = [];
+  results.push(...resolveVscodeGlobalStorageFiles(
+    'kilocode.kilo-code',
+    'mcp_settings.json',
+  ));
+  results.push(path.join(os.homedir(), '.kilocode', 'cli', 'global', 'settings', 'mcp_settings.json'));
+  return results;
+}
+
+/**
  * MCP config entries per client target.
  * null means the client does not support MCP or manages it internally.
+ * Each entry may either provide a static `configPath` string, or a
+ * `resolveConfigPaths()` function that returns an array of concrete paths
+ * (for clients like CodeBuddy with priority-resolution rules, or Roo with
+ * multiple simultaneous install targets).
  */
 const MCP_TARGET_CONFIGS = {
   claude: {
@@ -388,7 +528,7 @@ const MCP_TARGET_CONFIGS = {
     }
   },
   codebuddy: {
-    configPath: path.join(os.homedir(), '.codebuddy', 'mcp.json'),
+    resolveConfigPaths: () => [resolveCodeBuddyMcpFile()],
     merge: (config) => {
       config.mcpServers = config.mcpServers || {};
       config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
@@ -404,9 +544,26 @@ const MCP_TARGET_CONFIGS = {
     }
   },
   qoder: {
-    configPath: process.platform === 'win32'
-      ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Qoder', 'mcp-settings.json')
-      : path.join(os.homedir(), '.config', 'qoder', 'mcp-settings.json'),
+    configPath: (() => {
+      // Qoder MCP config paths — confirmed by community guides:
+      //   Windows : %APPDATA%\Qoder\mcp-settings.json
+      //   macOS   : ~/Library/Application Support/Qoder/mcp-settings.json
+      //   Linux   : ~/.config/qoder/mcp-settings.json
+      // Reference: github.com/oscar-wang-xin/mcp-session-saver/docs/MULTI_IDE_SETUP.md
+      if (process.platform === 'win32') {
+        return path.join(
+          process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+          'Qoder', 'mcp-settings.json',
+        );
+      }
+      if (process.platform === 'darwin') {
+        return path.join(os.homedir(), 'Library', 'Application Support', 'Qoder', 'mcp-settings.json');
+      }
+      return path.join(
+        process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+        'qoder', 'mcp-settings.json',
+      );
+    })(),
     merge: (config) => {
       config.mcpServers = config.mcpServers || {};
       config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
@@ -414,7 +571,23 @@ const MCP_TARGET_CONFIGS = {
     }
   },
   roo: {
-    configPath: path.join(os.homedir(), '.roo', 'mcp_settings.json'),
+    resolveConfigPaths: resolveRooMcpFiles,
+    merge: (config) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    }
+  },
+  cline: {
+    resolveConfigPaths: resolveClineMcpFiles,
+    merge: (config) => {
+      config.mcpServers = config.mcpServers || {};
+      config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
+      return config;
+    }
+  },
+  kilo: {
+    resolveConfigPaths: resolveKiloMcpFiles,
     merge: (config) => {
       config.mcpServers = config.mcpServers || {};
       config.mcpServers.wowok = { command: 'npx', args: ['-y', '@wowok/agent-mcp'] };
@@ -481,7 +654,10 @@ function getInstalledMcpVersion() {
  */
 function getLatestMcpVersion() {
   try {
-    const output = execSync(`npm view ${MCP_PACKAGE} version`, {
+    // --prefer-online forces npm to bypass local cache and hit the registry
+    // directly. Without this flag, stale cache can return outdated version
+    // numbers (see project memory: components.mjs fix).
+    const output = execSync(`npm view --prefer-online ${MCP_PACKAGE} version`, {
       encoding: 'utf-8',
       stdio: 'pipe',
       timeout: 15000,
@@ -575,6 +751,11 @@ function ensureMcpServer() {
  * Write MCP server config entry for a given client target.
  * Safely merges with any existing MCP configuration.
  * Supports JSON format (most clients) and TOML format (Codex).
+ *
+ * When the target's MCP_TARGET_CONFIGS entry has `resolveConfigPaths()`
+ * (instead of a single `configPath` string) the function will iterate the
+ * returned array so multi-target clients (Roo, CodeBuddy with priority
+ * resolution) get every applicable location written to.
  */
 function writeMcpConfig(target) {
   const cfg = MCP_TARGET_CONFIGS[target];
@@ -591,7 +772,10 @@ function writeMcpConfig(target) {
       if (fs.existsSync(cfg.configPath)) {
         content = fs.readFileSync(cfg.configPath, 'utf-8');
       }
-      if (content.includes('[mcp_servers.wowok]')) {
+      // Line-level regex detection.  Avoids false positives when the header
+      // appears inside a comment (e.g. `; [mcp_servers.wowok]`) or a
+      // multi-line string literal.
+      if (/^\s*\[mcp_servers\.wowok\]\s*$/m.test(content)) {
         console.log(`[wowok-skills]   MCP config already up to date: ${cfg.configPath}`);
         return false;
       }
@@ -606,30 +790,43 @@ function writeMcpConfig(target) {
   }
 
   // ── JSON format (all other clients) ────────────────────────────────
-  try {
-    let config = {};
-    const dir = path.dirname(cfg.configPath);
-    if (fs.existsSync(cfg.configPath)) {
-      config = JSON.parse(fs.readFileSync(cfg.configPath, 'utf-8'));
-    }
+  // Expand to an array of concrete paths so a single target can cover
+  // multiple physical files (priority resolution for CodeBuddy, CLI +
+  // VS Code variants for Roo/Cline/Kilo).
+  const configPaths = cfg.resolveConfigPaths ? cfg.resolveConfigPaths() : [cfg.configPath];
+  let anyWritten = false;
 
-    const before = JSON.stringify(config);
-    config = cfg.merge(config);
-    const after = JSON.stringify(config);
-
-    if (before !== after) {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(cfg.configPath, JSON.stringify(config, null, 2), 'utf-8');
-      console.log(`[wowok-skills]   MCP config written: ${cfg.configPath}`);
-      return true;
-    }
-
-    console.log(`[wowok-skills]   MCP config already up to date: ${cfg.configPath}`);
-    return false;
-  } catch (err) {
-    console.error(`[wowok-skills]   ERROR writing MCP config for ${target}: ${err.message}`);
+  if (configPaths.length === 0) {
+    console.log(`[wowok-skills]   MCP config: no config file detected for ${target} (client not installed) — skipped.`);
     return false;
   }
+
+  for (const configPath of configPaths) {
+    try {
+      let config = {};
+      const dir = path.dirname(configPath);
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+
+      const before = JSON.stringify(config);
+      config = cfg.merge(config);
+      const after = JSON.stringify(config);
+
+      if (before !== after) {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+        console.log(`[wowok-skills]   MCP config written: ${configPath}`);
+        anyWritten = true;
+      } else {
+        console.log(`[wowok-skills]   MCP config already up to date: ${configPath}`);
+      }
+    } catch (err) {
+      console.error(`[wowok-skills]   ERROR writing MCP config for ${target} at ${configPath}: ${err.message}`);
+    }
+  }
+
+  return anyWritten;
 }
 
 /**

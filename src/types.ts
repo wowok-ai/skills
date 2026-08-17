@@ -19,6 +19,8 @@ export type ClientTarget =
   | 'trae'      // Trae CN & Trae Work — .agents/skills/ (CN) / .trae/skills/ (Work)
   | 'qoder'     // Qoder / Qoder CN — .qoder/skills/
   | 'roo'       // Roo Code — .roo/skills/
+  | 'cline'     // Cline (VS Code) — .cline/skills/ (MCP via globalStorage)
+  | 'kilo'      // Kilo Code — .kilo/skills/ (MCP via globalStorage + CLI)
   | 'agents'    // [DEPRECATED] alias for 'trae'
   | 'copilot'   // GitHub Copilot — .github/prompts/ (MCP via mcp-config.json)
   | 'all';
@@ -32,6 +34,8 @@ export const CLIENT_SKILL_DIRS: Record<Exclude<ClientTarget, 'all'>, string> = {
   trae: '.agents/skills',
   qoder: '.qoder/skills',
   roo: '.roo/skills',
+  cline: '.cline/skills',
+  kilo: '.kilo/skills',
   agents: '.agents/skills',
   copilot: '.github/prompts',
 };
@@ -45,12 +49,14 @@ export const CLIENT_FILE_EXT: Record<Exclude<ClientTarget, 'all'>, string> = {
   trae: '.md',
   qoder: '.md',
   roo: '.md',
+  cline: '.md',
+  kilo: '.md',
   agents: '.md',
   copilot: '.prompt.md',
 };
 
 export const ALL_CLIENT_TARGETS: Exclude<ClientTarget, 'all'>[] = [
-  'claude', 'cursor', 'windsurf', 'codebuddy', 'codex', 'trae', 'qoder', 'roo', 'copilot',
+  'claude', 'cursor', 'windsurf', 'codebuddy', 'codex', 'trae', 'qoder', 'roo', 'cline', 'kilo', 'copilot',
 ];
 
 /**
