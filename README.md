@@ -161,7 +161,7 @@ const providerSkill = getSkillByName('wowok-provider');
 |-------|---------|------|
 | `wowok-output` | Output processing — address resolution, name mapping, amount formatting, data visualization | All Roles |
 
-### On-Demand (8 skills — contextually loaded)
+### On-Demand (11 skills — contextually loaded)
 
 | Skill | Purpose | Role |
 |-------|---------|------|
@@ -173,6 +173,9 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-onboard` | First-touch onboarding — 10-round dialogue from zero to first published Service, SQLite-based project pipeline integration | New Users |
 | `wowok-planner` | Planning skill — converts natural language intent into Object Dependency Graph (ODG), industry-mode aware via MCP | All Roles |
 | `wowok-auditor` | Pre-publish audit — Guard completeness, Machine soundness, fund flow correctness, publish readiness | All Roles |
+| `wowok-supplier` | Supplier guide — present service to a Demand (open or gated), fulfill sub-order, collect settlement | Supplier |
+| `wowok-collaborator` | Process collaborator — execute workflow forwards as internal staff or external named operator | Collaborator |
+| `wowok-market` | Market discovery & operations — match_discover/discover_services/discover_demands, arbitration_score, account_events, market_metrics/anti_cheat/market_operations | All Roles |
 
 ### Sunk to MCP Knowledge Layer (v2.0 — no longer skills)
 

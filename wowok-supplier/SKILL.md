@@ -31,7 +31,7 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | Access via (MCP action) | Applied Via |
 |---------|--------------------------|-------------|
-| Demand semantics (open vs guarded, present paths) | `schema_query` action='get_demand_translation' (or on-demand knowledge) | `onchain_operations` demand |
+| Demand semantics (open vs guarded, present paths) | `schema_query` action='get' (demand object schema, or on-demand knowledge) | `onchain_operations` demand |
 | Supplier interest analysis (fund_flow / responsibility / leverage / stakes) | `project_operation` action='participation_radar' | role derivation → `supplier-interest` |
 | Demand/service matching | `evaluation_operation` action='demand_match' | read-only ranking |
 | Safety rules (immutability, object reuse, confirmation) | `schema_query` action='get_safety_rules' | `evaluate_project` + pre-publish |
@@ -71,7 +71,7 @@ Before ANY presentation, confirm with the user. **Do NOT fabricate, do NOT auto-
 | **S3** | **Service to present** | Which Service represents their offering. | It's their brand/offering identity |
 | **S4** | **Passport (if gated)** | A valid Passport passing the Demand's guards. | Guards filter presentations; wrong passport = rejection |
 
-> ⛔ GATE: S1-S4 confirmed before calling `present`/`present_with_passport`. Not confirmed → STOP and ask.
+> ⛔ GATE: S1-S4 confirmed before calling `present` (with `by_guard` for guarded demands). Not confirmed → STOP and ask.
 
 ---
 
@@ -82,8 +82,8 @@ Before ANY presentation, confirm with the user. **Do NOT fabricate, do NOT auto-
 **Match** — `evaluation_operation` action='demand_match' ranks whether your service fits the Demand's capability vector. Read-only; you decide whether to present.
 
 **Present** — `onchain_operations` operation_type='demand':
-- Open Demand → plain `present` (any sender).
-- Guarded Demand → `present_with_passport` (a Passport that passes one of the Demand's guards).
+- Open Demand → `present`.
+- Guarded Demand → `present` with `by_guard` (a Passport that passes one of the Demand's guards).
 
 > The Demand's `presenters` table records your submission (recommend / service / acceptance_score). The creator may give `feedback` + an `acceptance_score` — that is the selection signal.
 
@@ -127,7 +127,7 @@ Run `project_operation` action='participation_radar' with your account + sub-ord
 
 ## Quick Reference
 
-- Open Demand → `present`; Guarded Demand → `present_with_passport`.
+- Open Demand → `present`; Guarded Demand → `present` with `by_guard`.
 - Guarded Demand accepts only Passports that pass its guards.
 - Settlement is two-hop (main order → allocation → sub-order) — verify the second hop too.
 - Upstream compensation_fund is your recourse for unpaid work; empty fund = refund + reputation only.

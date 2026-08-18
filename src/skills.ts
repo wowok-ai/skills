@@ -171,6 +171,14 @@ export const wowokSkills: SkillConfig = {
       role: 'shared',
       loading: 'on-demand',
       related: ['wowok-planner', 'wowok-provider', 'wowok-machine']
+    },
+    {
+      name: 'wowok-market',
+      description: 'Market discovery & operations — match_discover/discover_services/discover_demands (intent→service, merchant→demand), arbitration_score (arbitrator trust selection), account_events (on-chain attention), market_metrics/anti_cheat/market_operations (measure & govern). Use when the user wants to discover/match services, pick an arbitrator, or operate/measure the market (K3 13/14/15).',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-provider', 'wowok-order', 'wowok-arbitrator']
     }
   ]
 };
@@ -281,6 +289,12 @@ export function recommendSkills(intent: string): Skill[] {
   // Arbitrator keywords
   if (/\b(arbitration|arbitrator|dispute resolution|voting|evidence|arb object)\b/.test(lower)) {
     return getSkillsByRole('arbitrator');
+  }
+
+  // Market discovery/operations keywords
+  if (/\b(match_discover|discover service|discover demand|matchmaking|find service|find demand|arbitration score|market metric|anti.?cheat|journey funnel|referral|customer relationship|category match)\b/.test(lower)) {
+    const m = getSkillByName('wowok-market');
+    return m ? [m] : [];
   }
 
   // Guard/tool/safety/scenario keywords → no dedicated skill anymore.
