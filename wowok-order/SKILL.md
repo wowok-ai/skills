@@ -147,7 +147,7 @@ Query `onchain_objects` for E1 `um` ID.
 
 ### E9 — Chain Reputation
 
-Sentiment: `query_toolkit` → `onchain_table_item_entity_linker` for provider; compute likes/dislikes from `votes[]`. Orders: batch query `votes[].address` via `onchain_objects` (50/batch, max 200), filter `service` match; aggregate dispute rate (`dispute ≠ []` / total) + repeat-buyer ratio. Dispute rate >10% → ⚠️.
+Sentiment: `query_toolkit` → `onchain_table_item_entity_linker` for the provider address; compute likes/dislikes/favor from `votes[]` (each vote: `{ who, like, dislike, favor, time }`). Orders: `query_toolkit` → `onchain_table_item_object_linker_tx` with the Service address → `items[].who` = recent Orders binding to it (tx reverse index 0xaaf, FIFO window); batch query those via `onchain_objects` (50/batch, max 200); aggregate dispute rate (`dispute ≠ []` / total) + repeat-buyer ratio. Dispute rate >10% → ⚠️.
 
 ### E10 — Privacy Information Matching (LocalInfo reuse)
 
