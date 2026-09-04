@@ -27,7 +27,7 @@ Converts natural-language intent into an executable Object Dependency Graph (ODG
 
 > **Layer**: L3 Skill, primary planner for L4 Harness Plan Loop
 > **Related Skills**: [wowok-onboard](../wowok-onboard/SKILL.md) (guided execution), [wowok-machine](../wowok-machine/SKILL.md) (workflow design), [wowok-provider](../wowok-provider/SKILL.md) (post-plan operations)
-> Industry modes, Guard design patterns, safety rules, and tool references now live in the MCP knowledge layer — query via `project_operation` (`recommend_industry` / `list_modes`) and `schema_query` (`get_guard_design_patterns` / `get_safety_rules` / `get_tool_reference`).
+> Industry modes, Guard design patterns, safety rules, and tool references now live in the MCP knowledge layer — query via `industry_pack_operation` (`recommend_industry` / `list_modes`) and `schema_query` (`get_guard_design_patterns` / `get_safety_rules` / `get_tool_reference`).
 
 ---
 
@@ -96,7 +96,7 @@ The ODG (Object Dependency Graph) is the single output artifact, persisted via `
 }
 ```
 
-Each object has: `id`, `type`, `status` (planned/created/published), `reversible` (true/false), `dependencies` (other object IDs), `user_decisions` (typed fields). Phases gate progression — `risk_check` calls `evaluate_project` (evaluation_type='risk'), `final_audit` runs the pre-publish audit checklist (see wowok-auditor).
+Each object has: `id`, `type`, `status` (planned/created/published), `reversible` (true/false), `dependencies` (other object IDs), `user_decisions` (typed fields). Phases gate progression — `risk_check` calls `goal_operation` action='aggregate_risks' (with planned objects/operations), `final_audit` runs the pre-publish audit checklist (see wowok-auditor).
 
 **Dependency-chain ordering rules (authoritative, verified from Move/SDK):**
 1. **Service DRAFT is created BEFORE Machine** — Guards reference the Service by LocalMark NAME, so the Service skeleton must exist first to break the Guard↔Service circular dependency.

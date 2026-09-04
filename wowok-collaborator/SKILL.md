@@ -32,7 +32,7 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | Access via (MCP action) | Applied Via |
 |---------|--------------------------|-------------|
-| Collaborator interest analysis (fund_flow / responsibility / leverage / stakes) | `project_operation` action='participation_radar' | role derivation → `collaborator-interest` |
+| Collaborator interest analysis (fund_flow / responsibility / leverage / stakes) | `query_toolkit` query_type='participation_radar' | role derivation → `collaborator-interest` |
 | Progress routing rule (namedOperator vs permissionIndex) | `schema_query` action='get_safety_rules' | `onchain_operations` progress/order |
 | Guard design + submission patterns | `schema_query` action='get_guard_design_patterns' | guard-gated forwards |
 | Node game (threshold cooperation) | `evaluation_operation` action='node_game' | multi-role forward evaluation |
@@ -62,7 +62,7 @@ Two sub-kinds (derived on-chain, never asserted):
 
 ## What You Can Execute Now
 
-Run `project_operation` action='participation_radar' with your account + the order's Progress. It returns:
+Run `query_toolkit` query_type='participation_radar' with your account + the order's Progress. It returns:
 
 - `operable` — forwards YOU can execute right now (permission / named-operator path).
 - `waiting_on` — what the workflow waits on from other roles.

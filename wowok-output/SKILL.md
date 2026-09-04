@@ -19,25 +19,32 @@ always: true
 If user explicitly requests full/long addresses (e.g., "show full addresses", "do not abbreviate"),
 this skill's shortening rules are DISABLED — display complete 66-character addresses.
 
+## Client Rendering (authoritative)
+
+Inside the WoWok client, AI replies render every `0x…` address AUTOMATICALLY as
+the canonical address pill — local name (if any), system short id, auto-resolved
+object-type icon, and hover actions (copy / message / AI / on-chain query).
+Therefore: **write full `0x`-prefixed addresses in replies**; the client does the
+display formatting. The text rules below apply only to plain-text contexts
+where the client renderer is unavailable (CLI, raw logs).
+
 ## Short Address Format
 
-**MUST APPLY TO ALL ADDRESSES AND OBJECT IDs** (0x prefix + 64 hex chars = 66 chars total).
+**MUST APPLY TO ALL ADDRESSES AND OBJECT IDs** (0x prefix + up to 64 hex chars).
 
-Generate a short ID by the following rules:
-1. Remove `0x` prefix → get the hex string
-2. Take the first 5 characters (or fewer if the address is shorter)
+System-wide rule (identical to the client's `formatAddress`):
+1. Remove the `0x` prefix → hex string
+2. Keep the FIRST 4 and the LAST 3 hex chars, joined by `-`
 3. Convert to UPPERCASE
-4. **If all 5 characters are the same character** (e.g., `00000` → `AAAAA`), fall back to the last 5 characters, prefixed with `...`
-5. **If even the last 5 are all the same character** (extremely rare), find 5 consecutive characters near the middle that differ, wrapped with `...` on both sides
-6. **Display rule**: no parentheses by default; parentheses are only used when paired with a name (see Display Format Rules below)
+4. 7 hex chars or fewer → the whole string, uppercased
+5. Empty / missing → `--`
 
 **Examples**:
 | Full Address | Short ID | Rule |
 |---|---|---|
-| `0xa1d421902a3e5f2e4da7590e8f243712b3b3479d1a07c48c2de543184fc97a33` | `A1D42` | Normal: first 5 |
-| `0x00000123456789abcdef0123456789abcdef0123456789abcdef000000000000` | `...00000` | First 5 all same → last 5 |
-| `0x00000000000000000000000000000000000000000000000000000000000000000` | `...00000...` | Both ends all same → middle 5 |
-| `0x2` | `2` | Short address, take actual length |
+| `0xa1d421902a3e5f2e4da7590e8f243712b3b3479d1a07c48c2de543184fc97a33` | `A1D4-A33` | first 4 + `-` + last 3 |
+| `0x10ef0000000000000000000000000000000000000000000000000000000cda11` | `10EF-A11` | first 4 + `-` + last 3 |
+| `0x2` | `2` | ≤7 chars, as-is |
 
 ## Resolution Priority & Display Format
 
@@ -45,22 +52,22 @@ Generate a short ID by the following rules:
 
 Returns: `{ account?: string, local_mark?: string, address: string }`
 
-### Display Format Rules (STRICT)
+### Display Format Rules (STRICT — mirrors the client's `displayLabelOf`)
 
 | Condition | Display Format | Example |
 |-----------|----------------|---------|
-| **Both account AND local_mark exist** | `{account_name} \| {local_mark_name}({ID})` | `alice \| my_mark(A1D42)` |
-| **Only account exists** | `{account_name}({ID})` | `alice_wallet(A1D42)` |
-| **Only local_mark exists** | `{local_mark_name}({ID})` | `my_service(A1D42)` |
-| **Neither exists** | `{ID}` | `A1D42` |
+| **Named** (account or local_mark resolved) | `{name}` only — NEVER append the short id | `alice_wallet` |
+| **Unnamed** | `{SHORTID}` | `10EF-A11` |
+
+- A named object shows ONLY its name — no parentheses, no short id after it.
+- When both an account name and a local_mark exist, prefer the local_mark
+  (object names) for objects and the account name for user addresses.
 
 ---
 
-## Name Length Limit
+## Name Display
 
-- **Maximum display length**: 20 characters
-- **Overflow handling**: Truncate to 17 chars + `...`
-- **Example**: `three_body_signature_service_v2` → `three_body_sig...`
+- Display the resolved name in full — the client does NOT truncate names.
 
 # Amount Formatting Rules
 
@@ -100,10 +107,11 @@ Supported query types with `_money_display`:
 ```
 | # | Time | Sender | Service | Amount | Order |
 |---|------|--------|---------|--------|-------|
-| 1 | {time} | {name}(ABCDE) | {name}(ABCDE) | {amount} | ABCDE |
+| 1 | {time} | {name-or-SHORTID} | {name-or-SHORTID} | {amount} | SHORTID |
 ```
 
-**Note**: `{name}` follows Display Format Rules above (account | local_mark). If no name, show only the short ID (no parentheses).
+**Note**: `{name-or-SHORTID}` follows Display Format Rules above — name ONLY when
+resolved, otherwise the short id (no parentheses in either case).
 
 ## Event Type Fields
 
@@ -126,7 +134,7 @@ When user asks about field meanings:
 - **Sender**: Account that initiated the transaction
 - **Service**: Service object being ordered/interacted with
 - **Order Object**: Unique on-chain identifier for this order
-- **Short Address (ABCDE)**: Shortened ID for quick visual identification — see Short Address Format rules (first 5 chars; fallback to last 5 or middle 5 if all same)
+- **Short Address**: System-wide shortened id for quick visual identification — first 4 + `-` + last 3 hex chars, uppercase (see Short Address Format rules)
 
 ## Amounts
 - **Raw**: Actual U64 integer stored on-chain

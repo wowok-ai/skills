@@ -28,9 +28,9 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | Access via (MCP action) | Applied Via |
 |---------|--------------------------|-------------|
-| Guard design rules (structural layers, data source classification, voting_guard table design) | `schema_query` action='get_guard_design_patterns' | `project_operation.evaluate_project` |
-| Safety rules (confirmation levels, immutability, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `project_operation.evaluate_project` |
-| Arbitration-specific risks | auto-applied | `project_operation.evaluate_project` |
+| Guard design rules (structural layers, data source classification, voting_guard table design) | `schema_query` action='get_guard_design_patterns' | `goal_operation` action='aggregate_risks' |
+| Safety rules (confirmation levels, immutability, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `goal_operation` action='aggregate_risks' |
+| Arbitration-specific risks | auto-applied | `goal_operation` action='aggregate_risks' |
 
 This Skill keeps the arbitration **conversation flow**, **evidence collection** scripts, and **dispute resolution** guidance — the MCP layer handles the rule evaluation.
 

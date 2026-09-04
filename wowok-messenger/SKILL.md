@@ -72,7 +72,7 @@ The on-chain **Contact** object (`operation_type: "contact"`) is the bridge betw
 
 **When to create**: Before Service publish, when `customer_required` is set (Service.um must point to a Contact). Reuse an existing Contact if you serve multiple Services with the same support channel.
 
-**Lifecycle**: Contact is mutable (unlike Proof/Guard). `im_add`/`im_remove` require permission index 453 (CONTACT_IM). No events emitted on IM mutations — poll `ims[]` field. If Contact is bound to `Permission.um` via `permission_um_set`, clear that binding BEFORE deleting the Contact (else dangling pointer). Full field constraints: MCP `schema_query` action='get' name='contact'.
+**Lifecycle**: Contact is mutable (unlike Proof/Guard). IM mutations (`onchain_operations` contact with `ims: {op:'add'|'set'|'remove'|'clear', im:[...]}`) require permission index 453 (CONTACT_IM). No events emitted on IM mutations — poll `ims[]` field. If Contact is bound to `Permission.um`, clear that binding (permission op: `um: null`) BEFORE deleting the Contact (else dangling pointer). Full field constraints: MCP `schema_query` action='get' name='contact'.
 
 ---
 

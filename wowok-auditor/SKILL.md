@@ -38,9 +38,9 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | Access via (MCP action) | Applied Via |
 |---------|--------------------------|-------------|
-| Safety rules (confirmation levels, immutability rules, object reuse rules) | `schema_query` action='get_safety_rules' | Pre-publish checks + `project_operation.evaluate_project` |
-| Machine-executable audit rules | auto-applied (not queryable) | `project_operation.evaluate_project` |
-| Guard completeness / Machine soundness / fund-flow risks | auto-applied (not queryable) | `project_operation.evaluate_project` |
+| Safety rules (confirmation levels, immutability rules, object reuse rules) | `schema_query` action='get_safety_rules' | Pre-publish checks + `goal_operation` action='aggregate_risks' |
+| Machine-executable audit rules | auto-applied (not queryable) | `goal_operation` action='aggregate_risks' |
+| Guard completeness / Machine soundness / fund-flow risks | auto-applied (not queryable) | `goal_operation` action='aggregate_risks' |
 
 This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completeness, Machine soundness, fund flow, publish readiness), and the **checklist structure** as the human-readable knowledge base for the L4 Harness Verify Loop. The MCP layer runs the machine-executable rule evaluation.
 

@@ -32,9 +32,9 @@ The following content has been pushed down to the MCP knowledge layer and is app
 | Content | Access via (MCP action) | Applied Via |
 |---------|--------------------------|-------------|
 | Demand semantics (open vs guarded, present paths) | `schema_query` action='get' (demand object schema, or on-demand knowledge) | `onchain_operations` demand |
-| Supplier interest analysis (fund_flow / responsibility / leverage / stakes) | `project_operation` action='participation_radar' | role derivation → `supplier-interest` |
+| Supplier interest analysis (fund_flow / responsibility / leverage / stakes) | `query_toolkit` query_type='participation_radar' | role derivation → `supplier-interest` |
 | Demand/service matching | `evaluation_operation` action='demand_match' | read-only ranking |
-| Safety rules (immutability, object reuse, confirmation) | `schema_query` action='get_safety_rules' | `evaluate_project` + pre-publish |
+| Safety rules (immutability, object reuse, confirmation) | `schema_query` action='get_safety_rules' | `goal_operation` action='aggregate_risks' + pre-publish |
 
 This Skill keeps the supplier **conversation flow** — discover → present → fulfill → collect. The MCP layer handles rules, matching, and own-interest surfacing.
 
@@ -114,7 +114,7 @@ If the upstream merchant stalls or withholds, escalate in order:
 
 ## Own-Interest Surfacing
 
-Run `project_operation` action='participation_radar' with your account + sub-order progress. The MCP derives your role (supplier) and attaches `supplier-interest` (fund_flow / responsibility / leverage / stakes). Present it as neutral information — the supplier decides.
+Run `query_toolkit` query_type='participation_radar' with your account + sub-order progress. The MCP derives your role (supplier) and attaches `supplier-interest` (fund_flow / responsibility / leverage / stakes). Present it as neutral information — the supplier decides.
 
 ---
 

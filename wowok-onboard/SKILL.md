@@ -37,13 +37,13 @@ The following content has been pushed down to the MCP knowledge layer and is app
 
 | Content | Access via (MCP action) | Applied Via |
 |---------|--------------------------|-------------|
-| Scenario mode defaults (per-industry Permission/Machine/Guard/Allocator) | `project_operation` action='list_modes' / 'create_project' | Auto-applied when `project_industry` is passed to `create_project` |
-| Safety rules (immutability, confirmation, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `project_operation.evaluate_project` |
-| Guard / Machine / Arbitration / Treasury design rules | `schema_query` action='get_guard_design_patterns' | `project_operation.evaluate_project` |
+| Scenario mode defaults (per-industry Permission/Machine/Guard/Allocator) | `industry_pack_operation` action='list_modes' / 'recommend_industry' | Referenced when recording the Goal (`goal_operation` action='create') and when building each object |
+| Safety rules (immutability, confirmation, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `goal_operation` action='aggregate_risks' |
+| Guard / Machine / Arbitration / Treasury design rules | `schema_query` action='get_guard_design_patterns' | `goal_operation` action='aggregate_risks' |
 | Common mistakes (field/unit/workflow pitfalls) | `wowok_buildin_info` action='common mistakes' | Tool calls (proactive warnings) |
-| Deployment checklist (publish readiness) | `project_operation` action='evaluate_project' | deployment-scanner D-01..D-20 |
+| Deployment checklist (publish readiness) | `goal_operation` action='aggregate_risks' (planned_objects / planned_operations) | deployment-scanner D-01..D-20 |
 
-This Skill keeps the **overall onboarding flow**, the **dependency-aware build order**, and the **user-driving interaction rhythm** (see below). Pass the user's industry to `create_project` (via `project_industry` parameter) and the MCP layer auto-fills the scenario defaults.
+This Skill keeps the **overall onboarding flow**, the **dependency-aware build order**, and the **user-driving interaction rhythm** (see below). The user's intent is recorded as a **Goal** (`goal_operation` action='create'); industry/scenario defaults come from `industry_pack_operation` action='recommend_industry' / 'list_modes', and the plan pipeline is `goal_operation` action='analyze_intent' — actual on-chain objects are created via `onchain_operations` in dependency order.
 
 ---
 
@@ -110,7 +110,7 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 - **Core elements to confirm**:
   - Account: **reuse an existing account** (name/address) or **create new** (default name).
   - Network: **testnet first** (recommended) or **mainnet directly**.
-  - Industry mode: pass to `create_project` as `project_industry` — see the Industry Selection Guide below.
+  - Industry mode: resolved via `industry_pack_operation` action='recommend_industry' — see the Industry Selection Guide below.
 - **Default config**: new account with a default name; testnet network; industry mode auto-fills scenario defaults (Machine shape, Guards, Allocator).
 - **Reuse / Customize / Discover**: Reuse an existing account (benefit: keeps objects under one identity) — or create new.
 - **Dependencies**: none (foundation).
@@ -145,7 +145,7 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
   - Business flow: node list + forward paths.
   - Permissions: per-forward `namedOperator` (`""`=OrderHolder / role name) or `permissionIndex`.
   - Acceptance: per-forward Guard (or inline) — what must be verified before the transition executes.
-- **Default config**: the industry mode's `machine_shape` + `guards` (query `project_operation` action='list_modes'). Disclose these defaults FIRST, then let the user accept or customize.
+- **Default config**: the industry mode's `machine_shape` + `guards` (query `industry_pack_operation` action='list_modes'). Disclose these defaults FIRST, then let the user accept or customize.
 - **Reuse / Customize / Discover**: Reuse an existing Machine template (`machineNode2file` export) or an existing Guard (`guard2file`). Customize: define your own nodes/forwards/guards. Discover: `machineNode2file` / `local_mark_list` for other projects' Machines/Guards.
 - **Dependencies**: Service draft (R3) + Permission (R2).
 - **R-M1-11 compliance**: Machine MUST use business-state nodes (e.g. `cancelled`, `returned`, `return_approved`), NOT dispute/refund terminal nodes (`refunded`, `deposit_refunded`, `disputed`, `arb`). Refund routes via Allocator; dispute routes via Arbitration.
@@ -214,7 +214,7 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 - **Core elements to confirm** (each optional, each with default disclosure + reuse/customize/discover):
   - Reward (discounts/loyalty).
   - Supply-chain promises / Repository.
-  - Audit: `evaluate_project` (risk) — fix ALL CRITICAL findings.
+  - Audit: `goal_operation` action='aggregate_risks' — fix ALL CRITICAL findings.
 - **Default config**: none required — these are opt-in. The audit itself is mandatory.
 - **Reuse / Customize / Discover**: each optional component can be created or discovered.
 - **Dependencies**: R1–R9.
@@ -241,13 +241,13 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 
 ## Industry Selection Guide
 
-When the user describes their business (R1), query the authoritative industry list via `project_operation` action='list_modes' — 8 entries: `freelance` / `rental` / `education` / `travel` / `subscription` / `retail` / `retail_d2c` / `general`. If unsure which fits, call `project_operation` action='recommend_industry' with the business description. Pass the chosen `project_industry` to `create_project` — MCP auto-fills the scenario defaults (Machine shape, Guards, Allocator). Mid-onboarding iteration: `derive_user_mode` / `evolve_user_mode`.
+When the user describes their business (R1), query the authoritative industry list via `industry_pack_operation` action='list_modes' — 8 entries: `freelance` / `rental` / `education` / `travel` / `subscription` / `retail` / `retail_d2c` / `general`. If unsure which fits, call `industry_pack_operation` action='recommend_industry' with the business description. Reference the chosen mode when recording the Goal (`goal_operation` action='create') and when building the Service — its defaults (Machine shape, Guards, Allocator) inform each round's config disclosure. Mid-onboarding iteration: `industry_pack_operation` action='derive_user_mode' / 'evolve_user_mode'.
 
 ---
 
 ## Deployment Checklist
 
-Before declaring onboarding complete, run `project_operation` action='evaluate_project' (risk) — MCP auto-checks machine binding, order_allocators, buy_guard, arbitration isolation, R-M1-11 compliance, and publish readiness (deployment-scanner D-01..D-20). Fix ALL CRITICAL findings, then verify the remaining hard gates via `query_toolkit` (onchain_objects). The authoritative checklist is served by MCP — do not re-derive it here.
+Before declaring onboarding complete, run `goal_operation` action='aggregate_risks' — MCP auto-checks machine binding, order_allocators, buy_guard, arbitration isolation, R-M1-11 compliance, and publish readiness (deployment-scanner D-01..D-20) against your planned objects/operations. Fix ALL CRITICAL findings, then verify the remaining hard gates via `query_toolkit` (onchain_objects). The authoritative checklist is served by MCP — do not re-derive it here.
 
 ---
 

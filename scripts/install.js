@@ -25,7 +25,7 @@ const { execSync } = require('child_process');
  * into the MCP knowledge layer and are served by the MCP server directly:
  *   - wowok-safety   → schema_query action='get_safety_rules'
  *   - wowok-tools    → schema_query action='get_tool_reference'
- *   - wowok-scenario → project_operation recommend_industry / create_project
+ *   - wowok-scenario → industry_pack_operation recommend_industry / list_modes
  *   - wowok-guard    → schema_query action='get_guard_design_patterns'
  */
 const SKILL_DIRS = [
@@ -59,7 +59,7 @@ const LEGACY_SKILL_DIRS = [
 const SKILL_MIGRATION_MAP = {
   'wowok-safety': "MCP schema_query action='get_safety_rules'",
   'wowok-tools': "MCP schema_query action='get_tool_reference'",
-  'wowok-scenario': "MCP project_operation action='recommend_industry' / 'create_project'",
+  'wowok-scenario': "MCP industry_pack_operation action='recommend_industry' / 'list_modes'",
   'wowok-guard': "MCP schema_query action='get_guard_design_patterns'",
 };
 

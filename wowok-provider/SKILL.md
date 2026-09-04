@@ -28,17 +28,17 @@ when_to_use:
 
 ## MCP Knowledge Layer
 
-The following rule tables have been pushed down to the MCP knowledge layer and are automatically applied during project operations. You do NOT need to manually check these — the MCP server enforces them.
+The following rule tables have been pushed down to the MCP knowledge layer and are automatically applied during on-chain operations. You do NOT need to manually check these — the MCP server enforces them.
 
 | Rule Category | Access via (MCP action) | Applied By |
 |---------------|--------------------------|------------|
-| Safety rules (confirmation, immutability, object reuse) | `schema_query` action='get_safety_rules' | `evaluate_project` + `onchain_operations` pre-publish |
-| Guard design patterns | `schema_query` action='get_guard_design_patterns' | `evaluate_project` (guard risk assessment) |
-| Machine topology rules | auto-applied | `evaluate_project` (machine risk assessment) |
-| Scenario mode defaults | `project_operation` action='list_modes' | `create_project` (pass `project_industry` parameter) |
+| Safety rules (confirmation, immutability, object reuse) | `schema_query` action='get_safety_rules' | `goal_operation` action='aggregate_risks' + `onchain_operations` pre-publish |
+| Guard design patterns | `schema_query` action='get_guard_design_patterns' | `goal_operation` action='aggregate_risks' (guard risk assessment) |
+| Machine topology rules | auto-applied | `goal_operation` action='aggregate_risks' (machine risk assessment) |
+| Scenario mode defaults | `industry_pack_operation` action='list_modes' / 'recommend_industry' | Referenced when recording the Goal and building the Service |
 | Tool reference (gas, faucet, wrappers) | `schema_query` action='get_tool_reference' | All tool calls automatically |
 
-**How to use**: Call `project_operation` with `action: "evaluate_project"` (evaluation_type='risk') after completing your puzzle — the MCP server will automatically apply all relevant safety rules and return risk findings.
+**How to use**: Call `goal_operation` with `action: "aggregate_risks"` after completing your puzzle (pass your planned objects/operations) — the MCP server will automatically apply all relevant safety rules and return risk findings.
 
 ---
 
@@ -124,13 +124,13 @@ Once R1-R7 confirmed, execute in strict order. Sub-tools are invoked via `wowok(
 
 **STEP 7 — Trust (Arbitration + compensation_fund)**: REUSE third-party Arbitration (MUST NOT share Service's Permission — E_ARBITRATION_PERMISSION_CONFLICT 33; don't create your own). `compensation_fund_add` (internal Balance<T>, not Treasury); fund>0 requires non-empty arbitrations (E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND 25); withdraw needs bPaused + lock elapsed.
 
-**STEP 8 — Publication**: pre-publish verify — (1) machineNode2file, (2) guard2file, (3) evaluate_project risk → fix CRITICAL, (4) permission indexes granted, (5) arb permission isolation, (6) contact ims+enabled → `onchain_operations` service `publish: true` (L1-LOCKED: machine/order_allocators/arbitrations).
+**STEP 8 — Publication**: pre-publish verify — (1) machineNode2file, (2) guard2file, (3) `goal_operation` aggregate_risks → fix CRITICAL, (4) permission indexes granted, (5) arb permission isolation, (6) contact ims+enabled → `onchain_operations` service `publish: true` (L1-LOCKED: machine/order_allocators/arbitrations).
 
 **STEP 9 — Post-publish + Test Order**: mutable fields (description/location/sales/customer_required/rewards add/repositories add). Test order: `order_new` (requires bPublished, else E_NOT_PUBLISHED) → disclose next nodes → advance (order.progress / progress.operate) → alloc_by_guard → verify distribution. User chooses test account (default: service-creation account).
 
 ### Post-Publish Mutability (SDK-LOCKED vs mutable)
 
-Served by MCP `schema_query` action='get_safety_rules' (immutability-after-publish). Summary: `buy_guard` / `sales` / `description` / `repositories` / `rewards` are mutable; `machine` / `order_allocators` / `arbitrations` are SDK-LOCKED (fork required to change).
+Served by MCP `schema_query` action='get_safety_rules' (immutability-after-publish). Summary: `buy_guard` / `sales` / `description` / `repositories` / `rewards` are mutable; `machine` / `order_allocators` / `arbitrations` are SDK-LOCKED (a new Service version is required to change them).
 
 ---
 
@@ -138,7 +138,7 @@ Served by MCP `schema_query` action='get_safety_rules' (immutability-after-publi
 
 ### Service Object Relationships
 
-> **Boundary conditions**: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible. Use `get_project_detail` to check whether a project has published objects.
+> **Boundary conditions**: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible. Use `query_toolkit` query_type='service_panorama' to check whether a Service has published objects.
 
 ```
 Service → permission, machine (immutable), order_allocators (immutable),
@@ -199,28 +199,28 @@ WOW is the default settlement token. For stablecoin-denominated revenue (fiat-pe
 
 ---
 
-## Project Iteration: Fork vs In-Place
+## Service Iteration: New Version vs In-Place
 
-When a merchant wants to modify an existing service (change workflow, add allocators, update guards), the AI must determine whether to modify the current version (in-place) or fork a new version.
+When a merchant wants to modify an existing service (change workflow, add allocators, update guards), the AI must determine whether to modify in place or build a new version.
 
 ### Decision Rule
 
 | Scenario | Strategy | MCP Action |
 |----------|----------|------------|
-| Service NOT yet published | **In-place** — modify the current version directly | `onchain_operations` (modify) |
-| Service IS published | **Fork** — create a new version, preserve original as read-only | `project_operation` → `create_version` (with `fork_from_version`) |
+| Service NOT yet published | **In-place** — modify the current draft directly | `onchain_operations` (modify) |
+| Service IS published | **New version** — build v2 objects and publish as a separate Service; v1 keeps running | `onchain_operations` (create + publish) |
 
-### Fork Workflow
+### New-Version Workflow
 
-When the service is already published and the user wants structural changes, use MCP `project_operation` action `create_version` (with `fork_from_version` parameter; original v1 stays read-only; no on-chain objects copied since they're immutable). Then work on v2 reusing v1 on-chain objects by address and creating new objects only for changed parts. Publish v2 when ready — v1 continues running uninterrupted.
+Published objects are IMMUTABLE on-chain — there is no in-place structural change and no version-fork tool. When the service is already published and the user wants structural changes, build the new version's objects with `onchain_operations`: reuse v1 objects by address where unchanged (Permission, Guards, Treasury, Contact…) and create new objects only for the changed parts (e.g. a new Machine). Then publish v2 as its own Service — v1 continues running uninterrupted as a separate, still-live Service.
 
-Before forking, verify necessity via `get_project_detail` → `has_published_object=true` confirms fork is required (published objects are immutable).
+Before building v2, verify necessity via `query_toolkit` query_type='service_panorama' — a published Service confirms a new version is required (published objects are immutable).
 
-### When to Recommend Forking
+### When to Recommend a New Version
 
-- User says "I want to change my workflow" → check if published → recommend fork
-- User says "I want to add a new product line" → if same Machine can handle it, in-place modify Service.sales; if needs new Machine, fork
-- User says "I want to change fund distribution" → if Service not published, in-place; if published, fork (allocators are frozen after publish)
+- User says "I want to change my workflow" → check if published → recommend a new version
+- User says "I want to add a new product line" → if same Machine can handle it, in-place modify Service.sales; if it needs a new Machine, a new version
+- User says "I want to change fund distribution" → if Service not published, in-place; if published, a new version (allocators are frozen after publish)
 
 ---
 

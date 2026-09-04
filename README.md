@@ -43,7 +43,7 @@ npm install -g @wowok/skills
 | **Always** | `wowok-output` | Metadata always in prompt (~100 tokens). AI auto-loads full content when needed. |
 | **On-demand** | All others | AI matches description to task. Only loaded when relevant. |
 
-> **v2.0 migration**: The 4 rule-reference skills (`wowok-tools`, `wowok-safety`, `wowok-scenario`, `wowok-guard`) were sunk into the MCP knowledge layer and are no longer installed. Their content is served by the MCP server itself — `schema_query` actions `get_tool_reference` / `get_safety_rules` / `get_guard_design_patterns`, and `project_operation` actions.
+> **v2.0 migration**: The 4 rule-reference skills (`wowok-tools`, `wowok-safety`, `wowok-scenario`, `wowok-guard`) were sunk into the MCP knowledge layer and are no longer installed. Their content is served by the MCP server itself — `schema_query` actions `get_tool_reference` / `get_safety_rules` / `get_guard_design_patterns`, and `industry_pack_operation` actions.
 
 ## Quick Start
 
@@ -183,7 +183,7 @@ const providerSkill = getSkillByName('wowok-provider');
 |--------------|---------------|
 | `wowok-tools` | MCP `schema_query` action='get_tool_reference' |
 | `wowok-safety` | MCP `schema_query` action='get_safety_rules' + runtime confirm-gate on every write |
-| `wowok-scenario` | MCP `project_operation` actions 'recommend_industry' / 'create_project' |
+| `wowok-scenario` | MCP `industry_pack_operation` actions 'recommend_industry' / 'list_modes' |
 | `wowok-guard` | MCP `schema_query` actions 'get_guard_design_patterns' / 'get_guard_templates' |
 
 ## Related Projects

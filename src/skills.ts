@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
 
 /**
@@ -9,7 +11,7 @@ import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
  *   - wowok-tools    → MCP tools-reference
  *                      (schema_query action='get_tool_reference')
  *   - wowok-scenario → MCP scenario-modes
- *                      (project_operation recommend_industry / create_project,
+ *                      (industry_pack_operation recommend_industry / list_modes,
  *                       industry mode registry)
  *   - wowok-guard    → MCP guard-design-patterns
  *                      (schema_query action='get_guard_design_patterns')
@@ -49,7 +51,7 @@ import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
 
 /**
  * Skills removed in the GLM5-31 sink refactor. Their content lives in the MCP
- * knowledge layer and is served via schema_query / project_operation — no skill
+ * knowledge layer and is served via schema_query / industry_pack_operation — no skill
  * installation required. Kept here for migration detection (checkSkillMigration).
  */
 export const DEPRECATED_SKILLS = [
@@ -65,7 +67,7 @@ export type DeprecatedSkill = (typeof DEPRECATED_SKILLS)[number];
 export const SKILL_MIGRATION_MAP: Record<DeprecatedSkill, string> = {
   'wowok-safety': "MCP schema_query action='get_safety_rules' (+ runtime confirm-gate on every on-chain write)",
   'wowok-tools': "MCP schema_query action='get_tool_reference'",
-  'wowok-scenario': "MCP project_operation action='recommend_industry' / 'list_modes' / 'create_project' (industry mode registry)",
+  'wowok-scenario': "MCP industry_pack_operation action='recommend_industry' / 'list_modes' (industry mode registry)",
   'wowok-guard': "MCP schema_query action='get_guard_design_patterns' (+ action='get_guard_templates')",
 };
 
@@ -150,7 +152,7 @@ export const wowokSkills: SkillConfig = {
     // === ONBOARDING / PLANNING / AUDIT (L3+L4 BRIDGE) ===
     {
       name: 'wowok-onboard',
-      description: 'First-touch onboarding — guides a new user from zero to their first published Service through a Review opening + 12-round user-driven dialogue. Industry mode defaults (freelance/rental/education/travel/...) are served by MCP project_operation recommend_industry. Use when a new user says "I want to open a shop" or has no published Service yet.',
+      description: 'First-touch onboarding — guides a new user from zero to their first published Service through a Review opening + 12-round user-driven dialogue. Industry mode defaults (freelance/rental/education/travel/...) are served by MCP industry_pack_operation recommend_industry. Use when a new user says "I want to open a shop" or has no published Service yet.',
       version: '2.0.0',
       role: 'shared',
       loading: 'on-demand',
@@ -183,32 +185,169 @@ export const wowokSkills: SkillConfig = {
   ]
 };
 
+// ============================================================
+// Runtime registry — disk is the source of truth
+// ============================================================
+//
+// Every accessor resolves the skill list from the PACKAGE DIRECTORY AT
+// RUNTIME (each `<name>/SKILL.md` frontmatter merged over the compiled
+// `wowokSkills` metadata). Because consumers (the agent sidecar via the
+// `@wowok/skills` dependency) reach this package through a junction to the
+// repo working tree, edits to SKILL.md files — content, description, or a
+// brand-new skill folder — take effect within the cache TTL WITHOUT any
+// rebuild.
+
+const RUNTIME_SCAN_TTL_MS = 3_000;
+let runtimeCache: Skill[] | null = null;
+let runtimeAt = 0;
+
+/** Resolve the skills package root from the compiled output (dist → root). */
+function packageRoot(): string {
+  return path.resolve(__dirname, '..');
+}
+
+const VALID_ROLES: readonly SkillRole[] = [
+  'customer', 'provider', 'supplier', 'collaborator', 'arbitrator', 'shared',
+];
+
+/**
+ * Minimal YAML frontmatter reader — supports the fields this registry needs
+ * (`name`, `description` incl. `|` block scalars, `version`, `role`,
+ * `loading`, `related`, `always`). No external YAML dependency.
+ */
+function parseFrontmatter(raw: string): Record<string, any> {
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return {};
+  const out: Record<string, any> = {};
+  const lines = m[1].split(/\r?\n/);
+  let key: string | null = null;
+  let block: string[] | null = null;
+  const flush = (): void => {
+    if (key && block) out[key] = block.join('\n').trim();
+    key = null;
+    block = null;
+  };
+  for (const line of lines) {
+    const listItem = line.match(/^\s+-\s+(.*)$/);
+    if (key && block && listItem) {
+      block.push(listItem[1].trim());
+      continue;
+    }
+    const kv = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+    if (!kv) {
+      // Continuation of a `|` block scalar.
+      if (key && block && line.startsWith(' ')) block.push(line.trim());
+      continue;
+    }
+    flush();
+    key = kv[1];
+    const val = kv[2].trim();
+    if (val === '|' || val === '|-' || val === '') {
+      block = [];
+    } else {
+      out[key] = val;
+      key = null;
+    }
+  }
+  flush();
+  return out;
+}
+
+function coerceRelated(v: any): string[] | undefined {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === 'string') {
+    const stripped = v.replace(/^\[[\s\S]*\]$/, (m) => m.slice(1, -1));
+    const parts = stripped.split(/[\s,]+/).filter(Boolean);
+    return parts.length ? parts : undefined;
+  }
+  return undefined;
+}
+
+/** Scan each `NAME/SKILL.md` under the package root; frontmatter wins over compiled metadata. */
+function scanSkillDirectories(): Skill[] {
+  const root = packageRoot();
+  const compiled = new Map(wowokSkills.skills.map((s) => [s.name, s]));
+  const merged: Skill[] = [];
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== 'dist' && e.name !== 'scripts' && e.name !== 'node_modules' && !e.name.startsWith('.'))
+      .map((e) => e.name);
+  } catch {
+    return wowokSkills.skills;
+  }
+  for (const name of entries) {
+    const file = path.join(root, name, 'SKILL.md');
+    if (!fs.existsSync(file)) continue;
+    const compiledEntry = compiled.get(name);
+    let fm: Record<string, any> = {};
+    try {
+      fm = parseFrontmatter(fs.readFileSync(file, 'utf-8'));
+    } catch {
+      fm = {};
+    }
+    const role = VALID_ROLES.includes(fm.role)
+      ? (fm.role as SkillRole)
+      : compiledEntry?.role ?? 'shared';
+    const loading: 'always' | 'on-demand' =
+      fm.always === true || fm.always === 'true' || fm.loading === 'always'
+        ? 'always'
+        : compiledEntry?.loading ?? 'on-demand';
+    merged.push({
+      name,
+      description: typeof fm.description === 'string' && fm.description.trim()
+        ? fm.description.trim().replace(/\s+/g, ' ')
+        : compiledEntry?.description ?? '',
+      version: typeof fm.version === 'string' ? fm.version : compiledEntry?.version ?? '1.0.0',
+      role,
+      loading,
+      related: coerceRelated(fm.related) ?? compiledEntry?.related ?? [],
+    });
+  }
+  // Keep compiled-only entries that have no folder (defensive; normally all
+  // compiled skills have folders).
+  for (const s of wowokSkills.skills) {
+    if (!merged.some((m) => m.name === s.name)) merged.push(s);
+  }
+  return merged;
+}
+
+/** Runtime skill list — fresh within the TTL (default 3s), disk-authoritative. */
+function runtimeSkills(): Skill[] {
+  const now = Date.now();
+  if (!runtimeCache || now - runtimeAt > RUNTIME_SCAN_TTL_MS) {
+    runtimeCache = scanSkillDirectories();
+    runtimeAt = now;
+  }
+  return runtimeCache;
+}
+
 /**
  * Get all skills
  */
 export function getSkills(): Skill[] {
-  return wowokSkills.skills;
+  return runtimeSkills();
 }
 
 /**
  * Get skill by name
  */
 export function getSkillByName(name: string): Skill | undefined {
-  return wowokSkills.skills.find(skill => skill.name === name);
+  return runtimeSkills().find(skill => skill.name === name);
 }
 
 /**
  * Get skills by role
  */
 export function getSkillsByRole(role: SkillRole): Skill[] {
-  return wowokSkills.skills.filter(skill => skill.role === role);
+  return runtimeSkills().filter(skill => skill.role === role);
 }
 
 /**
  * Get skills by loading mode
  */
 export function getSkillsByLoading(mode: 'always' | 'on-demand'): Skill[] {
-  return wowokSkills.skills.filter(skill => skill.loading === mode);
+  return runtimeSkills().filter(skill => skill.loading === mode);
 }
 
 /**
@@ -261,7 +400,7 @@ export function getRoleSkills(): RoleSkills[] {
  * Note: Guard design / tool usage / safety / industry-mode questions are now
  * served directly by the MCP knowledge layer (schema_query actions
  * get_guard_design_patterns / get_tool_reference / get_safety_rules, and
- * project_operation recommend_industry) — no skill installation required.
+ * industry_pack_operation recommend_industry) — no skill installation required.
  */
 export function recommendSkills(intent: string): Skill[] {
   const lower = intent.toLowerCase();
@@ -355,7 +494,7 @@ export function negotiateAllSkills(mcpVersion: string): Array<{
   version: string;
   mode: SkillMode;
 }> {
-  return wowokSkills.skills.map((s) => ({
+  return runtimeSkills().map((s) => ({
     skill: s.name,
     version: s.version,
     mode: negotiateSkillMode(mcpVersion, s.version),
