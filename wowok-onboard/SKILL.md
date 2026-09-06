@@ -53,7 +53,7 @@ These four principles govern EVERY round. They are non-negotiable and replace th
 
 1. **Review-first**: Before the first user choice, the AI MUST output a review that states (a) its understanding of the user's task, (b) the dependency-chain overview, and (c) the interaction contract. Only AFTER this review is the first choice presented.
 2. **User-driven**: Every round is driven by an explicit user decision. The AI provides a `recommend` option but NEVER auto-advances. The user may pause at any important round to ask questions.
-3. **Reuse / Customize / Discover (三选一)**: For every component (Permission, Machine, Guard, Contact, Treasury, Arbitration, etc.), the AI MUST present three avenues — **reuse an existing object** (with its benefit), **customize a new object** (with its sub-task ability), or **discover an object** from other projects / the system. All three are mandatory to surface.
+3. **Reuse / Customize / Discover (choose one of three)**: For every component (Permission, Machine, Guard, Contact, Treasury, Arbitration, etc.), the AI MUST present three avenues — **reuse an existing object** (with its benefit), **customize a new object** (with its sub-task ability), or **discover an object** from other projects / the system. All three are mandatory to surface.
 4. **Default-config disclosure**: Before creating any new object, the AI MUST disclose the default configuration and important information (purpose, key settings, caveats), then let the user decide. No silent defaults.
 
 ---
@@ -230,8 +230,8 @@ Each round below lists: **Semantic meaning**, **Core elements to confirm**, **De
 - **Core elements to confirm**:
   - **Test account**: which account places the order — default is the **service-creation account**, but the user may choose another account to simulate a buyer.
   - **Advance path**: at each node, the user chooses which next node to advance to.
-- **Per-node disclosure (before each advance)**: the MCP injects `semantic.workflow_guidance` (on query_toolkit Progress results: `_workflow_guidance` / `_workflow_guidance_text`) listing **ALL** reachable next nodes with their operator (`namedOperator=""` → order holder / `permissionIndex` → role / named operator), forward, weight, guard, business meaning, and a K3-framed recommendation (gains/risks/consistency). Relay this full list to the user (who can act, with which permission/account), then let the user choose — **AI 推荐、人决策** (K3 P3).
-- **After each advance**: relay `semantic.workflow_receipt` — which account did what, whether the node migrated; if it did NOT migrate and threshold > 0, report threshold / accumulated weight / remaining / who must act next (K3 G4 阈值配合).
+- **Per-node disclosure (before each advance)**: the MCP injects `semantic.workflow_guidance` (on query_toolkit Progress results: `_workflow_guidance` / `_workflow_guidance_text`) listing **ALL** reachable next nodes with their operator (`namedOperator=""` → order holder / `permissionIndex` → role / named operator), forward, weight, guard, business meaning, and a K3-framed recommendation (gains/risks/consistency). Relay this full list to the user (who can act, with which permission/account), then let the user choose — **AI recommends, human decides** (K3 P3).
+- **After each advance**: relay `semantic.workflow_receipt` — which account did what, whether the node migrated; if it did NOT migrate and threshold > 0, report threshold / accumulated weight / remaining / who must act next (K3 G4 threshold coordination).
 - **Default config**: test account = service-creation account.
 - **Reuse / Customize / Discover**: n/a (verification).
 - **Dependencies**: Service published (R11) — `order_new` requires `bPublished=true`.

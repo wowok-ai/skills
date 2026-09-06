@@ -48,7 +48,7 @@ These four principles govern every service build/modify step. They mirror the wo
 
 1. **Review-first**: State (a) what the AI understood about the service, (b) the dependency order to build/modify, and (c) the interaction contract — before the first choice.
 2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances. The user may pause at any important step.
-3. **Reuse / Customize / Discover (三选一)**: For every component (Permission, Machine, Guard, Treasury, Contact, Arbitration, etc.), surface all three avenues — reuse an existing object (benefit), customize a new one (sub-task ability), or discover from other projects / the system.
+3. **Reuse / Customize / Discover (choose one of three)**: For every component (Permission, Machine, Guard, Treasury, Contact, Arbitration, etc.), surface all three avenues — reuse an existing object (benefit), customize a new one (sub-task ability), or discover from other projects / the system.
 4. **Default-config disclosure**: Disclose a new object's default config + important info + caveats BEFORE the user decides. No silent defaults.
 
 ---

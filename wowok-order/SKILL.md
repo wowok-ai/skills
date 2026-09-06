@@ -3,9 +3,9 @@ name: wowok-order
 description: |
   WoWok Buyer Guide — TWO lifecycles in one skill:
 
-  1. PROSPECT (潜在用户尽调, pre-purchase): E1-E11 due diligence + consensus
+  1. PROSPECT (prospect due diligence, pre-purchase): E1-E11 due diligence + consensus
      building + trust-score synthesis, ending in a buy/no-buy decision.
-  2. CUSTOMER (已下单履约, post-order): order creation, progress advancement,
+  2. CUSTOMER (in-order fulfillment, post-order): order creation, progress advancement,
      fund management, and arbitration.
 
   For suppliers presenting to Demands, see wowok-supplier. For process
@@ -32,8 +32,8 @@ when_to_use:
 
 | Lifecycle | Role | Phases | Ends with |
 |-----------|------|--------|-----------|
-| **Prospect** (潜在用户尽调) | You have NOT ordered yet | Phase 1 (E1-E11) + Phase 2 | buy / no-buy decision |
-| **Customer** (已下单履约) | You are the Order `builder` | Phase 3-6 + Fund Management | funds withdrawn / dispute resolved |
+| **Prospect** (prospect due diligence) | You have NOT ordered yet | Phase 1 (E1-E11) + Phase 2 | buy / no-buy decision |
+| **Customer** (in-order fulfillment) | You are the Order `builder` | Phase 3-6 + Fund Management | funds withdrawn / dispute resolved |
 
 The prospect lifecycle is served primarily by MCP `trust_score` (`depth: "preorder"`) and the plug-in `evaluation_operation` — this skill keeps the dialogue flow. The customer lifecycle is on-chain (Order/Progress/Allocation/Arb).
 

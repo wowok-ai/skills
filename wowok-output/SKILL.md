@@ -14,23 +14,55 @@ always: true
 
 # Address Display Rules
 
-## Override Condition
+## Environment split (read first)
 
-If user explicitly requests full/long addresses (e.g., "show full addresses", "do not abbreviate"),
-this skill's shortening rules are DISABLED — display complete 66-character addresses.
+Address rendering differs by environment — pick the correct mode:
 
-## Client Rendering (authoritative)
+| Environment | Default display | Full address |
+|---|---|---|
+| **WoWok client** (rich renderer available) | Full address — the client converts it into an address chip (name, DEFAULT badge, type icon, popup) | Always |
+| **Other AI clients** (plain MCP clients, markdown only) | Name when resolved, otherwise SHORTID; DEFAULT marker on the default account | ONLY when the user explicitly asks |
 
-Inside the WoWok client, AI replies render every `0x…` address AUTOMATICALLY as
-the canonical address pill — local name (if any), system short id, auto-resolved
-object-type icon, and hover actions (copy / message / AI / on-chain query).
-Therefore: **write full `0x`-prefixed addresses in replies**; the client does the
-display formatting. The text rules below apply only to plain-text contexts
-where the client renderer is unavailable (CLI, raw logs).
+Rules that hold in BOTH environments:
+- **NEVER truncate with `…`** (e.g. `0x00f6…a5839` is FORBIDDEN). It is neither a valid full address nor a valid SHORTID — it cannot be resolved, copied, or acted on. The only compact form allowed is the SHORTID transform defined below.
+- The full 66-character address is ALWAYS present in the tool results injected into your context — nothing is lost when you display a name/SHORTID; you can produce the full address on request.
 
-## Short Address Format
+## Inside the WoWok client (rich rendering — authoritative)
 
-**MUST APPLY TO ALL ADDRESSES AND OBJECT IDs** (0x prefix + up to 64 hex chars).
+The client renders EVERY complete `0x`-prefixed address in your reply
+automatically as the canonical address chip — local name, DEFAULT badge,
+first-byte object-type icon, and hover popup (Explorer / Analyze / AI / copy).
+
+Therefore:
+- Write the full address in prose OR in inline code — both become chips.
+- Do NOT attach names, labels, short ids, or parentheses to an address (no `(default)`, no `Name 0x<full-address>`); the client resolves and renders name/type/DEFAULT state itself.
+
+## Other AI clients (generic MCP clients — plain markdown, no custom renderer)
+
+External clients render standard markdown only (no popup, no chips). Default to
+a CONCISE display — full 66-char addresses are noisy and are not shown unless
+asked:
+
+- **Named** (account name or local_mark resolved via `local_names` / tool
+  results): show the NAME ONLY, e.g. `alice_wallet`. Never append an id.
+- **Unnamed**: show the SHORTID (format below), e.g. `10EF-A11`.
+- **Default account** (the on-chain default account, which has an empty name):
+  mark it as `(default)`, e.g. `(default) 10EF-A11`.
+- In tables: name or SHORTID in the cell; the full address is omitted by default.
+- **Full address on request**: when the user explicitly asks to see full /
+  detailed / complete addresses ("show the full address", "give me the complete
+  address", "copyable address"), output the COMPLETE `0x` + 64 hex chars
+  wrapped in inline code so it is one-click copyable in any markdown client.
+  When a name is known, put name + full address together:
+  **alice_wallet** `0xFULLADDRESS`.
+
+## User override
+
+- Other clients, "show full / long / complete addresses" → output the full inline-code address for that reply.
+- Other clients, "use short / compact" → SHORTID (already the default for unnamed addresses).
+- WoWok client: always full addresses regardless — the chip renderer handles display.
+
+## SHORTID format
 
 System-wide rule (identical to the client's `formatAddress`):
 1. Remove the `0x` prefix → hex string
@@ -40,28 +72,25 @@ System-wide rule (identical to the client's `formatAddress`):
 5. Empty / missing → `--`
 
 **Examples**:
-| Full Address | Short ID | Rule |
+| Full Address | SHORTID | Rule |
 |---|---|---|
 | `0xa1d421902a3e5f2e4da7590e8f243712b3b3479d1a07c48c2de543184fc97a33` | `A1D4-A33` | first 4 + `-` + last 3 |
 | `0x10ef0000000000000000000000000000000000000000000000000000000cda11` | `10EF-A11` | first 4 + `-` + last 3 |
 | `0x2` | `2` | ≤7 chars, as-is |
 
-## Resolution Priority & Display Format
+## Resolution priority
 
 **Query Tool**: `query_toolkit` with `query_type: "local_names"`
 
 Returns: `{ account?: string, local_mark?: string, address: string }`
 
-### Display Format Rules (STRICT — mirrors the client's `displayLabelOf`)
-
-| Condition | Display Format | Example |
-|-----------|----------------|---------|
-| **Named** (account or local_mark resolved) | `{name}` only — NEVER append the short id | `alice_wallet` |
-| **Unnamed** | `{SHORTID}` | `10EF-A11` |
-
-- A named object shows ONLY its name — no parentheses, no short id after it.
-- When both an account name and a local_mark exist, prefer the local_mark
-  (object names) for objects and the account name for user addresses.
+- Named (account or local_mark resolved): display the name ONLY (WoWok client
+  renders the name chip itself; other clients show the name).
+- Unnamed: WoWok client → full address (chip); other clients → SHORTID.
+- The account with an empty name that is the on-chain default → other clients
+  tag it `(default)`; the WoWok client adds its DEFAULT badge automatically.
+- When both an account name and a local_mark exist, prefer local_mark (object
+  names) for objects and the account name for user addresses.
 
 ---
 
@@ -107,11 +136,12 @@ Supported query types with `_money_display`:
 ```
 | # | Time | Sender | Service | Amount | Order |
 |---|------|--------|---------|--------|-------|
-| 1 | {time} | {name-or-SHORTID} | {name-or-SHORTID} | {amount} | SHORTID |
+| 1 | {time} | {addr-cell} | {addr-cell} | {amount} | {addr-cell} |
 ```
 
-**Note**: `{name-or-SHORTID}` follows Display Format Rules above — name ONLY when
-resolved, otherwise the short id (no parentheses in either case).
+**Address cells follow the environment split above**:
+- WoWok client → the cell contains the full address (rendered as an address chip automatically).
+- Other clients → the cell contains the resolved name or the SHORTID (default account tagged `(default)`); full addresses only when the user explicitly asked for them.
 
 ## Event Type Fields
 
@@ -134,7 +164,7 @@ When user asks about field meanings:
 - **Sender**: Account that initiated the transaction
 - **Service**: Service object being ordered/interacted with
 - **Order Object**: Unique on-chain identifier for this order
-- **Short Address**: System-wide shortened id for quick visual identification — first 4 + `-` + last 3 hex chars, uppercase (see Short Address Format rules)
+- **Short Address (SHORTID)**: Compact display form (first 4 + `-` + last 3 hex chars, uppercase). Default for unnamed addresses in other AI clients; the WoWok client applies it automatically inside its address chips. Never hand-truncate with `…`.
 
 ## Amounts
 - **Raw**: Actual U64 integer stored on-chain
@@ -154,7 +184,10 @@ When user asks about field meanings:
 - [ ] Query `local_names` for resolution
 - [ ] Check for `_money_display` annotations in query results (primary amount source)
 - [ ] If `_money_display` absent, query `token_list` for manual amount formatting
-- [ ] Apply address format rules
+- [ ] Address display: WoWok client → full `0x`+64 hex addresses (auto chips);
+      other clients → resolved name, or SHORTID for unnamed / `(default)` for the
+      default account; full inline-code address only when the user asks
+- [ ] Never hand-truncate addresses with `…` — SHORTID is the only compact form
 - [ ] Apply amount format rules (use `_money_display` first; fallback to conservative)
 - [ ] Render final output
 

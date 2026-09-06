@@ -55,7 +55,7 @@ Your payment is a two-hop waterfall: main order escrow → allocation → your s
 
 1. **Review-first**: State (a) what the AI understood, (b) the decision order, and (c) the interaction contract — before the first choice.
 2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances.
-3. **Reuse / Customize / Discover (三选一)**: For every component (service, passport, guard), surface reuse / customize / discover.
+3. **Reuse / Customize / Discover (choose one of three)**: For every component (service, passport, guard), surface reuse / customize / discover.
 4. **Default-config disclosure**: Disclose defaults + caveats BEFORE the user decides.
 
 ---

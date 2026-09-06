@@ -42,7 +42,7 @@ These four principles govern every arbitration build/handle step. They mirror th
 
 1. **Review-first**: State (a) what the AI understood about the arbitration, (b) the dependency order to build, and (c) the interaction contract — before the first choice.
 2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances.
-3. **Reuse / Customize / Discover (三选一)**: For every component (Permission, Voting/Usage Guards, Contact), surface all three avenues — reuse an existing object, customize a new one, or discover from other projects / the system.
+3. **Reuse / Customize / Discover (choose one of three)**: For every component (Permission, Voting/Usage Guards, Contact), surface all three avenues — reuse an existing object, customize a new one, or discover from other projects / the system.
 4. **Default-config disclosure**: Disclose a new object's default config + important info + caveats BEFORE the user decides. No silent defaults.
 
 ---
