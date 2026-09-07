@@ -406,7 +406,14 @@ export function recommendSkills(intent: string): Skill[] {
   const lower = intent.toLowerCase();
 
   // Provider keywords
-  if (/\b(create service|merchant|seller|provider|build service|allocators?|machine design)\b/.test(lower)) {
+  // Tolerant patterns: allow optional articles/adjectives between verb and noun
+  // (e.g. "create a service", "build my new service", "publish the service").
+  if (
+    /\b(create|build|publish|design|set ?up|launch|open|start|run|manage|sell)\b.{0,24}\b(service|store|shop|storefront|listing|business|machine|allocators?|products?)\b/.test(
+      lower,
+    ) ||
+    /\b(merchant|seller|provider|vendor|service provider|allocators?|machine design|sell(ing)? (a |my |the )?(service|product))\b/.test(lower)
+  ) {
     return getSkillsByRole('provider');
   }
 
