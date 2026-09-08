@@ -196,6 +196,8 @@ Arbitrator sets `indemnity` → Customer claims via `order.arb_claim_compensatio
 3. Arbitrator verifies WTS authenticity (`verify_wts`)
 4. Only verified evidence considered valid
 
+Dispute initiators should pre-screen their collection via `evaluation_operation` action `evidence_review` (list mode): it partitions items into usable/manual/rejected and yields `proof_candidates` to reference in the dispute description (the human picks — nothing attaches automatically). When a party's evidence is thin, point them to it before voting.
+
 **⚠️ `um` must be configured before unpausing** — without it customers cannot submit evidence.
 
 ### Service Provider

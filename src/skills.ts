@@ -17,7 +17,7 @@ import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
  *                      (schema_query action='get_guard_design_patterns')
  *
  * The MCP server now serves all rules/reference knowledge directly — installing
- * skills is NOT required for correctness. The 9 retained skills keep only the
+ * skills is NOT required for correctness. The 13 retained skills keep only the
  * dialogue orchestration layer (business process flows) that cannot be sunk.
  *
  * Role-based skill selection guide for AI:
@@ -42,9 +42,9 @@ import { Skill, SkillConfig, SkillRole, RoleSkills, SkillMode } from './types';
  *    - Use when: User operates an arbitration service for dispute resolution
  *    - Key actions: Create Arbitration, review evidence, organize voting, manage fees
  *
- * 6. SHARED (wowok-messenger, wowok-output, wowok-onboard, wowok-planner, wowok-auditor)
+ * 6. SHARED (wowok-messenger, wowok-output, wowok-onboard, wowok-planner, wowok-auditor, wowok-market, wowok-governance)
  *    - Use when: Any role needs encrypted messaging, output formatting, onboarding,
- *      planning, or pre-publish audit
+ *      planning, pre-publish audit, market operations, or permission/fund/data governance
  *    - Always loaded: wowok-output
  *    - On-demand: the rest
  */
@@ -181,6 +181,14 @@ export const wowokSkills: SkillConfig = {
       role: 'shared',
       loading: 'on-demand',
       related: ['wowok-provider', 'wowok-order', 'wowok-arbitrator']
+    },
+    {
+      name: 'wowok-governance',
+      description: 'On-chain permission, data, and financial governance — Permission lifecycle (indexes, role assignment, entity table), Treasury/Allocation fund stewardship (deposit/withdraw, history audit, unclaimed payments via keeper), Personal data boundaries (permanently public). Use when the user wants to manage assets, permissions, or audit funds (K3 08 N-4).',
+      version: '1.0.0',
+      role: 'shared',
+      loading: 'on-demand',
+      related: ['wowok-provider', 'wowok-market', 'wowok-messenger']
     }
   ]
 };
@@ -441,6 +449,12 @@ export function recommendSkills(intent: string): Skill[] {
   if (/\b(match_discover|discover service|discover demand|matchmaking|find service|find demand|arbitration score|market metric|anti.?cheat|journey funnel|referral|customer relationship|category match)\b/.test(lower)) {
     const m = getSkillByName('wowok-market');
     return m ? [m] : [];
+  }
+
+  // Governance keywords (permission/data/financial stewardship)
+  if (/\b(governance|permission (index|management|role)|treasury|fund audit|manage (assets|funds)|unclaimed payment|withdraw funds|personal (data|profile))\b/.test(lower)) {
+    const g = getSkillByName('wowok-governance');
+    return g ? [g] : [];
   }
 
   // Guard/tool/safety/scenario keywords → no dedicated skill anymore.

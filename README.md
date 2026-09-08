@@ -176,6 +176,7 @@ const providerSkill = getSkillByName('wowok-provider');
 | `wowok-supplier` | Supplier guide — present service to a Demand (open or gated), fulfill sub-order, collect settlement | Supplier |
 | `wowok-collaborator` | Process collaborator — execute workflow forwards as internal staff or external named operator | Collaborator |
 | `wowok-market` | Market discovery & operations — match_discover/discover_services/discover_demands, arbitration_score, account_events, market_metrics/anti_cheat/market_operations | All Roles |
+| `wowok-governance` | On-chain governance — Permission lifecycle (indexes/roles/entity table), Treasury & Allocation fund stewardship (deposit/withdraw/history audit/unclaimed payments), Personal data boundaries | All Roles |
 
 ### Sunk to MCP Knowledge Layer (v2.0 — no longer skills)
 

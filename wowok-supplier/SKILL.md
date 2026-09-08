@@ -87,6 +87,13 @@ Before ANY presentation, confirm with the user. **Do NOT fabricate, do NOT auto-
 
 > The Demand's `presenters` table records your submission (recommend / service / acceptance_score). The creator may give `feedback` + an `acceptance_score` — that is the selection signal.
 
+**Your acceptance history (reputation backflow)**: evaluations accept a `presenter_history` input (`evaluation_operation` demand_match / service_match / service_risk) — aggregate it yourself from on-chain sources, per party:
+
+1. `onchain_events` type='DemandFeedbackEvent' → filter by your presented Service (`service` param) → each event yields `{ demand_id: object, acceptance_score }`.
+2. Or `query_toolkit` query_type='onchain_table_item_demand_presenter' per Demand you presented to → the presenter row carries `acceptance_score` (null = not yet rated).
+
+High cumulative scores strengthen future matching; skipping feedback as a demand owner damages YOUR acceptance_score reputation.
+
 ---
 
 ## Phase 2: Fulfill the Sub-order

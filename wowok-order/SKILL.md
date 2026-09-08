@@ -149,6 +149,13 @@ Query `onchain_objects` for E1 `um` ID.
 
 Sentiment: `query_toolkit` → `onchain_table_item_entity_linker` for the provider address; compute likes/dislikes/favor from `votes[]` (each vote: `{ who, like, dislike, favor, time }`). Orders: `query_toolkit` → `onchain_table_item_object_linker_tx` with the Service address → `items[].who` = recent Orders binding to it (tx reverse index 0xaaf, FIFO window); batch query those via `onchain_objects` (50/batch, max 200); aggregate dispute rate (`dispute ≠ []` / total) + repeat-buyer ratio. Dispute rate >10% → ⚠️.
 
+**Presenter history (when the merchant also presents to Demands)**: if the provider is active in the demand marketplace, their acceptance history is a quality signal — aggregate it per party and pass as `presenter_history` to `evaluation_operation` (service_risk / demand_match):
+
+1. `onchain_events` type='DemandFeedbackEvent' → filter by the merchant's Service (`service` param) → each event yields `{ demand_id: object, acceptance_score }`.
+2. Or `query_toolkit` query_type='onchain_table_item_demand_presenter' on each Demand the merchant presented to → presenter row carries `acceptance_score` (null = not yet rated).
+
+Omit when the party has no presenter activity — the acceptance rule scores neutral without history.
+
 ### E10 — Privacy Information Matching (LocalInfo reuse)
 
 From E1 `customer_required[]` (e.g. `["name", "phone", "shipping_address"]`). Reuse locally-stored private info so the user never re-types it:
@@ -221,6 +228,21 @@ Root cause: entry node (`prev_node: ""`) has empty `forwards[]`. Fix: clone Mach
 ## Phase 5: Arbitration
 
 Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md). Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confirm` → voting → (`order.arb_objection`) → `order.arb_claim_compensation`.
+
+### Evidence checklist BEFORE filing (evaluation_operation)
+
+Before calling `arbitration.dispute`, review the WHOLE evidence collection at once — never file with an unreviewed pile:
+
+```json
+{ "tool": "evaluation_operation", "data": { "action": "evidence_review", "items": [
+  { "id": "chat-2026-09.wts", "kind": "signature_photo", "hash_committed": true, "digital_check_passed": true, "proof_ref": "0x<proof_object>" },
+  { "id": "waybill.jpg", "kind": "delivery_proof", "hash_committed": true, "contradiction": true }
+] } }
+```
+
+- Output partitions items into `usable` / `manual` / `rejected` and returns `proof_candidates` (auto-passed items with their on-chain Proof refs) plus a `dispute_hint`.
+- Present the `proof_candidates` list to the user and let them PICK which to reference — never attach automatically. The on-chain `dispute` op has no proof field; chosen candidates travel as references inside the dispute description / accompanying Messenger material.
+- `dispute_hint` saying "No evidence passed automatic review" → collect/anchor more evidence (Messenger WTS → Proof) BEFORE filing; a dispute without auto-passed evidence is likely dead on arrival.
 
 Not in schema: fee paid separately (not from Order); one compensation claim per Order; source = `compensation_fund` (E7).
 

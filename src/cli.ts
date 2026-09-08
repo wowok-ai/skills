@@ -32,6 +32,7 @@ const SKILL_DIRS = [
   'wowok-auditor',
   'wowok-supplier',
   'wowok-collaborator',
+  'wowok-governance',
 ];
 
 /**

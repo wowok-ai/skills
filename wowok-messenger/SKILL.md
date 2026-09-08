@@ -115,6 +115,8 @@ Three independently managed lists. Schema covers all operations — here are the
 | **Blacklist** | Permanent block — the address can never message you. |
 | **Guard list** | Verified strangers — addresses holding a valid passport from any listed Guard can message you. Each entry pairs a Guard object ID with a validity duration (`passportValiditySeconds`: 10s to 10 years). |
 
+> **"Friends" are local, not on-chain.** The friends list lives in the Messenger layer (`friendslist` op — server-side, per account) and gates message delivery only. The on-chain carrier is the Contact object's `ims[]` — owner-managed endpoints (permission 453, no request-accept flow). The two NEVER sync: replying to a stranger auto-adds them to YOUR local friends list; it does not touch any Contact. If a business flow needs an on-chain "friend" relationship, that is a contract-level feature request, not a messenger setting.
+
 ---
 
 ## Anti-Spam Strategy
@@ -211,6 +213,8 @@ When a dispute requires evidence: (1) `generate_wts` → export messages by time
 - **Disputes only** — normal conversations are preserved server-side. WTS is evidence preparation, not archiving.
 - **When the other party disputes a fact** — the WTS proves what was actually said and acknowledged.
 - **When arbitration requires evidence submission** — signed WTS is the standard evidence format.
+
+> Before filing a dispute, pre-screen your evidence collection via `evaluation_operation` action `evidence_review` (list mode): it partitions items into usable/manual/rejected and yields `proof_candidates` to reference in the dispute description (the human picks — nothing attaches automatically). Arbitrator-side flow: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
 ---
 
