@@ -33,6 +33,9 @@ jobs:
       - name: Skill length budget
         run: npm run audit:length
 
+      - name: SKILL.md ↔ MCP drift (tool names / parameter shapes / dead links)
+        run: npm run audit:drift
+
       - name: Verify the installer is idempotent
         run: |
           node scripts/install.js

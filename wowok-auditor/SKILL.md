@@ -1,105 +1,92 @@
 ---
 name: wowok-auditor
-description: "WoWok pre-publish auditor — the static-analysis Skill that verifies Guard completeness, Machine soundness, fund-flow safety, permission consistency, and publish readiness BEFORE any irreversible publish operation (Service publish, Machine publish, Allocator binding freeze). This Skill is the knowledge base for the L4 Harness Verify Loop. It does not mutate objects. It queries, exports, and rules — emitting a pass/warn/fail audit report plus a publish decision. Use when: User is about to publish a Service, Machine, or lock an Allocator set; User asks to \"audit\", \"verify\", \"review\", \"check before publish\"; L4 Harness Verify Loop is invoked before an irreversible operation; User mentions \"fund flow\", \"refund path\", \"allocation sum\", \"guard completeness\"; User mentions \"machine cycle\", \"unreachable state\", \"permission index conflict\"; User wants a pre-publish go/no-go decision; A publish operation failed and root-cause analysis is needed."
+description: "WoWok pre-publish auditor — the static-analysis Skill that verifies Guard completeness, Machine soundness, fund-flow safety, permission consistency, and publish readiness BEFORE any irreversible publish operation (Service publish, Machine publish, Allocator binding freeze). This Skill is the orchestration guide for the L4 Harness Verify Loop. It does not mutate objects. It triggers the MCP risk engine, gathers evidence, and presents a pass/warn/fail report plus a publish decision. Use when: User is about to publish a Service, Machine, or lock an Allocator set; User asks to \"audit\", \"verify\", \"review\", \"check before publish\"; L4 Harness Verify Loop is invoked before an irreversible operation; User mentions \"fund flow\", \"refund path\", \"allocation sum\", \"guard completeness\"; User mentions \"machine cycle\", \"unreachable state\", \"permission index conflict\"; User wants a pre-publish go/no-go decision; A publish operation failed and root-cause analysis is needed."
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   role: shared
   related: "wowok-planner, wowok-provider, wowok-machine"
 ---
 
 # WoWok Pre-Publish Auditor
 
-Static-analysis rules that gate every irreversible publish. The auditor never
-writes on-chain; it queries (`query_toolkit`, `onchain_events`), exports
-(`guard2file`, `machineNode2file`), evaluates rule tables, and emits a
-pass / warn / fail report. A FAIL blocks the publish in R10.
+Read-only orchestration for the gate that precedes every irreversible publish.
+The auditor never writes on-chain; it triggers the MCP risk engine, gathers
+evidence, and presents a go / no-go decision. (R10 in MCP dialogue rounds is
+the canonical **verify** round — a FAIL blocks publish there.)
 
-> **Role**: Auditor (read-only). The pre-write safety gate now lives in the MCP knowledge layer (`schema_query` action='get_safety_rules'), applied on every write; this auditor runs only on publish.
-> **Layer**: L3 Skill, knowledge base for L4 Verify Loop.
+> **Role**: Auditor (read-only). Pre-write safety rules live in the MCP knowledge layer (`schema_query` action='get_safety_rules') and are applied on every write; this auditor drives the comprehensive pre-publish aggregation.
+> **Layer**: L3 Skill, orchestration guide for the L4 Verify Loop.
 > **Related Skills**: [wowok-machine](../wowok-machine/SKILL.md) (Machine design), [wowok-onboard](../wowok-onboard/SKILL.md) (publish flow).
 
 ---
 
-## MCP Knowledge Layer
+## What Lives Where (single source of truth)
 
-The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
+The machine-executable rules are NOT duplicated in this Skill — they evolve in MCP and this file would drift:
 
-| Content | Access via (MCP action) | Applied Via |
-|---------|--------------------------|-------------|
-| Safety rules (confirmation levels, immutability rules, object reuse rules) | `schema_query` action='get_safety_rules' | Pre-publish checks + `goal_operation` action='aggregate_risks' |
-| Machine-executable audit rules | auto-applied (not queryable) | `goal_operation` action='aggregate_risks' |
-| Guard completeness / Machine soundness / fund-flow risks | auto-applied (not queryable) | `goal_operation` action='aggregate_risks' |
+| Content | Source (MCP) |
+|---------|--------------|
+| Safety rules (confirmation levels, immutability, object reuse) | `schema_query` action='get_safety_rules' |
+| Guard completeness, Machine soundness, fund-flow safety, permission consistency, publish readiness | `goal_operation` action='aggregate_risks' (auto-applied) |
 
-This Skill keeps the **audit flow**, the **4 audit dimensions** (Guard completeness, Machine soundness, fund flow, publish readiness), and the **checklist structure** as the human-readable knowledge base for the L4 Harness Verify Loop. The MCP layer runs the machine-executable rule evaluation.
-
----
-
-## Core Principles
-
-1. **Read-only**: The auditor never calls `onchain_operations` with `submission`. It only queries and exports. Mutations belong to the Skill being audited.
-2. **Rule-driven**: Every check is a row in a rule table (GUARD_COMPLETENESS_RULES, MACHINE_SOUNDNESS_RULES, FUND_FLOW_RULES, PUBLISH_READINESS_RULES). Adding a check = adding a row, not editing control flow.
-3. **FAIL blocks, WARN asks**: A FAIL verdict blocks R10 publish until fixed. A WARN verdict proceeds after explicit user acknowledgement. PASS is silent.
-4. **Blast-radius first**: Before reporting, classify each issue by irreversibility — a Guard logic bug post-publish is permanent; an untested Guard is recoverable.
-5. **Semantic-aware**: Use the `semantic` field returned by recent operations (`semantic.created`, `semantic.modified`, `semantic.released`, `semantic.events`) to cross-check that the intended roles were actually created/modified/released.
-6. **Tiered**: A Tier-1 audit (single Service + single Guard) skips Machine soundness if no Machine is bound. Tier-3 runs every rule including cross-Machine dependency chains.
+This Skill keeps only **when to run the audit, how to call it, and how to read the verdict**.
 
 ---
 
-## Audit Rule Tables
+## When to Run
 
-### GUARD_COMPLETENESS_RULES
+Run an audit immediately before any irreversible operation:
 
-| Operation Type | Fund Flow? | Guard Required? | Audit Action |
-|---|---|---|---|
-| payment (negative amount) | Yes | Yes | FAIL if no Guard bound |
-| treasury deposit | Yes | Recommended | WARN if no Guard |
-| allocation execute | Yes | Yes | FAIL if no Guard |
-| service publish | No | No | PASS |
-| machine publish | No | No | PASS |
-| order create | Yes (escrow) | Yes | FAIL if no Guard on refund path |
-| progress forward (no fund) | No | Optional | PASS (skip) |
-| progress forward (fund release) | Yes | Yes | FAIL if no Guard on forward |
-| reward claim | Yes | Yes | FAIL if no Guard |
-| repository write | No | Recommended | WARN if no Guard |
+1. **Service publish** — machine bound + published, allocators locked, arbitration/compensation invariants, buy_guard, contact, permission indices.
+2. **Machine publish** — nodes/pairs/forwards become immutable afterward.
+3. **Allocator-set freeze** (`order_allocators` bind) — fund-flow paths lock with the Service.
+4. **Post-failure root-cause analysis** — a publish/assert failed (e.g. `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`, `E_ARBITRATION_PERMISSION_CONFLICT`); re-run to identify every remaining blocker, not just the one that aborted.
 
-### MACHINE_SOUNDNESS_RULES
-
-| Check | Pass Condition | Fail Action |
-|---|---|---|
-| Acyclicity | No cycles in state graph | FAIL: cycle detected |
-| Single entry | Exactly one node with no inbound Pair | FAIL: multiple/zero entries |
-| Terminal reachability | All terminals reachable from entry | FAIL: unreachable terminal |
-| No dead-end non-terminals | Every non-terminal node has an outgoing Forward | FAIL: dead-end node |
-| No orphan non-entries | Every non-entry node has an incoming Pair | FAIL: orphaned node |
-| Forward permissions | Each forward has `permissionIndex` ≥ 1000 OR `namedOperator` set (or both) | WARN: missing permission; FAIL if neither |
-| Guard bindings | Each forward with fund flow has a Guard bound | FAIL: unguarded fund flow |
-| Threshold achievability | Each Pair's threshold is reachable by its Forwards' weights | WARN: dead branch (competing Pair always wins) |
-
-### FUND_FLOW_RULES
-
-| Check | Pass Condition | Fail Action |
-|---|---|---|
-| Refund path exists | Every payment path has a corresponding refund path | FAIL: no refund path |
-| Allocation sum | Each Allocator's `sharing` array sums to 10000 (100%) | FAIL: allocation doesn't sum to 100% |
-| Treasury balance | Treasury has sufficient balance for pending allocations | WARN: low balance |
-| Gas coin separation | Gas coins (WOW) are not mixed with business tokens in allocations | WARN: gas coin in allocation |
-| Recipient type | Refund path uses `Entity`/`Signer` for known parties, `GuardIdentifier` for dynamic | WARN: ambiguous recipient |
-| Escrow symmetry | Order escrow amount equals sum of all Allocation paths from that order | FAIL: escrow mismatch |
-
-### PUBLISH_READINESS_RULES
-
-| Check | Pass Condition | Fail Action |
-|---|---|---|
-| Service unpublished | `bPublished === false` | PASS: ready to publish |
-| Machine published | Machine is published (if bound to Service) | FAIL: publish Machine first |
-| Guards tested | All Guards have a passing `gen_passport` test on record | WARN: untested Guard |
-| Permission configured | Permission object exists with correct indices for every Forward | FAIL: no Permission |
-| Allocators configured | `order_allocators` non-empty and each Allocator audited | FAIL: no Allocators |
-| User confirmation | User has explicitly confirmed publish intent | FAIL: no confirmation |
-| Compensation fund present | `compensation_fund` funded (recommended for trust) | WARN: empty fund |
-| Compensation fund invariant | If `compensation_fund > 0` then `arbitrations` MUST be non-empty (per service.move:494-496 `assert!(vector::length(&self.arbitrations) > 0, E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND)`) | FAIL: funded but no Arbitration bound |
-| order_allocators immutability | `order_allocators` set BEFORE publish (service.move:503 `assert!(!self.bPublished)`) — cannot be modified post-publish | FAIL: attempt to modify after publish |
-| machine immutability | `machine` bound BEFORE publish (service.move:633 `assert!(!self.bPublished)`) — cannot be modified post-publish | FAIL: attempt to modify after publish |
-| Backup export | `machineNode2file` + `guard2file` backups persisted | WARN: no backup |
+Scope adapts to blast radius: a single Service with no Machine skips machine checks automatically; a stack with cross-Machine supply chains runs the full chain. The engine derives applicable checks from the objects — do not hand-pick rules.
 
 ---
+
+## How to Run
+
+```
+goal_operation  action='aggregate_risks'
+                intent=<business intent text>           # or pass 'puzzles' through from analyze_intent
+                planned_objects=[{object_type,is_new,name?}]
+                planned_operations=[{object_type,trigger:'create'|'publish',name?}]
+                severity_threshold='HIGH'               # default HIGH
+                user_confirmed_high_risks=[...]         # IDs acknowledged in a prior round
+```
+
+Evidence-gathering (all read-only, done BEFORE presenting the verdict):
+
+- `guard2file` / `machineNode2file` — export immutable backups of what is about to be published.
+- `query_toolkit` (`onchain_objects`, table items) — verify current on-chain state (`bPublished`, balances, bound objects).
+- `onchain_events` — confirm the state transitions claimed by recent operations.
+- Use the `semantic` field of recent operation results (`semantic.created` / `.modified` / `.released` / `.events`) to cross-check that intended roles/objects were actually produced.
+
+Never call `onchain_operations` with `submission` from this role — fixes belong to the Skill being audited.
+
+---
+
+## How to Read the Verdict
+
+`aggregate_risks` returns a blocking **status** plus per-finding severity (CRITICAL / HIGH / MEDIUM / LOW / INFO):
+
+| Status | Meaning | Auditor action |
+|---|---|---|
+| `RISK_PASSED` | No risk at/above threshold | Go — present the go decision |
+| `RISK_BLOCKED` | CRITICAL present, or unacknowledged risk ≥ threshold (default HIGH) | No-go — list every blocker with its object + fix; do not publish |
+| `RISK_PENDING_CONFIRM` | Only acknowledged-able HIGH risks remain | Explain each HIGH risk in business terms; proceed only after explicit user confirmation, then re-run with the risk IDs in `user_confirmed_high_risks` |
+| `RISK_CANCELLED` | The risk session was cancelled | Treat as no-go until re-audited |
+
+Presentation rules:
+
+1. **FAIL blocks, WARN asks, PASS is silent.** CRITICAL/blocked findings are hard stops fixed by the owning Skill; MEDIUM/LOW are surfaced as advisories.
+2. **Blast-radius first**: order findings by irreversibility — a post-publish Guard logic bug is permanent; an untested Guard or missing backup is recoverable.
+3. Report grouped by the four coverage dimensions — **Guard completeness, Machine soundness, fund flow, publish readiness** — and state explicitly which objects were in scope. The individual checks inside each dimension are whatever MCP currently evaluates; quote the finding text returned, never a local rule list.
+
+---
+
+## Audit Report Contract
+
+The user-facing report contains: scope (objects/operations audited), findings grouped by dimension with severity, the blocking status, required fixes vs acknowledged risks, and a final one-line decision: **GO / NO-GO / CONFIRM-THEN-GO**. It contains no transaction itself — the audited Skill performs the mutation after GO.

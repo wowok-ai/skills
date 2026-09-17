@@ -110,7 +110,7 @@ If the upstream merchant stalls or withholds, escalate in order:
 
 ## Own-Interest Surfacing
 
-Run `query_toolkit` query_type='participation_radar' with your account + sub-order progress. The MCP derives your role (supplier) and attaches `supplier-interest` (fund_flow / responsibility / leverage / stakes). Present it as neutral information — the supplier decides.
+Run `query_toolkit` query_type='participation_radar' with `radar_account` (your account) and `radar_targets: [{ progress: <sub-order Progress>, order: <sub-order, optional but recommended> }]`. The MCP derives your role (supplier) and attaches `supplier-interest` (fund_flow / responsibility / leverage / stakes). Present it as neutral information — the supplier decides.
 
 ---
 

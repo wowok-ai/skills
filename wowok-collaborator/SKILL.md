@@ -50,7 +50,7 @@ Two sub-kinds (derived on-chain, never asserted):
 
 ## What You Can Execute Now
 
-Run `query_toolkit` query_type='participation_radar' with your account + the order's Progress. It returns:
+Run `query_toolkit` query_type='participation_radar' with `radar_account` (your account) and `radar_targets: [{ progress: <the order's Progress object>, order: <the Order, optional but recommended> }]` (1–20 targets). It returns:
 
 - `operable` — forwards YOU can execute right now (permission / named-operator path).
 - `waiting_on` — what the workflow waits on from other roles.

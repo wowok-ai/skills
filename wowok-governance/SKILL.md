@@ -56,7 +56,7 @@ Rules of thumb:
 Fund stewardship across Treasury / Allocation / Reward / Payment.
 
 - **Treasury**: deposit joins coins in (a Payment receipt is minted); withdraw splits balance out — irreversible, and when an `external_guard` is set the guard must validate first. `query_toolkit` query_type='onchain_table_item_treasury_history' audits every flow (op 0 Withdraw / 1 Deposit / 2 Receive) with amount + guard + timestamp.
-- **Allocation**: runs distribute pool funds per sharing mode (Amount / Rate ‰ / Surplus). Review allocator guards periodically — a stale guard blocks legitimate distributions.
+- **Allocation**: runs distribute pool funds per sharing mode (Amount / Rate in bps — base 10000 = 100% / Surplus). Review allocator guards periodically — a stale guard blocks legitimate distributions.
 - **Unclaimed payments**: recipients hold frozen CoinWrappers until they unwrap. The keeper `payment_unclaimed` scan owns this reminder surface — run `keeper_operation` to list claimable payments and nudge recipients via Messenger. NewPaymentEvent is deliberately NOT push-bridged, to avoid duplicate reminders (P2-4 channel split).
 - **Reward pools**: RewardFundEvent in / RewardClaimEvent out; a dry pool blocks claims — watch balances before announcing campaigns.
 

@@ -92,9 +92,22 @@ function getStatus(lines) {
     return "OK";
 }
 
-/** Glossary drift check uses hardcoded deprecated-term patterns (no external file dependency). */
+/**
+ * Glossary drift check uses hardcoded deprecated-term patterns (no external file dependency).
+ *
+ * Two classes of checks:
+ *   1. Deprecated/variant terms → canonical CONCEPT_GLOSSARY term.
+ *   2. Terminology consistency — the R1–R10 labels are a FIXED MCP enum
+ *      (`current_round`: R1=intent, R2=table, R3=tree, R4=rely, R5=binding,
+ *      R6=review, R7=CREATE, R8=test, R9=bind, R10=verify — Guard-authoring
+ *      dialogue rounds). Skills must not redefine them as local checklist
+ *      steps; local steps are labelled "Step n". A file that prints the
+ *      canonical anchor ("R1=intent") is treated as the definition and may
+ *      reference the full R1–R10 range freely.
+ */
 function checkGlossaryDrift(filePath) {
-    const content = readFileSync(filePath, "utf-8").toLowerCase();
+    const content = readFileSync(filePath, "utf-8");
+    const lower = content.toLowerCase();
     const drifts = [];
 
     // Known drift patterns — these are common deprecated/variant terms
@@ -107,7 +120,7 @@ function checkGlossaryDrift(filePath) {
     ];
 
     for (const { pattern, canonical, hint } of driftPatterns) {
-        const matches = content.match(pattern);
+        const matches = lower.match(pattern);
         if (matches) {
             drifts.push({
                 type: "glossary_drift",
@@ -115,6 +128,32 @@ function checkGlossaryDrift(filePath) {
                 hint,
                 count: matches.length,
             });
+        }
+    }
+
+    // R1–R10 terminology consistency (case-sensitive — checked on raw content).
+    const isCanonicalDefinition = /\bR1\s*=\s*intent\b/i.test(content);
+    if (!isCanonicalDefinition) {
+        const roundPatterns = [
+            {
+                pattern: /\|\s*\*{0,2}R(?:10|[1-9])\*{0,2}\s*\|/g,
+                hint: "do not redefine R1–R10 as local checklist labels (R1=intent…R10=verify is the MCP current_round enum for Guard-authoring rounds); label local steps 'Step n'",
+            },
+            {
+                pattern: /\bR1\s*[-–—]\s*R(?:10|[2-9])\b/g,
+                hint: "'R1–Rn' denotes the MCP Guard-authoring rounds; name a local checklist range 'Steps 1-n' (or print the canonical 'R1=intent…R10=verify' anchor if the MCP rounds are meant)",
+            },
+        ];
+        for (const { pattern, hint } of roundPatterns) {
+            const matches = content.match(pattern);
+            if (matches) {
+                drifts.push({
+                    type: "glossary_drift",
+                    canonical: "R1–R10 (MCP current_round)",
+                    hint,
+                    count: matches.length,
+                });
+            }
         }
     }
     return drifts;

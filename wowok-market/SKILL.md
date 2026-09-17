@@ -56,7 +56,7 @@ This Skill keeps the **market conversation flow** — discover → compare → t
 ## Phase 2: Compare & Trust
 
 - **Compare**: the `match_discover` result already surfaces per-service scores + reasons. Surface the top-N side-by-side; highlight differences, never force a single pick.
-- **Arbitrator trust**: `evaluation_operation` action=`arbitration_score` with the Arbitration `object` (history auto-fetched via `query_arbs`). Returns `trust` + `fairness` + `combined`. Use it when a merchant chooses which Arbitration to bind, or a customer judges a Service's arbitration guarantee.
+- **Arbitrator trust**: `evaluation_operation` action=`arbitration_score` with the Arbitration `object` — the Arb case history is auto-fetched on-chain when omitted (pass `context_network` for the right network). Returns `trust` + `fairness` + `combined`. Use it when a merchant chooses which Arbitration to bind, or a customer judges a Service's arbitration guarantee.
 
 ---
 
@@ -71,7 +71,7 @@ This Skill keeps the **market conversation flow** — discover → compare → t
 
 - **Metrics**: `evaluation_operation` action=`market_metrics` → active services / open demands / disputes / supply-demand ratio.
 - **Anti-cheat**: `evaluation_operation` action=`anti_cheat` with a Service's orders/reviews/object-stack → returns negative-factor signals (fake order / fake review / shell merchant).
-- **Operations**: `evaluation_operation` action=`market_operations` with `op` = `journey_funnel` / `referral_attribution` / `customer_relationship`.
+- **Operations**: `evaluation_operation` action=`market_operations` with `op` = `journey_funnel` / `referral_attribution` / `customer_relationship` / `dynamic_pricing`.
 
 ---
 

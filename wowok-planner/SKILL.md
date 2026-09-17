@@ -25,8 +25,8 @@ The planner sits between the user's intent and the Harness execution loop. It do
 
 - **Deterministic-first**: Rule tables and scenario templates produce the ODG skeleton. The LLM is invoked only for (a) intent clarification when keywords are ambiguous, and (b) translating free-text answers into typed fields.
 - **Scenario-driven**: The Scenario Registry maps common intent patterns to pre-built ODG templates. A fallback `general` template absorbs unmatched intents.
-- **Plan-before-write**: The full ODG is confirmed at R8 before any publish-bound object is created. Reversibility is tracked per object.
-- **Checkpointed**: The ODG is persisted after every round via `local_info_operation` so the Harness can resume on interruption.
+- **Plan-before-write**: The full ODG is confirmed through the phase review gates (`user_confirm` / `risk_check` / `final_audit`) before any publish-bound object is created. Reversibility is tracked per object. (Note: the R1–R10 rounds in MCP schemas are the Guard-authoring dialogue rounds — R1=intent, R2=table, R3=tree, R4=rely, R5=binding, R6=review, R7=CREATE, R8=test, R9=bind, R10=verify — not ODG plan phases; label local build checklists "Step n", never "Rn".)
+- **Checkpointed**: Round state is anchored in a Goal (`goal_operation` create/approve/advance; the Harness TaskProcess stream persists every round), and the human-readable ODG JSON is written to the local workspace via `workspace_operation` so the Harness can resume on interruption. Do NOT use `local_info_operation` for this — that store is private customer-required info, not planning state.
 
 ### What This Skill Does
 
@@ -40,7 +40,7 @@ The planner sits between the user's intent and the Harness execution loop. It do
 
 - User says "I want to build / set up / start / plan X"
 - L4 Harness opens a new Plan Loop cycle
-- User resumes an interrupted plan (read ODG checkpoint first)
+- User resumes an interrupted plan (read the Goal state and the workspace ODG file first)
 - Do NOT invoke for: live order operations, dispute resolution, or post-publish tuning — those go to wowok-provider / wowok-arbitrator.
 
 ### Output Contract
@@ -51,7 +51,7 @@ A confirmed ODG JSON document (see §ODG Data Structure) with: scenario tag, com
 
 ## ODG Data Structure
 
-The ODG (Object Dependency Graph) is the single output artifact, persisted via `local_info_operation` and consumed by the Harness:
+The ODG (Object Dependency Graph) is the single output artifact. Round state lives in the Goal / TaskProcess stream (`goal_operation`) and the ODG JSON itself is written to the local workspace via `workspace_operation`; the Harness consumes it phase-by-phase:
 
 ```json
 {

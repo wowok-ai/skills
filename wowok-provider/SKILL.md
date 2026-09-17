@@ -55,13 +55,13 @@ For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"*
 
 | # | Item | User Must Provide | Why Not Fabricate |
 |---|------|-------------------|--------------------|
-| **R1** | **Account** | Account name/address. Default `""` is fine. | Safe default exists |
-| **R2** | **Permission** | Existing Permission to reuse, OR name + type_parameter for new. **Reuse strongly recommended.** | Controls access to ALL your services |
-| **R3** | **Service (DRAFT)** | Service name, type_parameter. Create the draft FIRST (unpublished) so Guards can reference it by LocalMark NAME. | Your brand identity on-chain; breaks Guard↔Service cycle |
-| **R4** | **Machine** | Nodes, state transitions (pairs), forward paths. | IS your business process |
-| **R5** | **Guards** | For each Guard: validation logic, conditions. Reuse or define new. | Enforces your business rules |
-| **R6** | **Guard Bindings** | Which Guard validates which Machine forward? | Wrong binding = unauthorized access |
-| **R7** | **Allocators** | For each outcome: who gets what %/amount? (e.g. "success: 95% me, 5% platform") | IS your revenue model |
+| **1** | **Account** | Account name/address. Default `""` is fine. | Safe default exists |
+| **2** | **Permission** | Existing Permission to reuse, OR name + type_parameter for new. **Reuse strongly recommended.** | Controls access to ALL your services |
+| **3** | **Service (DRAFT)** | Service name, type_parameter. Create the draft FIRST (unpublished) so Guards can reference it by LocalMark NAME. | Your brand identity on-chain; breaks Guard↔Service cycle |
+| **4** | **Machine** | Nodes, state transitions (pairs), forward paths. | IS your business process |
+| **5** | **Guards** | For each Guard: validation logic, conditions. Reuse or define new. | Enforces your business rules |
+| **6** | **Guard Bindings** | Which Guard validates which Machine forward? | Wrong binding = unauthorized access |
+| **7** | **Allocators** | For each outcome: who gets what %/amount? (e.g. "success: 95% me, 5% platform") | IS your revenue model |
 
 **Conditionally Required:**
 
@@ -74,11 +74,11 @@ For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"*
 ### Information Collection Protocol
 
 ```
-STEP 0: Present checklist R1-R7 to user
+STEP 0: Present checklist Steps 1-7 to user
 ├── Each item: "Reuse or create new? Provide details."
 ├── Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]
 ├── If user indicates physical goods / customer_required → also confirm C1-C3
-└── ⛔ GATE: ALL R1-R7 must be [confirmed] before any on-chain action
+└── ⛔ GATE: ALL Steps 1-7 must be [confirmed] before any on-chain action
     └── NOT confirmed → STOP. Ask. Do NOT suggest creating service.
 ```
 
@@ -96,7 +96,7 @@ STEP 0: Present checklist R1-R7 to user
 
 ## Service Build Lifecycle
 
-Once R1-R7 confirmed, execute in strict order. Sub-tools are invoked via `wowok({ tool: "<name>", data: { operation_type: "<type>", ... } })`; all use R1 (Account) as `env.account`.
+Once Steps 1-7 confirmed, execute in strict order. Sub-tools are invoked via `wowok({ tool: "<name>", data: { operation_type: "<type>", ... } })`; all use Step 1 (Account) as `env.account`.
 
 **STEP 1 — Foundation**: Account (`account_operation` gen) → Permission (`onchain_operations` permission) → Service DRAFT (`onchain_operations` service, `publish: false` — Guards reference it by LocalMark NAME) → Machine unpublished (`onchain_operations` machine: nodes/pairs/forwards). Discovery `query_toolkit` (account_list/local_mark_list/onchain_objects); template `machineNode2file`.
 
@@ -135,7 +135,7 @@ Service → permission, machine (immutable), order_allocators (immutable),
 Order (runtime) → builder, service snapshot, machine, progress, dispute (Arb[]), allocation
 ```
 
-Cross-object references (which 9 object types hold a Guard and which 4 hold a Machine) are served by MCP `schema_query` action='get_guard_design_patterns'. Permission is the central hub — 11 objects hold BuiltinPermissionIndex.
+Cross-object references — which object types host a Guard, which host a Machine, and which objects carry a `BuiltinPermissionIndex` — are served by MCP `schema_query` action='get_guard_design_patterns' (do not hardcode the counts; the object set evolves). Permission is the central access-control hub.
 
 ### Allocators + Machine Integration
 

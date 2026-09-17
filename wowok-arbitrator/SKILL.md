@@ -59,18 +59,18 @@ User says "just make something up" → REFUSE and explain why each item matters.
 
 | # | Item | User Must Provide | Why Not Fabricate |
 |---|------|-------------------|--------------------|
-| **R1** | **Account** | Which account to operate from. Default `""` is fine. | Safe default exists |
-| **R2** | **Arbitration Name** | Service name. What kind of arbitration? | Your brand and reputation on-chain |
-| **R3** | **Fee** | How much per case? (e.g. "10 WOW per dispute") | IS your revenue model — you cannot guess pricing |
-| **R4** | **Voting Guard(s)** | Who votes and with what weight? Open voting (centralized) or Guard-based (decentralized)? | ⛔ Guards are **immutable after creation** — wrong design = create replacement Guard |
-| **R5** | **Usage Guard** | Who can file disputes? Public or restricted? | Controls your case volume and quality |
-| **R6** | **Contact (um)** | Messenger Contact name/ID for evidence exchange | Without this, customers cannot submit evidence — service is broken |
+| **1** | **Account** | Which account to operate from. Default `""` is fine. | Safe default exists |
+| **2** | **Arbitration Name** | Service name. What kind of arbitration? | Your brand and reputation on-chain |
+| **3** | **Fee** | How much per case? (e.g. "10 WOW per dispute") | IS your revenue model — you cannot guess pricing |
+| **4** | **Voting Guard(s)** | Who votes and with what weight? Open voting (centralized) or Guard-based (decentralized)? | ⛔ Guards are **immutable after creation** — wrong design = create replacement Guard |
+| **5** | **Usage Guard** | Who can file disputes? Public or restricted? | Controls your case volume and quality |
+| **6** | **Contact (um)** | Messenger Contact name/ID for evidence exchange | Without this, customers cannot submit evidence — service is broken |
 
 ### Information Collection Protocol
 
-Present checklist R1-R6 to user. Each item: "Reuse or create new? Provide details." Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]. ⛔ GATE: ALL R1-R6 must be [confirmed] before any on-chain action — NOT confirmed → STOP. Ask. Do NOT suggest creating arbitration.
+Present checklist Steps 1-6 to user. Each item: "Reuse or create new? Provide details." Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]. ⛔ GATE: ALL Steps 1-6 must be [confirmed] before any on-chain action — NOT confirmed → STOP. Ask. Do NOT suggest creating arbitration.
 
-All subsequent on-chain operations use R1 (Account) as `env.account`.
+All subsequent on-chain operations use Step 1 (Account) as `env.account`.
 
 ### Anti-Fabrication Rules (HARD Constraints)
 
@@ -176,7 +176,7 @@ Customer pays fee → locked in `Arb.fee` per case → `arb_withdraw()` transfer
 
 Arbitrator sets `indemnity` → Customer claims via `order.arb_claim_compensation` → Funds transfer from `service.compensation_fund` to Order.
 
-> **Note**: The compensation payout comes from the **provider's** compensation_fund, not the arbitrator's funds. Customers should assess the provider's fund balance before purchase — this is covered in [wowok-order](../wowok-order/SKILL.md) Phase 1.1.
+> **Note**: The compensation payout comes from the **provider's** compensation_fund, not the arbitrator's funds. Customers should assess the provider's fund balance before purchase — this is covered in [wowok-order](../wowok-order/SKILL.md) E7 (Compensation Fund).
 
 ---
 
@@ -233,6 +233,6 @@ Providers list approved Arbitrations in their Service. Customers choose from thi
 
 ### Common Pitfalls
 
-Served by `wowok_buildin_info` action='common mistakes' + MCP `schema_query` action='get_safety_rules'. Key ones: paused Arbitration rejects disputes silently (verify `pause: false`); wrong Guard design is immutable (test with `gen_passport` first); non-finished withdrawal has a 30-day lock; always `verify_wts` before ruling.
+Served by `wowok_buildin_info` info='common mistakes' + MCP `schema_query` action='get_safety_rules'. Key ones: paused Arbitration rejects disputes silently (verify `pause: false`); wrong Guard design is immutable (test with `gen_passport` first); non-finished withdrawal has a 30-day lock; always `verify_wts` before ruling.
 
 ---

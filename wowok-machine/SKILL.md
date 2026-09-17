@@ -41,7 +41,7 @@ This Skill keeps the **workflow conversation guidance**, **business flow design 
 
 ## Machine Architecture
 
-**Machine** → **Nodes** → **Pairs** (`prev_node` ["" = entry, multiple allowed], `threshold` [required total forward weight to advance]) → **Forwards** (`name`, `weight`, `permissionIndex` | `namedOperator` [who can execute], `guard` [optional condition]).
+**Machine** → **Nodes** → **Pairs** (`prev_node` ["" = the single entry pair — pair keys are unique on chain (`E_DUPLICATE_NODE_PREV`); its `forwards` vector may carry multiple forwards to different first nodes], `threshold` [required total forward weight to advance]) → **Forwards** (`name`, `weight`, `permissionIndex` | `namedOperator` [who can execute], `guard` [optional condition]).
 
 > All field types, limits, and valid values are in the MCP schema (`onchain_operations_machine`). This document focuses on design decisions **not captured** by the schema.
 
