@@ -1,6 +1,6 @@
 # WoWok Skills
 
-WoWok AI Skills for **Claude Code, OpenAI Codex CLI / ChatGPT Desktop (Codex mode), Trae, Cursor, Windsurf, CodeBuddy, Qoder, Roo Code, Cline, Kilo Code and GitHub Copilot** — a dialogue-orchestration layer on top of the WoWok MCP server.
+WoWok AI Skills for **Claude Code, OpenAI Codex CLI / ChatGPT Desktop (Codex mode), Gemini CLI, Qwen Code, Grok Build (xAI), OpenCode, Google Antigravity, Trae, Cursor, Devin Desktop (formerly Windsurf), CodeBuddy, WorkBuddy, Qoder, Cline, Kilo Code and GitHub Copilot** — a dialogue-orchestration layer on top of the WoWok MCP server.
 
 One command installs the skills into every supported client **and** registers the MCP server:
 
@@ -11,6 +11,8 @@ wowok-skills doctor        # verify what each client can actually see
 
 > **v3.1.0 — installation was rebuilt around each client's official documentation.**
 > Previous versions wrote to directories several clients never read (`.codex/skills`, `.windsurf/skills`, `~/.github/prompts`), registered MCP in the wrong file for Claude Code, and used a bare `npx` command that cannot start on native Windows. Everything below reflects the verified layout. If you installed an older version, run `wowok-skills init --force` once.
+>
+> **v3.3.0 — CodeBuddy's global MCP file moved to the dotted `~/.codebuddy/.mcp.json`** (official docs 2026-08-26 deprecate the dotless `mcp.json`; old entries are migrated automatically), Google Antigravity MCP registration is now automated (`~/.gemini/config/mcp_config.json`, unified by Antigravity 2.0), and **WorkBuddy (Tencent)** was added as a new target.
 
 ## Supported clients
 
@@ -18,25 +20,34 @@ Every skill is a directory containing `SKILL.md` (YAML frontmatter + Markdown), 
 
 | Client | User-scope skills | Project-scope skills | MCP config |
 |--------|-------------------|----------------------|------------|
-| **Cross-client** (read by Codex, Cursor, Windsurf, Roo, Kilo, Trae*) | `~/.agents/skills/` | `.agents/skills/` | — |
+| **Cross-client** (read by Codex, Cursor, Devin Desktop, Kilo, Antigravity, Gemini CLI alias, Trae*) | `~/.agents/skills/` | `.agents/skills/` | — |
 | **Claude Code** | `~/.claude/skills/` | `.claude/skills/` | `~/.claude.json` (user) · `.mcp.json` (project) |
 | **OpenAI Codex CLI / ChatGPT Codex mode** | `~/.agents/skills/` **+** `~/.codex/skills/` | `.agents/skills/` | `~/.codex/config.toml` · `.codex/config.toml` |
+| **Gemini CLI** | `~/.gemini/skills/` | `.gemini/skills/` | `~/.gemini/settings.json` · `.gemini/settings.json` |
+| **Qwen Code** | `~/.qwen/skills/` | `.qwen/skills/` | `~/.qwen/settings.json` · `.qwen/settings.json` |
+| **Grok Build (xAI)** | `~/.grok/skills/` | `.grok/skills/` | `~/.grok/config.toml` · `.grok/config.toml` |
+| **OpenCode** | `~/.config/opencode/skills/` | `.opencode/skills/` | `~/.config/opencode/opencode.json` · `opencode.json` |
+| **Google Antigravity** | `~/.gemini/config/skills/` | `.agents/skills/` | `~/.gemini/config/mcp_config.json` |
 | **Trae (CN & international)** | `~/.trae-cn/skills/` (CN) · `~/.trae/skills/` (intl) | `.trae/skills/` | `<user-data>/User/mcp.json` · `.trae/mcp.json` |
 | **Cursor** | `~/.cursor/skills/` | `.cursor/skills/` | `~/.cursor/mcp.json` · `.cursor/mcp.json` |
-| **Windsurf (Cascade)** | `~/.codeium/windsurf/skills/` | `.windsurf/skills/` | `~/.codeium/windsurf/mcp_config.json` |
-| **CodeBuddy** | `~/.codebuddy/skills/` | `.codebuddy/skills/` | `~/.codebuddy/.mcp.json` · `.mcp.json` |
+| **Devin Desktop (formerly Windsurf)** | `~/.codeium/windsurf/skills/` | `.windsurf/skills/` | `~/.codeium/windsurf/mcp_config.json` |
+| **CodeBuddy** | `~/.codebuddy/skills/` | `.codebuddy/skills/` | `~/.codebuddy/.mcp.json` (user) · `.mcp.json` (project) |
+| **WorkBuddy (Tencent)** | `~/.workbuddy/skills/` | `.agents/skills/` | `~/.workbuddy/mcp.json` · `.workbuddy/mcp.json` |
 | **Qoder** | `~/.qoder/skills/` | `.qoder/skills/` | `~/.qoder/settings.json` · `.mcp.json` |
-| **Roo Code** | `~/.roo/skills/` | `.roo/skills/` | VS Code globalStorage (Roo extension) · `.roo/mcp.json` |
 | **Cline** | `~/.cline/skills/` | `.cline/skills/` | `~/.cline/mcp.json` + VS Code globalStorage |
 | **Kilo Code** | `~/.kilo/skills/` | `.kilo/skills/` | VS Code globalStorage · see note |
 | **GitHub Copilot** | `~/.copilot/skills/` | `.github/skills/` | `~/.copilot/mcp-config.json` · `.github/mcp.json` |
 
 Notes that are not automatic:
 
+- **Google Antigravity 2.0** shares one MCP config across CLI / 2.0 / IDE: `~/.gemini/config/mcp_config.json` (older docs pointing at `~/.gemini/antigravity/` are outdated — 2.0 unified the path).
+- **WorkBuddy** loads `~/.workbuddy/skills/` after an app restart; the in-app skill market (SkillHub) is an alternative import path. Its MCP config is standard `mcpServers` JSON (stdio + SSE), also editable via Plugins → MCP Servers → Configure MCP.
+- **Grok Build** also auto-reads Claude Code's skills and MCP config (`~/.claude/skills`, project `.mcp.json`), so the `claude` target alone already makes WoWok work in Grok — the `grok` target adds Grok-native registrations.
 - **Trae** reads `.agents/skills/` only after you enable *Settings → Skills & Commands → enable the `.agents` skills directory*. The installer also writes Trae's own global root, so this is optional.
 - **Kilo Code (new platform)** keeps MCP in `~/.config/kilo/kilo.jsonc` under the `mcp` key. If that file exists the installer leaves it alone (rewriting would drop your comments) and prints a manual instruction; otherwise it writes `~/.config/kilo/kilo.json` for you.
-- **Windsurf / Roo / Cline / Kilo**: for transport reasons their MCP config is only registered for the files that already exist on your machine. Install the client first, then re-run `wowok-skills init`.
+- **Devin Desktop / Cline / Kilo**: for transport reasons their MCP config is only registered for the files that already exist on your machine. Install the client first, then re-run `wowok-skills init`.
 - **ChatGPT Desktop (Chat mode)** supports neither local skills nor stdio MCP. Only Codex mode inherits the Codex CLI configuration.
+
 
 ## How it works
 
@@ -144,7 +155,7 @@ wowok-skills targets
 
 Options: `--target <t>` (comma separated), `--user`, `--project`, `--force`, `--no-mcp`, `--referrer <addr|name>`.
 
-Target ids: `agents`, `claude`, `codex`, `trae`, `cursor`, `windsurf`, `codebuddy`, `qoder`, `roo`, `cline`, `kilo`, `copilot` (default: all).
+Target ids: `agents`, `claude`, `codex`, `gemini`, `qwen`, `grok`, `opencode`, `antigravity`, `trae`, `cursor`, `windsurf`, `codebuddy`, `workbuddy`, `qoder`, `cline`, `kilo`, `copilot` (default: all).
 
 ## Programmatic API
 

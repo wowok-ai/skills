@@ -257,6 +257,7 @@ export function cleanupLegacyArtifacts(
       const top = scope === 'user' ? expandHome(raw) : path.resolve(cwd, raw);
       if (currentRoots.includes(top)) continue;
       if (!fs.existsSync(top)) continue;
+      let removedHere = 0;
       for (const entry of fs.readdirSync(top, { withFileTypes: true })) {
         if (!entry.name.startsWith('wowok-')) continue;
         const dir = path.join(top, entry.name);
@@ -274,11 +275,13 @@ export function cleanupLegacyArtifacts(
         if (isOurs) {
           removeDir(dir);
           removed++;
+          removedHere++;
           console.log(`[wowok-skills]   removed pre-3.1 artifact: ${dir}`);
         }
       }
-      // Drop the container directory when we emptied one we created ourselves.
-      if (fs.existsSync(top) && fs.readdirSync(top).length === 0) {
+      // Drop the container directory only when THIS pass emptied it — never
+      // delete an empty directory we did not contribute to.
+      if (removedHere > 0 && fs.existsSync(top) && fs.readdirSync(top).length === 0) {
         fs.rmdirSync(top);
         console.log(`[wowok-skills]   removed empty directory: ${top}`);
       }
@@ -296,9 +299,27 @@ export function installSkillsForTargets(
 ): RootInstallResult[] {
   const results: RootInstallResult[] = [];
   for (const scope of scopes) {
-    cleanupLegacyArtifacts(targetIds, scope, cwd);
+    try {
+      cleanupLegacyArtifacts(targetIds, scope, cwd);
+    } catch (err: any) {
+      console.log(`[wowok-skills]   ERROR during legacy cleanup (continuing): ${err?.message || err}`);
+    }
     for (const root of resolveSkillRoots(targetIds, scope, cwd)) {
-      results.push(installSkillsInto(root, opts));
+      try {
+        results.push(installSkillsInto(root, opts));
+      } catch (err: any) {
+        // One broken root must never abort the whole postinstall — record it
+        // and keep going so the remaining targets still get their skills.
+        console.log(`[wowok-skills]   ERROR installing ${root}: ${err?.message || err}`);
+        results.push({
+          root,
+          written: 0,
+          unchanged: 0,
+          pruned: 0,
+          legacyRemoved: 0,
+          errors: [`unhandled: ${err?.message || err}`],
+        });
+      }
     }
   }
   return results;
@@ -369,6 +390,28 @@ function tomlString(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Atomic write for MCP config files (notably ~/.claude.json, the client's main
+ * state file): write a temp file first, back up the previous content next to
+ * the target, then rename. A crash or concurrent reader can therefore never
+ * observe a half-written or truncated config.
+ */
+function atomicWriteFile(file: string, content: string): void {
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.wowok-tmp`);
+  fs.writeFileSync(tmp, content, 'utf-8');
+  try {
+    if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.wowok-bak`);
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* best effort */
+    }
+    throw err;
+  }
+}
+
 export interface McpWriteResult {
   path: string;
   status: 'written' | 'unchanged' | 'skipped' | 'error';
@@ -389,12 +432,12 @@ function writeMcpSpec(spec: McpSpec, launch: McpLaunch): McpWriteResult {
         `command = ${tomlString(launch.command)}\n` +
         `args = [${launch.args.map(tomlString).join(', ')}]\n`;
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, existing + block, 'utf-8');
+      atomicWriteFile(file, existing + block);
       return { path: file, status: 'written' };
     }
 
-    // ── Kilo Code new platform: { "mcp": { "wowok": { type:"local", command:[…] } } }
-    if (format === 'kilo-json') {
+    // ── Kilo / OpenCode: { "mcp": { "wowok": { type:"local", command:[…] } } }
+    if (format === 'mcp-array-json') {
       let config: any = {};
       if (fs.existsSync(file)) {
         try {
@@ -412,7 +455,7 @@ function writeMcpSpec(spec: McpSpec, launch: McpLaunch): McpWriteResult {
       };
       if (JSON.stringify(config) === before) return { path: file, status: 'unchanged' };
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+      atomicWriteFile(file, JSON.stringify(config, null, 2) + '\n');
       return { path: file, status: 'written' };
     }
 
@@ -447,7 +490,7 @@ function writeMcpSpec(spec: McpSpec, launch: McpLaunch): McpWriteResult {
     if (JSON.stringify(config) === before) return { path: file, status: 'unchanged' };
 
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    atomicWriteFile(file, JSON.stringify(config, null, 2) + '\n');
     return { path: file, status: 'written' };
   } catch (err: any) {
     return { path: file, status: 'error', detail: err.message };
@@ -456,9 +499,10 @@ function writeMcpSpec(spec: McpSpec, launch: McpLaunch): McpWriteResult {
 
 /**
  * Remove stale MCP entries that a pre-3.1 installer wrote into files the client
- * never reads (`~/.claude/settings.json`, `~/.roo/mcp_settings.json`, Qoder's
- * `mcp-settings.json`). Only the `wowok` entry is touched; a file that becomes
- * empty is deleted, anything else in it is preserved.
+ * never reads (`~/.claude/settings.json`, Qoder's `mcp-settings.json`,
+ * CodeBuddy's dotted `~/.codebuddy/.mcp.json`). Only the `wowok` entry is
+ * touched; a file that becomes empty is deleted, anything else in it is
+ * preserved.
  */
 export function cleanupLegacyMcpEntries(targetIds: readonly string[]): number {
   let cleaned = 0;
@@ -484,7 +528,7 @@ export function cleanupLegacyMcpEntries(targetIds: readonly string[]): number {
           Object.keys(value as Record<string, unknown>).length > 0,
       );
       if (meaningful) {
-        fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+        atomicWriteFile(file, JSON.stringify(config, null, 2) + '\n');
         console.log(`[wowok-skills]   removed stale MCP entry from ${file}`);
       } else {
         fs.unlinkSync(file);

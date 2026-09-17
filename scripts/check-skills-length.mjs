@@ -58,6 +58,7 @@ function findSkillFiles(root) {
                 "node_modules", ".git", "dist", "scripts", "src",
                 ".claude", ".agents", ".cursor", ".codex", ".codebuddy",
                 ".windsurf", ".qoder", ".roo", ".cline", ".kilo", ".github", ".trae",
+                ".gemini", ".qwen", ".grok", ".opencode",
             ];
             if (SKIP.includes(entry)) continue;
             results.push(...findSkillFiles(fullPath));

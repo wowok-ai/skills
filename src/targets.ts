@@ -8,8 +8,29 @@
  * NEVER hardcode a skill name or a client directory anywhere else.
  *
  * Directory choices below are taken from each client's official documentation
- * (verified 2026-09). Where a client only documents a UI flow (no on-disk
- * path), no path is registered here — the CLI prints a manual hint instead.
+ * (re-verified 2026-09 against the live docs). Where a client only documents a
+ * UI flow (no on-disk path), no path is registered here — the CLI prints a
+ * manual hint instead.
+ *
+ * Lifecycle notes (2026-09):
+ *   - Roo Code was sunset by its team on 2026-05-15 (repo archived, v3.54.0
+ *     final; official successor: Cline, community fork: Zoo Code). The `roo`
+ *     target was REMOVED — see README for manual cleanup of old installs.
+ *   - Windsurf was renamed Devin Desktop on 2026-06-02 (Cognition). On-disk
+ *     paths are unchanged (still ~/.codeium/windsurf/).
+ *   - Added (2026-09, per official docs): Gemini CLI, Qwen Code, Google
+ *     Antigravity, Grok Build (xAI) and OpenCode.
+ *   - CodeBuddy (official docs 2026-08-26): the recommended global MCP file is
+ *     now the dotted `~/.codebuddy/.mcp.json`; the dotless `mcp.json` is
+ *     DEPRECATED (read order: .mcp.json → mcp.json → ~/.codebuddy.json). Older
+ *     dotless-file entries are migrated by the legacy cleanup.
+ *   - Google Antigravity 2.0 unified the MCP config (2026-09 Google docs):
+ *     CLI, 2.0 and IDE all share `~/.gemini/config/mcp_config.json` — the
+ *     pre-2.0 `~/.gemini/antigravity/` location is obsolete. MCP registration
+ *     is therefore automated (standard `mcpServers` JSON, command/args stdio).
+ *   - Added (2026-09): WorkBuddy (Tencent) — MCP only, standard `mcpServers`
+ *     JSON at ~/.workbuddy/mcp.json + <project>/.workbuddy/mcp.json; its skills
+ *     come from the cross-client `.agents/skills` root (the "agents" target).
  */
 
 import * as os from 'os';
@@ -65,7 +86,7 @@ export const MCP_PACKAGE = '@wowok/agent-mcp';
 // Skill roots (cross-client standard + per-client native)
 // =========================================================================
 
-/** Cross-client root read by Codex, Cursor, Windsurf, Roo, Kilo (+ Trae project). */
+/** Cross-client root read by Codex, Cursor, Windsurf (Devin Desktop), Kilo (+ Trae project). */
 export const AGENTS_SKILL_ROOT = '.agents/skills';
 
 export const CLAUDE_SKILL_ROOT = '.claude/skills';
@@ -75,10 +96,13 @@ export const WINDSURF_SKILL_ROOT = '.windsurf/skills';
 export const CODEBUDDY_SKILL_ROOT = '.codebuddy/skills';
 export const TRAE_SKILL_ROOT = '.trae/skills';
 export const QODER_SKILL_ROOT = '.qoder/skills';
-export const ROO_SKILL_ROOT = '.roo/skills';
 export const CLINE_SKILL_ROOT = '.cline/skills';
 export const KILO_SKILL_ROOT = '.kilo/skills';
 export const COPILOT_SKILL_ROOT = '.github/skills';
+export const GEMINI_SKILL_ROOT = '.gemini/skills';
+export const QWEN_SKILL_ROOT = '.qwen/skills';
+export const GROK_SKILL_ROOT = '.grok/skills';
+export const OPENCODE_SKILL_ROOT = '.opencode/skills';
 
 // =========================================================================
 // MCP registration
@@ -94,11 +118,12 @@ export interface McpSpec {
   /** Absolute path for user scope, project-relative for project scope. */
   path: string;
   /**
-   * json       → `{ "mcpServers": { "wowok": { command, args } } }`
-   * toml       → `[mcp_servers.wowok]` (Codex)
-   * kilo-json  → `{ "mcp": { "wowok": { type: "local", command: [...] } } }` (Kilo new platform)
+   * json            → `{ "mcpServers": { "wowok": { command, args } } }`
+   * toml            → `[mcp_servers.wowok]` (Codex, Grok Build)
+   * mcp-array-json  → `{ "mcp": { "wowok": { type: "local", command: [...] } } }`
+   *                   (Kilo new platform, OpenCode)
    */
-  format: 'json' | 'toml' | 'kilo-json';
+  format: 'json' | 'toml' | 'mcp-array-json';
   /** JSON only: extra fields merged into the server entry (e.g. type/tools). */
   extraEntry?: Record<string, unknown>;
   /** Free-form note printed when the file cannot be managed automatically. */
@@ -112,12 +137,17 @@ export type ClientTargetId =
   | 'cursor'
   | 'windsurf'
   | 'codebuddy'
+  | 'workbuddy'
   | 'trae'
   | 'qoder'
-  | 'roo'
   | 'cline'
   | 'kilo'
-  | 'copilot';
+  | 'copilot'
+  | 'gemini'
+  | 'qwen'
+  | 'antigravity'
+  | 'grok'
+  | 'opencode';
 
 export interface ClientTarget {
   id: ClientTargetId;
@@ -147,6 +177,11 @@ const home = (): string => os.homedir();
 /** Kilo Code new-platform config dir (XDG style). */
 function kiloConfigDir(): string {
   return path.join(process.env.XDG_CONFIG_HOME || path.join(home(), '.config'), 'kilo');
+}
+
+/** OpenCode config dir (XDG style, same on every platform). */
+function opencodeConfigDir(): string {
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(home(), '.config'), 'opencode');
 }
 
 /**
@@ -241,8 +276,9 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     label: 'Cross-client (.agents/skills)',
     userSkillDirs: [path.join(home(), AGENTS_SKILL_ROOT)],
     projectSkillDirs: [AGENTS_SKILL_ROOT],
-    // Read by Codex, Cursor, Windsurf, Roo, Kilo (and Trae project-level,
-    // once "enable .agents skills directory" is turned on).
+    // Read by Codex, Cursor, Windsurf (Devin Desktop), Kilo, Antigravity,
+    // Gemini CLI (alias) and Trae project-level (once "enable .agents skills
+    // directory" is turned on).
     userMcp: [],
     projectMcp: [],
   },
@@ -283,7 +319,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
   },
   {
     id: 'windsurf',
-    label: 'Windsurf (Cascade)',
+    label: 'Devin Desktop (formerly Windsurf)',
     userSkillDirs: [path.join(home(), '.codeium', 'windsurf', 'skills')],
     projectSkillDirs: [WINDSURF_SKILL_ROOT],
     // Only the user-scope MCP file is documented for Windsurf.
@@ -303,10 +339,31 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     label: 'CodeBuddy',
     userSkillDirs: [path.join(home(), '.codebuddy', 'skills')],
     projectSkillDirs: [CODEBUDDY_SKILL_ROOT],
-    // Priority 1 of the documented user-scope candidates.
+    // Official (2026-08-26): the recommended global MCP file is the dotted
+    // ~/.codebuddy/.mcp.json; the dotless mcp.json is deprecated (read order:
+    // .mcp.json → mcp.json → ~/.codebuddy.json, first existing wins). Project
+    // scope is <project>/.mcp.json — the same file Claude uses.
     userMcp: [{ scope: 'user', path: path.join(home(), '.codebuddy', '.mcp.json'), format: 'json' }],
-    // CodeBuddy project scope is <project>/.mcp.json — the same file Claude uses.
     projectMcp: [{ scope: 'project', path: '.mcp.json', format: 'json' }],
+    // Pre-3.3 installers wrote the deprecated dotless `~/.codebuddy/mcp.json`.
+    legacyMcpFiles: [path.join(home(), '.codebuddy', 'mcp.json')],
+  },
+  {
+    id: 'workbuddy',
+    label: 'WorkBuddy (Tencent)',
+    // User-level skills: ~/.workbuddy/skills/<name>/SKILL.md (loaded on
+    // restart; the in-app skill market imports into the same store). Project
+    // skills use the cross-client .agents/skills root ("agents" target).
+    userSkillDirs: [path.join(home(), '.workbuddy', 'skills')],
+    projectSkillDirs: [AGENTS_SKILL_ROOT],
+    // Official docs: user scope ~/.workbuddy/mcp.json, project scope
+    // <project>/.workbuddy/mcp.json — standard `mcpServers` JSON (command/args,
+    // stdio + SSE). The UI mirror is Plugins → MCP Servers → Configure MCP.
+    userMcp: [{ scope: 'user', path: path.join(home(), '.workbuddy', 'mcp.json'), format: 'json' }],
+    projectMcp: [{ scope: 'project', path: '.workbuddy/mcp.json', format: 'json' }],
+    notes: [
+      'WorkBuddy: restart the app after install so new skills and the MCP server are loaded.',
+    ],
   },
   {
     id: 'trae',
@@ -315,6 +372,10 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     projectSkillDirs: [TRAE_SKILL_ROOT],
     userMcp: traeMcpPaths().map((p) => ({ scope: 'user' as const, path: p, format: 'json' as const })),
     projectMcp: [{ scope: 'project', path: '.trae/mcp.json', format: 'json' }],
+    notes: [
+      'Trae project-level MCP only loads after enabling Settings → MCP → "Enable project-level MCP". ' +
+        'Verify the user-level config path via Settings → MCP → Open config file.',
+    ],
   },
   {
     id: 'qoder',
@@ -324,19 +385,6 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     userMcp: [{ scope: 'user', path: path.join(home(), '.qoder', 'settings.json'), format: 'json' }],
     projectMcp: [{ scope: 'project', path: '.mcp.json', format: 'json' }],
     legacyMcpFiles: [qoderLegacyMcpFile()],
-  },
-  {
-    id: 'roo',
-    label: 'Roo Code',
-    userSkillDirs: [path.join(home(), '.roo', 'skills')],
-    projectSkillDirs: [ROO_SKILL_ROOT],
-    userMcp: vscodeGlobalStorageFiles(
-      'rooveterinaryinc.roo-cline',
-      'cline_mcp_settings.json',
-    ).map((p) => ({ scope: 'user' as const, path: p, format: 'json' as const })),
-    projectMcp: [{ scope: 'project', path: '.roo/mcp.json', format: 'json' }],
-    // Roo is a VS Code extension: its global MCP file is the globalStorage one.
-    legacyMcpFiles: [path.join(home(), '.roo', 'mcp_settings.json')],
   },
   {
     id: 'cline',
@@ -375,7 +423,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
             {
               scope: 'user' as const,
               path: path.join(kiloConfigDir(), 'kilo.json'),
-              format: 'kilo-json' as const,
+              format: 'mcp-array-json' as const,
             },
           ]),
     ],
@@ -412,6 +460,76 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     // never scanned for user-level prompts). Copilot reads skills now.
     legacyUserDirs: [path.join(home(), '.github', 'prompts')],
     legacyProjectDirs: ['.github/prompts'],
+    notes: [
+      'Copilot CLI also reads .mcp.json at the project root (the same file the ' +
+        'claude target writes). .github/mcp.json targets the Copilot coding agent.',
+    ],
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    userSkillDirs: [path.join(home(), GEMINI_SKILL_ROOT)],
+    projectSkillDirs: [GEMINI_SKILL_ROOT],
+    userMcp: [{ scope: 'user', path: path.join(home(), '.gemini', 'settings.json'), format: 'json' }],
+    projectMcp: [{ scope: 'project', path: '.gemini/settings.json', format: 'json' }],
+    // Gemini CLI also reads ~/.agents/skills and .agents/skills as aliases of
+    // its own roots (the alias wins inside one scope) — the "agents" target
+    // covers those, so skills end up discoverable either way.
+    notes: [
+      'Gemini CLI also reads the cross-client ~/.agents/skills and .agents/skills roots (covered by the "agents" target).',
+    ],
+  },
+  {
+    id: 'qwen',
+    label: 'Qwen Code',
+    userSkillDirs: [path.join(home(), QWEN_SKILL_ROOT)],
+    projectSkillDirs: [QWEN_SKILL_ROOT],
+    userMcp: [{ scope: 'user', path: path.join(home(), '.qwen', 'settings.json'), format: 'json' }],
+    projectMcp: [{ scope: 'project', path: '.qwen/settings.json', format: 'json' }],
+  },
+  {
+    id: 'antigravity',
+    label: 'Google Antigravity',
+    userSkillDirs: [path.join(home(), '.gemini', 'config', 'skills')],
+    projectSkillDirs: [AGENTS_SKILL_ROOT],
+    // Antigravity 2.0 unified the MCP config (2026-09 Google docs): CLI, 2.0
+    // and IDE all share ~/.gemini/config/mcp_config.json — the pre-2.0
+    // ~/.gemini/antigravity/ location is obsolete. Standard `mcpServers` JSON
+    // (command/args for local stdio servers).
+    userMcp: [
+      {
+        scope: 'user',
+        path: path.join(home(), '.gemini', 'config', 'mcp_config.json'),
+        format: 'json',
+      },
+    ],
+    projectMcp: [],
+    notes: [
+      'Google Antigravity project skills come from the cross-client .agents/skills root (covered by the "agents" target).',
+    ],
+  },
+  {
+    id: 'grok',
+    label: 'Grok Build (xAI)',
+    userSkillDirs: [path.join(home(), GROK_SKILL_ROOT)],
+    projectSkillDirs: [GROK_SKILL_ROOT],
+    userMcp: [{ scope: 'user', path: path.join(home(), '.grok', 'config.toml'), format: 'toml' }],
+    projectMcp: [{ scope: 'project', path: '.grok/config.toml', format: 'toml' }],
+    notes: [
+      'Grok Build also auto-reads Claude Code skills and MCP config (~/.claude/skills, project .mcp.json), so the claude target covers it too — the entries above are Grok-native.',
+    ],
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    userSkillDirs: [path.join(opencodeConfigDir(), 'skills')],
+    projectSkillDirs: [OPENCODE_SKILL_ROOT],
+    // OpenCode merges opencode.json and opencode.jsonc, so writing a plain
+    // opencode.json never clobbers a commented .jsonc file.
+    userMcp: [
+      { scope: 'user', path: path.join(opencodeConfigDir(), 'opencode.json'), format: 'mcp-array-json' },
+    ],
+    projectMcp: [{ scope: 'project', path: 'opencode.json', format: 'mcp-array-json' }],
   },
 ];
 
