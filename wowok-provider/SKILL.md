@@ -30,7 +30,7 @@ Do not re-derive these — the server applies them and returns findings/prompts:
 1. **Review-first**: state what you understood, the build/modify dependency order, and the interaction contract before the first choice.
 2. **User-driven**: every step is an explicit user decision; recommend, never auto-advance.
 3. **Reuse / customize / discover**: for every component (Permission, Machine, Guard, Treasury, Contact, Arbitration), surface all three avenues.
-4. **Default disclosure**: show a new object's defaults + caveats BEFORE the user decides. Default network is **testnet** — confirm mainnet explicitly.
+4. **Default disclosure**: show a new object's defaults + caveats BEFORE the user decides. Network: the runtime uses the USER'S CURRENT network (client UI selection) — omit `env.network`; set it only when the user explicitly names a different network.
 
 ---
 

@@ -42,4 +42,4 @@ Pick the action by intent, then read its input schema:
 
 - **Objects are authoritative**: event rows (descriptions, reward addresses, counts) are routing hints only — amounts and current state are read from the objects by id.
 - **Opportunity events are deliberately sparse**: a reward-less Demand emits no event. No event is not proof of no demand; enumerate when the question matters.
-- **Network awareness**: discovery and trust calls default to testnet — pass `context_network` explicitly for real decisions.
+- **Network awareness**: reads use the USER'S CURRENT network (omit `env.network`); pass `context_network` explicitly ONLY when the user names a different network for a cross-network query.

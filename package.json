@@ -1,6 +1,6 @@
 {
   "name": "@wowok/skills",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "WoWok AI Skills for Claude Code, Codex, Gemini CLI, Qwen Code, Grok Build, OpenCode, Google Antigravity, Cursor, Devin Desktop (formerly Windsurf), Trae, CodeBuddy, WorkBuddy, Qoder, Cline, Kilo Code and GitHub Copilot - dialogue orchestration layer on top of the WoWok MCP server (rules/reference knowledge is served by MCP directly since v2.0.0)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

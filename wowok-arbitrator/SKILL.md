@@ -29,7 +29,7 @@ Keep the conversation flow, the governance questions, and the evidence disciplin
 1. **Review-first**: restate the arbitration design, the build dependency order, and the interaction contract before the first choice.
 2. **User-driven**: every governance/business parameter is an explicit user decision; recommend, never auto-advance.
 3. **Reuse / customize / discover** for Permission, Guards, Contact.
-4. **Default disclosure**: show defaults and consequences before deciding. Default network **testnet** — mainnet is a different trust posture.
+4. **Default disclosure**: show defaults and consequences before deciding. Network: the runtime uses the USER'S CURRENT network (client UI selection) — omit `env.network`; set it only when the user explicitly names a different network (mainnet is a different trust posture).
 
 ---
 

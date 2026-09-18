@@ -55,6 +55,8 @@ Account + network (testnet first)
         └─ aggregate_risks → PUBLISH Service → TEST ORDER
 ```
 
+> Network note: "testnet first" is only the FIRST-TOUCH default when the user has no UI network selection yet. After onboarding, the current network is the client's UI selection — omit `env.network` (the runtime stamps the user's current network); set it only when the user explicitly names a different network.
+
 **Irreversibility to translate as "decide now"**:
 - After Service publish, `machine` and `order_allocators` are **L1 permanent locks**.
 - `arbitrations` / rewards are **L2 time-locks**: you may still ADD after publish; remove/clear requires pause + the lock duration to elapse.

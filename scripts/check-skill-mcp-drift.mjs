@@ -100,6 +100,16 @@ const BANNED_STRINGS = [
     pattern: /\bquery_(arbs|services|demands)\b/,
     message: "'query_arbs'/'query_services'/'query_demands' are internal GraphQL/data-layer names, NOT MCP tools. Describe the behavior (e.g. 'history is auto-fetched'; use match_discover/discover_services/discover_demands evaluation actions) instead.",
   },
+  {
+    id: 'hardcoded-network-testnet-example',
+    pattern: /"network"\s*:\s*"testnet"/,
+    message: 'Hardcoded "network": "testnet" in an example teaches the model to guess a network. The runtime stamps the user\'s CURRENT network (client UI selection) — OMIT env.network in examples; set it only when the user explicitly names a different network.',
+  },
+  {
+    id: 'default-network-is-testnet-copy',
+    pattern: /default network (is\s+)?\*{0,2}testnet/i,
+    message: '"Default network is testnet" is stale guidance — the runtime resolves the USER\'S CURRENT network (client UI selection). Say: omit env.network; set it only when the user explicitly names a different network.',
+  },
 ];
 
 /**

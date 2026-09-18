@@ -42,7 +42,7 @@ Payment is a two-hop waterfall: main order escrow → allocation → your sub-or
 
 1. **Review-first**: state what you understood, the decision order, and the interaction contract before the first choice.
 2. **User-driven**: every write is an explicit user decision; you recommend, never auto-advance.
-3. **Default disclosure**: disclose defaults and caveats BEFORE the user decides. Default network is **testnet** — confirm mainnet explicitly.
+3. **Default disclosure**: disclose defaults and caveats BEFORE the user decides. Network: the runtime uses the USER'S CURRENT network (client UI selection) — omit `env.network`; set it only when the user explicitly names a different network.
 
 ---
 

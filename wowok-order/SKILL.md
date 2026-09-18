@@ -151,7 +151,7 @@ Flow: `onchain_operations` arbitration `dispute` → WTS evidence → Messenger 
 After an Allocation distributes `CoinWrapper` to the Order, the builder MUST `receive` to unwrap + withdraw (funds stay locked otherwise):
 
 ```json
-{ "tool": "onchain_operations", "data": { "operation_type": "order", "data": { "object": "<order_id>", "receive": "recently" } }, "env": { "account": "<builder>", "network": "testnet", "confirmed": true } }
+{ "tool": "onchain_operations", "data": { "operation_type": "order", "data": { "object": "<order_id>", "receive": "recently" } }, "env": { "account": "<builder>", "confirmed": true } }
 ```
 
 - `"recently"` = all recently-received CoinWrapper; precise form = explicit `[{id,type}]` or the `onchain_received` (type `CoinWrapper`) balance passed DIRECTLY (never wrap in `{result:...}`).
