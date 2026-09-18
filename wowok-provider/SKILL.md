@@ -2,7 +2,7 @@
 name: wowok-provider
 description: "WoWok Service Provider — the canonical skill for service providers (merchants, sellers) to build, operate, and manage commercial services on WoWok. Covers service design (WIP products, Machine workflows, Allocator strategies), trust mechanisms (compensation funds, arbitration), customer attraction (discounts, rewards, supply chain promises), and order fulfillment. For customers placing orders, see wowok-order. For arbitrators, see wowok-arbitrator. Use when: User is a service provider/merchant/seller on WoWok; User wants to create a commercial service/marketplace; User wants to design workflow (Machine) for order processing; User wants to set up fund distribution strategies (Allocators); User wants to configure trust mechanisms (compensation, arbitration); User wants to handle order fulfillment and customer service; User mentions \"create service\", \"merchant\", \"seller\", \"provider\", \"workflow design\", \"compensation\", \"arbitration\"."
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   role: provider
   related: "wowok-machine, wowok-messenger"
 ---
@@ -10,219 +10,117 @@ metadata:
 # WoWok Service Provider Guide
 
 > **Role**: Service Provider (Merchant/Seller)
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication)
+> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer), [wowok-machine](../wowok-machine/SKILL.md) (workflow), [wowok-messenger](../wowok-messenger/SKILL.md) (communication), [wowok-planner](../wowok-planner/SKILL.md) (guided build pipeline)
 
 ---
 
-## MCP Knowledge Layer
+## What the MCP already enforces
 
-The following rule tables have been pushed down to the MCP knowledge layer and are automatically applied during on-chain operations. You do NOT need to manually check these — the MCP server enforces them.
+Do not re-derive these — the server applies them and returns findings/prompts:
 
-| Rule Category | Access via (MCP action) | Applied By |
-|---------------|--------------------------|------------|
-| Safety rules (confirmation, immutability, object reuse) | `schema_query` action='get_safety_rules' | `goal_operation` action='aggregate_risks' + `onchain_operations` pre-publish |
-| Guard design patterns | `schema_query` action='get_guard_design_patterns' | `goal_operation` action='aggregate_risks' (guard risk assessment) |
-| Machine topology rules | auto-applied | `goal_operation` action='aggregate_risks' (machine risk assessment) |
-| Scenario mode defaults | `industry_pack_operation` action='list_modes' / 'recommend_industry' | Referenced when recording the Goal and building the Service |
-| Tool reference (gas, faucet, wrappers) | `schema_query` action='get_tool_reference' | All tool calls automatically |
-
-**How to use**: Call `goal_operation` with `action: "aggregate_risks"` after completing your puzzle (pass your planned objects/operations) — the MCP server will automatically apply all relevant safety rules and return risk findings.
+- **Pre-publish risk audit**: `goal_operation` action=`aggregate_risks` over your planned objects (safety rules, guard design, machine topology). Knowledge access: `schema_query` actions `get_safety_rules`, `get_guard_design_patterns`, `get_tool_reference`.
+- **Guided build pipeline** (optional, recommended for non-trivial services): `industry_pack_operation` (recommend_industry / list_modes / derive_user_mode) and `goal_operation` action=`merchant_guide` (stateless 10-step wizard; the final step emits a topologically ordered `creation_plan`). This skill's lifecycle below is the manual path to the same result.
+- **WIP network-deployment gate**, publish-time L1/L2 lock checks, and the compensation-fund-requires-arbitration pre-check are hard-enforced inside `onchain_operations`.
+- **Execution routing for live orders** comes from `query_toolkit` query_type=`participation_radar` → `operable[].recommended_call`. Never hand-pick `order.progress` vs `progress.operate`.
 
 ---
 
-## Core Interaction Principles
+## Interaction principles
 
-These four principles govern every service build/modify step. They mirror the wowok-onboard model and are non-negotiable.
-
-1. **Review-first**: State (a) what the AI understood about the service, (b) the dependency order to build/modify, and (c) the interaction contract — before the first choice.
-2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances. The user may pause at any important step.
-3. **Reuse / Customize / Discover (choose one of three)**: For every component (Permission, Machine, Guard, Treasury, Contact, Arbitration, etc.), surface all three avenues — reuse an existing object (benefit), customize a new one (sub-task ability), or discover from other projects / the system.
-4. **Default-config disclosure**: Disclose a new object's default config + important info + caveats BEFORE the user decides. No silent defaults.
+1. **Review-first**: state what you understood, the build/modify dependency order, and the interaction contract before the first choice.
+2. **User-driven**: every step is an explicit user decision; recommend, never auto-advance.
+3. **Reuse / customize / discover**: for every component (Permission, Machine, Guard, Treasury, Contact, Arbitration), surface all three avenues.
+4. **Default disclosure**: show a new object's defaults + caveats BEFORE the user decides. Default network is **testnet** — confirm mainnet explicitly.
 
 ---
 
-## ⚠️ PRE-FLIGHT: Required Items Checklist
+## Pre-flight: required business decisions
 
-**THIS SECTION IS MANDATORY.** Before ANY service creation or publication, the AI MUST collect explicit user confirmation for EVERY required item. **Do NOT skip, do NOT fabricate, do NOT proceed with missing items.**
+> **Golden rule**: never guess what the user sells, how their workflow operates, or how funds split — these are BUSINESS decisions. Missing → ASK; "just make something up" → REFUSE.
 
-### The Golden Rule
+For each item the user gives **"Reuse: `<name/id>`"** or **"Create new: `<details>`"** or **"Discover"**:
 
-> **Golden Rule**: NEVER guess what the user sells, how their workflow operates, or how funds are distributed — these are BUSINESS decisions only the user can make. Not provided → ASK; incomplete → ASK to clarify; "just make something up" → REFUSE and explain why each item matters.
+| # | Item | Why it cannot be fabricated |
+|---|------|------------------------------|
+| 1 | Account (`env.account`, default `""`) | — |
+| 2 | Permission (reuse strongly recommended) | Controls ALL your services |
+| 3 | Service DRAFT (name, type_parameter) — create FIRST, unpublished, so Guards can reference it by LocalMark name | Breaks the Guard↔Service cycle |
+| 4 | Machine: nodes, pairs, forwards | IS the business process |
+| 5 | Guards: validation logic per Guard | Enforces business rules |
+| 6 | Guard bindings: which Guard gates which forward | Wrong binding = unauthorized access |
+| 7 | Allocators: per outcome, who gets what | IS the revenue model |
 
-### Required Items
+Conditional: **C1 Contact** when `customer_required` is set or customer service is wanted · **C2 WIP files** for physical goods (description, images) · **C3 Sales products** (name, price, stock, WIP each).
 
-For each item, the user must provide one of: **"Reuse existing: `<name_or_id>`"** OR **"Create new: `<details>`"** OR **"Discover from system / other projects"** — reuse / customize / discover, all three avenues must be surfaced.
-
-| # | Item | User Must Provide | Why Not Fabricate |
-|---|------|-------------------|--------------------|
-| **1** | **Account** | Account name/address. Default `""` is fine. | Safe default exists |
-| **2** | **Permission** | Existing Permission to reuse, OR name + type_parameter for new. **Reuse strongly recommended.** | Controls access to ALL your services |
-| **3** | **Service (DRAFT)** | Service name, type_parameter. Create the draft FIRST (unpublished) so Guards can reference it by LocalMark NAME. | Your brand identity on-chain; breaks Guard↔Service cycle |
-| **4** | **Machine** | Nodes, state transitions (pairs), forward paths. | IS your business process |
-| **5** | **Guards** | For each Guard: validation logic, conditions. Reuse or define new. | Enforces your business rules |
-| **6** | **Guard Bindings** | Which Guard validates which Machine forward? | Wrong binding = unauthorized access |
-| **7** | **Allocators** | For each outcome: who gets what %/amount? (e.g. "success: 95% me, 5% platform") | IS your revenue model |
-
-**Conditionally Required:**
-
-| # | Item | Trigger | User Must Provide |
-|---|------|---------|-------------------|
-| **C1** | **Contact (um)** | If `customer_required` is set (or customer service is desired) | Contact name/ID; if NEW → local account as messenger (`enabled: true`) + anti-spam profile (Open/Guarded/Closed/Defensive) |
-| **C2** | **WIP Files** | Physical goods | Product description, images |
-| **C3** | **Sales Products** | Listing products | Name, price, stock, WIP per product |
-
-### Information Collection Protocol
-
-```
-STEP 0: Present checklist Steps 1-7 to user
-├── Each item: "Reuse or create new? Provide details."
-├── Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]
-├── If user indicates physical goods / customer_required → also confirm C1-C3
-└── ⛔ GATE: ALL Steps 1-7 must be [confirmed] before any on-chain action
-    └── NOT confirmed → STOP. Ask. Do NOT suggest creating service.
-```
-
-### Anti-Fabrication Rules (HARD Constraints)
-
-| Never... | Because... |
-|----------|------------|
-| Invent product names, prices, descriptions | You don't know what they sell |
-| Design workflow nodes without user input | You don't know their business process |
-| Decide fund splits | You don't know their revenue model |
-| Assume Guard logic | You don't know their security requirements |
-| Skip the checklist | Even if user seems to know what they want |
+⛔ GATE: all items confirmed before any write. Track `[pending] / [confirmed: reuse <id>] / [confirmed: create]`. Never invent product names, prices, nodes, splits, or Guard logic — even if the user seems sure.
 
 ---
 
-## Service Build Lifecycle
+## Build lifecycle
 
-Once Steps 1-7 confirmed, execute in strict order. Sub-tools are invoked via `wowok({ tool: "<name>", data: { operation_type: "<type>", ... } })`; all use Step 1 (Account) as `env.account`.
+All writes go through `onchain_operations` with `operation_type`; account from item 1 is `env.account`. Discovery via `query_toolkit` (account_list / local_mark_list / onchain_objects); file exports via `machineNode2file` and `guard2file`.
 
-**STEP 1 — Foundation**: Account (`account_operation` gen) → Permission (`onchain_operations` permission) → Service DRAFT (`onchain_operations` service, `publish: false` — Guards reference it by LocalMark NAME) → Machine unpublished (`onchain_operations` machine: nodes/pairs/forwards). Discovery `query_toolkit` (account_list/local_mark_list/onchain_objects); template `machineNode2file`.
+1. **Foundation** — Permission (`permission`) → Service DRAFT (`service`, `publish: false`) → Machine unpublished (`machine`: nodes → pairs → forwards).
+2. **Guards** (`guard`) — design with `schema_query` action=`get_guard_design_patterns`; pass/fail gates vs runtime-submitted evidence (`b_submission` table entries) have different patterns — do not improvise, read the pattern output.
+3. **Bind + publish Machine, bind Service** — `machine` "add forward" with guards → machine `publish: true` (nodes/forwards become IMMUTABLE; re-export with machineNode2file and verify) → `service` bind `machine` (must already be published) and `buy_guard`.
+4. **Products** — `service` `sales: {op:'add'|'set'|'remove'|'clear', …}`; each sale `{name, price, stock, suspension, wip, wip_hash}` (price/stock are smallest-unit STRINGS). User supplies name/price/stock — never fabricate.
+5. **Revenue** — `service` `order_allocators` (set BEFORE publish). Modes: Amount / Rate (bps, sum exactly 10000) / Surplus (max one per allocator). Recipients: `Entity` (fixed address — an org address is usually a Treasury that must hold permission 253 TREASURY_RECEIVE to intake), `GuardIdentifier` (address submitted at allocation time, e.g. the Order), `Signer` (the allocation caller — do not overuse or splits collapse).
+6. **Customer service** — `contact` `ims: {op:'add'|'set'|'remove'|'clear'}` (IM list; mutations require permission 453 CONTACT_IM, emit no events) + enable messaging via `account_operation {messenger:{enabled:true, name_or_account}}`. Inbound filtering is the Messenger friends/guard/stranger lists (see wowok-messenger). Bind `service.um` when `customer_required`.
+7. **Trust** — bind a REUSED third-party Arbitration: it MUST use a different Permission than the Service (`E_ARBITRATION_PERMISSION_CONFLICT` = 33). `compensation_fund_add` funds an internal `Balance<T>` (not a Treasury, not a payment to the arb); a non-empty fund at publish requires non-empty `arbitrations` (`E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` = 25).
+8. **Pre-publish verify** — machineNode2file + guard2file exports · `aggregate_risks` CRITICAL cleared · permission indices granted · arb Permission isolation · contact IM + messenger enabled → `service` `publish: true`.
+9. **Test order** — `service` `order_new` (requires bPublished, else E_NOT_PUBLISHED=7) → disclose the next nodes → advance each forward from radar `recommended_call` → trigger allocation (below) → verify every claimant received. Use a user-chosen test account.
 
-**STEP 2 — Trust Layer (Guards)**: `onchain_operations` guard (logic/instructions). Design per target: buy_guard / allocator / reward = pass/fail only; machine forward guard = retained_submission needs `b_submission: true` entries matching types. Patterns: `schema_query` action='get_guard_design_patterns'.
+### Lock levels after publish
 
-**STEP 3 — Bind + Publish Machine, Bind Service**: `onchain_operations` machine (`add forward`/`set` with guard) → machine `publish: true` (nodes/forwards IMMUTABLE; verify via machineNode2file) → `onchain_operations` service bind machine + buy_guard (machine must be PUBLISHED).
+- **L1 permanent** (no exception, new Service version to change): `machine`, `order_allocators`.
+- **L2 time-locked** (requires pause + `setting_lock_duration` elapsed; default 30 days = 2,592,000,000 ms): arbitrations/rewards **remove/clear**, `compensation_fund_withdraw`.
+- **L3 stays mutable**: arbitrations/rewards **add**, `buy_guard`, `sales`, `discount`, `description`, `location`, `repositories` add, `compensation_fund_add`, `setting_lock_duration_add`, `customer_required`, `um`.
 
-**STEP 4 — Products (Sales + WIP)**: `onchain_operations` service sales (name/price/stock/wip/wip_hash); ⛔ user provides name/price(u64 min unit)/stock. `wip` = public URL + hash (on-chain stores URL+hash, not file); AI sub-task: generate WIP from web/doc → deploy to public URL (GitHub Pages). `wip <= MAX_WIP_LENGTH`, `wip_hash <= MAX_WIP_HASH_LENGTH`.
-
-**STEP 5 — Revenue (order_allocators + Treasury)**: `onchain_operations` service order_allocators (L1-locked). Mode: amount / rate (bps sum=10000) / surplus. Recipient: `{Entity}` / `{GuardIdentifier}` / `{Signer}`. Personal → Permission owner (Entity); Org → Treasury (`Treasury.receive` index 253). Offer new/select Treasury (query onchain_objects type=treasury).
-
-**STEP 6 — Customer Service (Contact + Messenger)**: `onchain_operations` contact (`ims` with op `add`/`set`/`remove`/`clear`) + `account_operation` messenger (`enabled: true`). Contact mutable; IM mutations need permission index 453 (CONTACT_IM) and emit no events. Anti-spam profiles: Open / Guarded / Closed / Defensive. Bind `onchain_operations` service `um` (if customer_required).
-
-**STEP 7 — Trust (Arbitration + compensation_fund)**: REUSE third-party Arbitration (MUST NOT share Service's Permission — E_ARBITRATION_PERMISSION_CONFLICT 33; don't create your own). `compensation_fund_add` (internal Balance<T>, not Treasury); fund>0 requires non-empty arbitrations (E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND 25); withdraw needs bPaused + lock elapsed.
-
-**STEP 8 — Publication**: pre-publish verify — (1) machineNode2file, (2) guard2file, (3) `goal_operation` aggregate_risks → fix CRITICAL, (4) permission indexes granted, (5) arb permission isolation, (6) contact ims+enabled → `onchain_operations` service `publish: true` (L1-LOCKED: machine/order_allocators/arbitrations).
-
-**STEP 9 — Post-publish + Test Order**: mutable fields (description/location/sales/customer_required/rewards add/repositories add). Test order: `order_new` (requires bPublished, else E_NOT_PUBLISHED) → disclose next nodes → advance (order.progress / progress.operate) → alloc_by_guard → verify distribution. User chooses test account (default: service-creation account).
-
-### Post-Publish Mutability (SDK-LOCKED vs mutable)
-
-Served by MCP `schema_query` action='get_safety_rules' (immutability-after-publish). Summary: `buy_guard` / `sales` / `description` / `repositories` / `rewards` are mutable; `machine` / `order_allocators` / `arbitrations` are SDK-LOCKED (a new Service version is required to change them).
+Check current state with `query_toolkit` query_type=`service_panorama` (also machine_panorama for the bound Machine).
 
 ---
 
-## Key Concepts
+## Key mechanics
 
-### Service Object Relationships
+### Allocation: trigger + claim (two distinct steps)
 
-> **Boundary conditions**: Service/Machine are IMMUTABLE after publish; Payment is FROZEN at creation; Order/Progress/Arbitration operations are irreversible. Use `query_toolkit` query_type='service_panorama' to check whether a Service has published objects.
-
-```
-Service → permission, machine (immutable), order_allocators (immutable),
-          arbitrations, compensation_fund (Balance<T>, NOT a Treasury ref),
-          repositories, sales, rewards, um (Contact), customer_required, buy_guard
-Order (runtime) → builder, service snapshot, machine, progress, dispute (Arb[]), allocation
-```
-
-Cross-object references — which object types host a Guard, which host a Machine, and which objects carry a `BuiltinPermissionIndex` — are served by MCP `schema_query` action='get_guard_design_patterns' (do not hardcode the counts; the object set evolves). Permission is the central access-control hub.
-
-### Allocators + Machine Integration
-
-Design together for coherent fund flow. **Allocation modes** (amount / rate / surplus) and **recipient types** (`Entity` / `GuardIdentifier` / `Signer`) are served by MCP allocation knowledge — the authoritative table + customer-refund design pattern live there. Summary: `Entity` = fixed known recipient; `GuardIdentifier` = runtime-submitted address (customer/Order ID); `Signer` = the `alloc_by_guard` caller (rare — don't use for all entries or splits collapse to one recipient).
-
-### Triggering Allocation Distribution
-
-After the Progress reaches a terminal state, the fund allocation is NOT automatic — it must be triggered explicitly. **Anyone can call this operation**; the caller does not need to be the merchant or customer. The Guard verification determines which allocator's rules apply.
+After Progress reaches a terminal node, distribution is NOT automatic. Anyone can trigger it — Guard verification decides which allocator applies:
 
 ```
-Tool: wowok({ tool: "onchain_operations", data: { operation_type: "allocation", ... } })
-Operation: alloc_by_guard
-Required submission: Order ID (matching the Guard's b_submission identifier)
+onchain_operations operation_type="allocation"
+data: { object: <Allocation>, alloc_by_guard: <Guard name/address> }
 ```
 
-**Two-phase pattern** (same as other Guard operations):
-1. Call without `submission` → SDK returns submission prompt
-2. Re-call with `submission` containing the Order ID at the matching identifier
+If the call returns a submission prompt, re-call with the top-level `submission` carrying the requested values (conventionally the Order address at the Guard's submitted identifier). The call creates immutable Payment objects and the result prints the DISTRIBUTION DETAILS. Recipients then **claim their CoinWrapper** — it is not spendable until claimed: EOA wallet → `payment` receive (auto-derived type; omit object to claim all); Order → `order` receive; Treasury → `treasury` receive (253). Find pending wrappers via `query_toolkit` query_type=`onchain_received`. A GuardIdentifier targeting the Order puts funds in escrow in the Payment — the order owner claims via order receive.
 
-**Post-allocation**: A Payment object is created with the distributed funds. Query the Allocation object to verify `balance` dropped to 0 and `payment` array has the new Payment ID.
+### WIP files
 
-### WIP Files (Witness Immutable Promise)
+`wip_file` type=`generate` ({markdown_text, images}, optional signing account) writes a `.wip` file; deploy it to a PUBLIC URL (GitHub Pages / IPFS / own site), then reference it as `sale.wip` (`wip_hash` is SHA-256, SDK auto-derives when omitted, but pin it explicitly). A local path / localhost / LAN URL passes merchant-side checks but **aborts customer `order_new` 100%** — allowed ONLY with `env.network:"localnet"`. Can't deploy? Leave `wip:""` (testing only, no integrity guarantee). Buyers should pin the on-chain `wip_hash` in each order item (anti-swap).
 
-Immutable product commitment for arbitration evidence.
+### Compensation fund
 
-```
-Create:  wowok({ tool: "wip_file", data: { type: "generate", ... } }) → markdown_text + images → outputPath
-Attach: wowok({ tool: "onchain_operations", data: { operation_type: "service", ... } }) → sales.sales[{
-          name, price, stock, wip: "<public-URL>", wip_hash: "" (auto)
-        }]
-```
+Add: `compensation_fund_add` (any time) · set waiting period: `setting_lock_duration_add` · withdraw ALL: `compensation_fund_withdraw` ONLY while paused AND the lock has elapsed (funds go to a new Payment owned by `receipt`). Note `compensation_fund_receive` is the CLAIM-side op for arbitration winners, not the merchant's withdrawal.
 
-> ⚠️ **WIP must be network-deployed.** `sale.wip` is stored ON-CHAIN and every customer fetches it when placing an order. A non-empty `wip` MUST be a publicly reachable URL (GitHub Pages / IPFS / your own website). A local file path (`C:\...`, `/path/file.wip`) or a localhost/LAN URL (`http://localhost:...`, `http://192.168.x.x`) is reachable only from the merchant's machine — it passes merchant-side set-time verification but **aborts customer `order_new` 100%**. Local-network URLs are INTERNAL TEST USE ONLY (set `env.network: "localnet"`); on testnet/mainnet they are rejected. If the WIP cannot be deployed, leave `sale.wip: ""` (TESTING ONLY, WIP verification skipped).
+### Mainnet-only: stablecoins & bridging
 
-### Compensation Fund (Optional but Recommended)
-
-- Add: `compensation_fund_add` | Lock: `setting_lock_duration_add` (default 30 days = 2592000000ms, configurable via `setting_lock_duration_add`)
-- **Withdraw**: Pause Service → Wait lock duration → `compensation_fund_receive`
-
-### Payment Tokens & Stablecoin Bridging (Mainnet Only)
-
-WOW is the default settlement token. For stablecoin-denominated revenue (fiat-pegged pricing, large cross-period escrow), mainnet funds move via `bridge_operation`:
-
-- `query_supported_tokens` / `query_supported_evm_chains` — discover supported Bridge tokens (ETH/WETH/WBTC/USDC/USDT) and chains
-- `cross_chain_wow_to_evm` / `cross_chain_evm_to_wow` — WOW↔EVM transfer (mainnet env required; assets route through the auto-managed activeEvmAccount)
-- `query_transfer_status` / `query_transfer_list` — track transfers; `manage_evm_rpc` — handle EVM RPC rate limits (429)
-
-> Supported token addresses per network: `wowok_buildin_info` → 'mainnet bridge tokens'. Bridge is mainnet-only — testnet has no cross-chain path.
+WOW is the default token; supported bridge tokens/chains: `bridge_operation` operation_type `query_supported_tokens` / `query_supported_evm_chains` (addresses also in `wowok_buildin_info` info="mainnet bridge tokens"). Transfers: `cross_chain_wow_to_evm` / `cross_chain_evm_to_wow` (latter auto-claims on WOW); tracking `query_transfer_status` / `query_transfer_list`; RPC 429s via `manage_evm_rpc`. Mainnet env required — no cross-chain path on testnet.
 
 ---
 
-## Service Iteration: New Version vs In-Place
+## Iteration: in-place vs new version
 
-When a merchant wants to modify an existing service (change workflow, add allocators, update guards), the AI must determine whether to modify in place or build a new version.
+| Situation | Strategy |
+|-----------|----------|
+| Unpublished draft | In-place modify |
+| Published, change to an L1 field (Machine, allocators) | NEW version: create new objects only for changed parts, reuse the rest by address (Permission, Guards, Treasury, Contact…), publish v2 as a separate Service — v1 keeps running. There is no fork/upgrade tool. |
+| Published, L3 change only (products, description, buy_guard…) | In-place mutate |
 
-### Decision Rule
-
-| Scenario | Strategy | MCP Action |
-|----------|----------|------------|
-| Service NOT yet published | **In-place** — modify the current draft directly | `onchain_operations` (modify) |
-| Service IS published | **New version** — build v2 objects and publish as a separate Service; v1 keeps running | `onchain_operations` (create + publish) |
-
-### New-Version Workflow
-
-Published objects are IMMUTABLE on-chain — there is no in-place structural change and no version-fork tool. When the service is already published and the user wants structural changes, build the new version's objects with `onchain_operations`: reuse v1 objects by address where unchanged (Permission, Guards, Treasury, Contact…) and create new objects only for the changed parts (e.g. a new Machine). Then publish v2 as its own Service — v1 continues running uninterrupted as a separate, still-live Service.
-
-Before building v2, verify necessity via `query_toolkit` query_type='service_panorama' — a published Service confirms a new version is required (published objects are immutable).
-
-### When to Recommend a New Version
-
-- User says "I want to change my workflow" → check if published → recommend a new version
-- User says "I want to add a new product line" → if same Machine can handle it, in-place modify Service.sales; if it needs a new Machine, a new version
-- User says "I want to change fund distribution" → if Service not published, in-place; if published, a new version (allocators are frozen after publish)
+Before deciding, confirm published state via `service_panorama`.
 
 ---
 
-## Order Fulfillment
+## Operating live orders
 
-| Object | Purpose | Operation |
-|--------|---------|-----------|
-| Order | Fund escrow | Read-only |
-| **Progress** | Workflow state | **Operate this** — `hold: true` (lock) → work → `hold: false` (submit) |
-
-**⚠ Progress Routing Rule** (critical): served by MCP `schema_query` action='get_safety_rules' (operation classification). Summary: empty `namedOperator` (`""`) → `order.progress`; non-empty role name or `permissionIndex` → `progress.operate`. Wrong path → "Permission denied" (abort code 5).
-
-**AI Reminder**: When fulfilling, check `customer_required` fields. Missing → prompt via Messenger.
-
-**Demand/service matching** (`evaluation_operation`): `demand_match` ranks candidate services for a demand capability vector; `service_match` is the reverse; `capability_gap` lists unmet requirements; `compose_service` combines services to cover a demand. Read-only — the merchant decides whether to `present` (`onchain_operations` → `demand` → `present` with `recommend`/`by_guard`/`service`).
-
----
+- Progress work item is the **Progress** object: canonical forward ops are `next` (advance; default), `hold` (block), `unhold` (release own hold), `adminUnhold` (force, permission 224). Execute exactly what radar `recommended_call` returns; no call suggested = not yours to execute.
+- Check `customer_required` before fulfillment: missing info must arrive via encrypted Messenger to the Contact, with the Contact/WTS proof recorded as `order_required_info`.
+- Demand-side business: `evaluation_operation` `demand_match` (demand→services), `service_match` (service→demands), `capability_gap`, `compose_service` are read-only; the supplier presents via `demand.present` (see wowok-supplier).

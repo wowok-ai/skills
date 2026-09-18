@@ -2,7 +2,7 @@
 name: wowok-auditor
 description: "WoWok pre-publish auditor — the static-analysis Skill that verifies Guard completeness, Machine soundness, fund-flow safety, permission consistency, and publish readiness BEFORE any irreversible publish operation (Service publish, Machine publish, Allocator binding freeze). This Skill is the orchestration guide for the L4 Harness Verify Loop. It does not mutate objects. It triggers the MCP risk engine, gathers evidence, and presents a pass/warn/fail report plus a publish decision. Use when: User is about to publish a Service, Machine, or lock an Allocator set; User asks to \"audit\", \"verify\", \"review\", \"check before publish\"; L4 Harness Verify Loop is invoked before an irreversible operation; User mentions \"fund flow\", \"refund path\", \"allocation sum\", \"guard completeness\"; User mentions \"machine cycle\", \"unreachable state\", \"permission index conflict\"; User wants a pre-publish go/no-go decision; A publish operation failed and root-cause analysis is needed."
 metadata:
-  version: "2.1.0"
+  version: "2.1.1"
   role: shared
   related: "wowok-planner, wowok-provider, wowok-machine"
 ---
@@ -39,7 +39,7 @@ Run an audit immediately before any irreversible operation:
 
 1. **Service publish** — machine bound + published, allocators locked, arbitration/compensation invariants, buy_guard, contact, permission indices.
 2. **Machine publish** — nodes/pairs/forwards become immutable afterward.
-3. **Allocator-set freeze** (`order_allocators` bind) — fund-flow paths lock with the Service.
+3. **Service fund-template lock** — `order_allocators` (the order distribution template and its trigger guards) is a Service create/update FIELD that becomes permanently immutable at `publish=true`; there is no separate bind op.
 4. **Post-failure root-cause analysis** — a publish/assert failed (e.g. `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`, `E_ARBITRATION_PERMISSION_CONFLICT`); re-run to identify every remaining blocker, not just the one that aborted.
 
 Scope adapts to blast radius: a single Service with no Machine skips machine checks automatically; a stack with cross-Machine supply chains runs the full chain. The engine derives applicable checks from the objects — do not hand-pick rules.
@@ -83,7 +83,7 @@ Presentation rules:
 
 1. **FAIL blocks, WARN asks, PASS is silent.** CRITICAL/blocked findings are hard stops fixed by the owning Skill; MEDIUM/LOW are surfaced as advisories.
 2. **Blast-radius first**: order findings by irreversibility — a post-publish Guard logic bug is permanent; an untested Guard or missing backup is recoverable.
-3. Report grouped by the four coverage dimensions — **Guard completeness, Machine soundness, fund flow, publish readiness** — and state explicitly which objects were in scope. The individual checks inside each dimension are whatever MCP currently evaluates; quote the finding text returned, never a local rule list.
+3. Group by the five coverage aspects — **Guard completeness, Machine soundness, fund-flow safety, permission consistency, publish readiness** (map each finding via its returned `object_type` and `risk_rule_id`), and state explicitly which objects were in scope. Quote the finding text the engine returns; never maintain a local rule list.
 
 ---
 

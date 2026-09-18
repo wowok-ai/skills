@@ -2,7 +2,7 @@
 name: wowok-order
 description: "WoWok Buyer Guide — TWO lifecycles in one skill: 1. PROSPECT (prospect due diligence, pre-purchase): E1-E11 due diligence + consensus building + trust-score synthesis, ending in a buy/no-buy decision. 2. CUSTOMER (in-order fulfillment, post-order): order creation, progress advancement, fund management, and arbitration. For suppliers presenting to Demands, see wowok-supplier. For process operators executing workflow forwards, see wowok-collaborator. Use when: User is a potential buyer evaluating a service BEFORE purchasing (prospect); User is a customer/buyer placing or managing orders (customer); User wants to evaluate services, WIP, guards, allocations, arbitration; User needs to communicate with sellers via Messenger; User asks about order progress, payments, or refunds; User wants to file disputes or arbitration claims; User mentions \"buy\", \"order\", \"purchase\", \"refund\", \"dispute\", \"arbitration\", \"due diligence\"."
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   role: customer
   related: "wowok-provider, wowok-arbitrator, wowok-messenger"
 ---
@@ -11,7 +11,7 @@ metadata:
 
 > **Role**: Buyer — two lifecycles: **Prospect** (pre-purchase due diligence) → **Customer** (post-order fulfillment)
 > **Guides**: [wowok-provider](../wowok-provider/SKILL.md) · [wowok-supplier](../wowok-supplier/SKILL.md) · [wowok-arbitrator](../wowok-arbitrator/SKILL.md) · [wowok-machine](../wowok-machine/SKILL.md) · [wowok-messenger](../wowok-messenger/SKILL.md)
-> Guard patterns / safety rules / tool references live in the MCP knowledge layer — query via `schema_query` (`get_guard_design_patterns`, `get_safety_rules`, `get_tool_reference`).
+> All mechanics (field schemas, formulas, abort codes, batch reads, forward routing, findings) live in the MCP — read tool schemas and query outputs; do not hand-maintain them here. Guard patterns / safety rules: `schema_query` (`get_guard_design_patterns`, `get_safety_rules`, `get_tool_reference`).
 
 ---
 
@@ -19,270 +19,152 @@ metadata:
 
 | Lifecycle | Role | Phases | Ends with |
 |-----------|------|--------|-----------|
-| **Prospect** (prospect due diligence) | You have NOT ordered yet | Phase 1 (E1-E11) + Phase 2 | buy / no-buy decision |
-| **Customer** (in-order fulfillment) | You are the Order `builder` | Phase 3-6 + Fund Management | funds withdrawn / dispute resolved |
+| **Prospect** | You have NOT ordered yet | Phase 1 (E1–E11) + Phase 2 | buy / no-buy decision |
+| **Customer** | You are the Order `builder` | Phase 3–6 + Fund Management | funds withdrawn / dispute resolved |
 
-The prospect lifecycle is served primarily by MCP `trust_score` (`depth: "preorder"`) and the plug-in `evaluation_operation` — this skill keeps the dialogue flow. The customer lifecycle is on-chain (Order/Progress/Allocation/Arb).
+Prospect analysis is computed by MCP `trust_score` (`depth: "preorder"`) + `evaluation_operation`; this skill only keeps the dialogue flow and the user-facing gates. The customer lifecycle is on-chain (Order/Progress/Allocation/Arb).
 
----
+## Ground Rules (apply to every phase)
 
-## Core Concepts (Design Invariants Not in Schema)
-
-- **Objects**: Purchase creates **Order** (fund escrow, you are `builder`), **Progress** (Machine node tracker), **Allocation** (fund distribution). Only `builder` withdraws; agents operate but never access funds.
-- **No-Bypass Rule**: A forward with `namedOperator === ""` is "user-operable", but if it also binds a Guard, passport verification is mandatory and cannot be bypassed (`order.next` fails without validated passport).
-- **Weight Accumulation**: Each forward contributes `weight` toward a node's `threshold`; `weight ≥ threshold` → one operation suffices. Parse `machineNode2file` JSON; never query node-by-node.
-- **Allocation Triggers**: Allocation evaluates when Progress reaches **any** configured node (not just exit nodes). Winning Allocator = first whose Guard returns `true`. Rules immutable after publish.
-
----
-
-## Phase 1: Pre-Purchase Due Diligence (PROSPECT lifecycle — MANDATORY GATE)
-
-> **⛔ Complete E1-E11 in order; user must confirm every item.** **⚠️** = explain risk, wait. **🔴** = strongly advise against.
-
-### E1 — Service Basic Status
-
-Query `query_toolkit` → `onchain_objects` for `<service_name_or_id>`. Save: `bPublished`, `bPaused`, `sales`, `machine`, `buy_guard`, `customer_required`, `arbitrations`, `compensation_fund`, `compensation_lock_duration`, `order_allocators`, `um`.
-
-- `bPublished === false` → 🔴 **ABORT**
-- `bPaused === true` → 🔴 **ABORT**
-- OK → E2
-
-### E2 — Product & WIP Verification
-
-From E1 `sales[]`; skip `suspension === true`. Verify WIP (mandatory when `wip_hash` non-empty): `wip_file` → `type: "verify"`, `wipFilePath: "<wip_url>"`, `hash_equal: "<wip_hash>"`.
-
-- `wip_hash` empty → no on-chain commitment (weaker evidence)
-- Verification fails → 🔴 **WIP tampered after publish**
-- No `wip` URL → ⚠️ No product evidence
-
-### E3 — Machine Workflow Analysis (CORE)
-
-1. `query_toolkit` → `onchain_objects` for `<machine_id>`; fail if `bPublished === false` or `bPaused === true`.
-2. Entry-node check: entry node (`prev_node: ""`) must have ≥1 forward, else Progress stuck at `current=""` → 🔴 BLOCKER.
-3. `machineNode2file` → export full Machine JSON (parse locally; see [wowok-machine](../wowok-machine/SKILL.md)).
-
-**Classify every forward**:
-
-| `namedOperator` | `guard` | User Can Execute? | Operation Path |
-|-----------------|---------|-------------------|----------------|
-| `Some("")` | `None` | ✅ Independently | `order.progress` |
-| `Some("")` | `Some({...})` | ⚠️ Guard passport (no bypass) | `order.progress` + Passport |
-| `None` | Any | ❌ Provider/permission-holder | `progress.operate` |
-| `Some("<other>")` | Any | ❌ Named operator | `progress.operate` |
-
-> **⚠ ROUTING RULE**: `namedOperator=""` (OrderHolder) → use `order.progress` (NOT `progress.operate`); `progress::next` aborts "Permission denied" (code 5) because Progress-level checks don't recognize the OrderHolder short-circuit. The `""` operator is set by `service::buy` (customer = operator). All other cases (non-empty `namedOperator` or `permissionIndex`) → `progress.operate`.
-
-**Detect paths**: terminal (no outgoing) → order ends; refund → 100%→Order Allocator (E5); arbitration → arb nodes; user-blocked → all forwards `namedOperator ≠ ""`.
-
-| Risk Signal | Level |
-|-------------|-------|
-| No user-operable path from critical node | 🔴 Stuck unless provider acts |
-| No refund path | 🔴 No fund recovery |
-| No arbitration path | 🔴 No recourse |
-| All exits favor provider | ⚠️ Provider paid regardless |
-| Forward requires Guard user can't pass | ⚠️ Cooperation needed |
-
-> **🔴 "No refund" + "No arbitration" → strongly advise against purchase.**
-
-### E4 — Guards Analysis
-
-Guard structure/instructions: `schema_query` action='get_guard_design_patterns' + action='get_guard_templates'. Steps: (1) collect unique Guard IDs from E3 `forward.guard.guard` + E1 `order_allocators` + `buy_guard`, dedupe; (2) `guard2file` export each; (3) `wowok_buildin_info` → `info: "guard instructions"`; (4) classify:
-
-| Level | Criteria | Action |
-|-------|----------|--------|
-| 🟢 Simple | Clear purpose, few conditions | Explain |
-| 🟡 Complex | Multi-layer, intent clear | Explain step-by-step |
-| 🔴 Ambiguous | Unclear logic/dependencies | **Warn. Never speculate. User must review file.** |
-
-> **⛔ Never invent Guard logic. Prioritize Guards gating user-operable forwards and refund allocators.**
-
-### E5 — Fund Allocation Rules
-
-From E1 `order_allocators.allocators[]`: cross-ref Guard (E4) → trigger; map to Machine node (E3) → when fires; present outcome.
-
-| Check | Risk |
-|-------|------|
-| No 100%→Order Allocator | 🔴 No refund mechanism |
-| Surplus receiver = provider | ⚠️ Remainder to provider |
-| Triggers only on provider-only paths | ⚠️ Unilateral collection |
-| No allocators on user-operable paths | ⚠️ No financial control |
-
-> **Safeguard**: 100%→Order Allocator on a user-operable forward.
-
-### E6 — Arbitration Availability
-
-Batch query E1 `arbitrations[]` via `onchain_objects` (process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md)). Also `onchain_events` → `type: "ArbEvent"`, `limit: 20`, filter those Arb IDs.
-
-- `arbitrations[]` empty → 🔴 no recourse
-- Any Arb `bPaused === true` → 🔴 unavailable
-- High `fee` / closed `voting_guard` / no history → ⚠️
-
-### E7 — Compensation Fund
-
-From E1: `compensation_fund`, `compensation_lock_duration`.
-
-- Balance < planned order amount → ⚠️ may not cover award
-- Lock near expiry → ⚠️ provider may withdraw
-
-### E8 — Contact Channel
-
-Query `onchain_objects` for E1 `um` ID.
-
-- `um === null` → 🔴 **ABORT**
-- `ims[]` empty → 🔴 **No Messenger**
-- Has active `ims[]` → E9
-
-### E9 — Chain Reputation
-
-Sentiment: `query_toolkit` → `onchain_table_item_entity_linker` for the provider address; compute likes/dislikes/favor from `votes[]` (each vote: `{ who, like, dislike, favor, time }`). Orders: `query_toolkit` → `onchain_table_item_object_linker_tx` with the Service address → `items[].who` = recent Orders binding to it (tx reverse index 0xaaf, FIFO window); batch query those via `onchain_objects` (50/batch, max 200); aggregate dispute rate (`dispute ≠ []` / total) + repeat-buyer ratio. Dispute rate >10% → ⚠️.
-
-**Presenter history (when the merchant also presents to Demands)**: if the provider is active in the demand marketplace, their acceptance history is a quality signal — aggregate it per party and pass as `presenter_history` to `evaluation_operation` (service_risk / demand_match):
-
-1. `onchain_events` type='DemandFeedbackEvent' → filter by the merchant's Service (`service` param) → each event yields `{ demand_id: object, acceptance_score }`.
-2. Or `query_toolkit` query_type='onchain_table_item_demand_presenter' on each Demand the merchant presented to → presenter row carries `acceptance_score` (null = not yet rated).
-
-Omit when the party has no presenter activity — the acceptance rule scores neutral without history.
-
-### E10 — Privacy Information Matching (LocalInfo reuse)
-
-From E1 `customer_required[]` (e.g. `["name", "phone", "shipping_address"]`). Reuse locally-stored private info so the user never re-types it:
-
-1. `query_toolkit` → `query_type: "local_info_list"` to list stored private info (each `name` → `default` + optional `contents`).
-2. Match each `customer_required` name against a local `name` (case-insensitive):
-   - **Matched** → auto-fill the `default`; confirm "use this?" and offer any `contents` alternatives.
-   - **Missing** → ask the user for the value.
-3. **Save** any newly-provided value via `local_info_operation` → `add: { op: "add", data: [{ name, default }] }` (100% local, never on-chain).
-
-> **⛔ Never send private info without explicit user confirmation per item.** Transmission: **Messenger only** (Phase 2), never on-chain.
-
-### E11 — Trust Score Synthesis (Preorder Advice)
-
-`wowok({ tool: "trust_score", data: { service: "<service_id>", depth: "preorder", order_amount: "<planned_amount>" } })`.
-
-- Returns trust score + per-dimension risks + preorder advice (order confidence, game strategies, preference match, industry risks, `blocking_reminders`); non-empty `blocking_reminders` → ⛔ resolve with user BEFORE Phase 2.
-- Compare candidates: `compare_with: ["<id2>", ...]` (1–9, same `depth: "preorder"`) → gains `comparison` block with per-metric bests, **NO overall ranking** (buyer decides).
-- Optional `preferences` / `user_metrics` reflect the buyer's priorities.
-- Fast pre-screen at E1: `depth: "evaluate"` (default); 🔴 `risk_score` <50 → advise early abort, skip E2–E10.
-
-### Pre-Purchase GATE
-
-**Abort**: E1 `bPublished=false`/`bPaused=true`; E8 `um=null`; E3 no-refund + E6 no-arb → strongly advise ABORT; E4 ambiguous Guards → user must review; E11 `blocking_reminders` → resolve. **Any ⚠️** → explain + wait. **All OK** → Phase 2.
+- **AI recommends, the user decides.** Present findings/options neutrally — never purchase, confirm receipt, send privacy info, or file a dispute without the user's explicit go-ahead.
+- **Read MCP, don't recompute.** Workflow facts arrive pre-interpreted: `onchain_topology` (transitions, `terminal_names`, per-transition `recommended_call`, R/A/O/G/AC/SR findings), `query_toolkit participation_radar` (per-account `operable[].recommended_call`), and `_workflow_guidance` attached to Progress objects in `onchain_objects`. Trust `terminal_names` (structural) — never guess terminals from node names.
+- **Never invent Guard logic.** Ambiguous Guard → user reviews the file; never speculate.
+- **Privacy stays off-chain**: local reuse → explicit per-item confirmation → Messenger only.
+- Only `builder` withdraws funds; agents may operate orders but never receive funds. Allocation/Guard rules are immutable after publish.
+- Batch reads are MCP-internal (never fan out per-id). Edges/results flagged `bounded_window` / `truncated` support lower-bound conclusions only.
 
 ---
 
-## Phase 2: Consensus Building
+## Phase 1: Pre-Purchase Due Diligence (MANDATORY GATE)
 
-Foundation = immutable on-chain rules (Phase 1). Messenger = encrypted, self-verifiable supplement (clarifies, cannot override on-chain). Full ops: [wowok-messenger](../wowok-messenger/SKILL.md).
+> Complete E1–E11; user confirms each item. **🔴 ABORT / strongly advise against** · **⚠️ explain risk and wait**.
 
-### 2.1 Send Privacy Info
+### E1 — Service basic status
+`query_toolkit` → `onchain_objects` for the service; save `bPublished`, `bPaused`, `sales`, `machine`, `buy_guard`, `customer_required`, `arbitrations`, `compensation_fund`, `compensation_lock_duration`, `order_allocators`, `um`.
+- `bPublished === false` or `bPaused === true` → 🔴 ABORT.
 
-Contact `ims[]` from E8. Send E10 info via `messenger_operation` → `send_required_info` (LocalInfo field names assembled in one E2E message), or `send_message` for free-form text. **Messenger only — never on-chain.** Explicit user confirmation per item. After sending, persist any newly-provided value via `local_info_operation` `add` (so future orders auto-fill).
+Fast pre-screen: `trust_score` with default `depth: "evaluate"`; 🔴 `risk_score < 50` → offer early abort, skip E2–E10.
 
-### 2.2 Negotiate
+### E2 — Product / WIP
+From E1 `sales[]`, skip `suspension === true`. When `wip_hash` is non-empty it is a buy-side MUST: verify with `wip_file` `{type:"verify", wipFilePath, hash_equal}` before purchase.
+- Verification fails → 🔴 WIP tampered after publish · no WIP URL → ⚠️ no product evidence · empty hash → weaker commitment.
 
-Clarify via Messenger: deliverables (E2 WIP), timeline (E3 nodes), refund/cancellation (E3/E5), privacy received (E10). Evidence value requires recipient **explicit confirmation** (ARK signature). WTS evidence: [wowok-messenger](../wowok-messenger/SKILL.md).
+### E3 — Machine workflow (core)
+Primary: `query_toolkit` → `query_type: "onchain_topology"`, `focus: "<service_id>"` (default `table_edges: ["machine.node"]`). It returns the bound Machine's flattened `transitions` (per-forward `guard` / `named_operator` / `permission_index` / `weight`) with:
+- **`recommended_call` per transition** — the exact execution route (`onchain_operations` `data.progress` for `named_operator=""` OrderHolder forwards incl. the permission#5 wrong-route warning; `workflow_operation` `data.operate` for permission-index/named-operator forwards; Guard-bound forwards carry the passport requirement). Use it verbatim — do not hand-route.
+- structural `terminal_names`, and objective findings (e.g. R4 process single point, G2 single substitute = hold-up, unbound-forward findings) plus `orders_completion`.
 
-### 2.3 Consensus GATE
+Checks and verdicts (surfaced by findings + your reading of transitions):
+- Entry node (`prev_node: ""`) with no forward → 🔴 orders stuck at `current=""`.
+- No user-operable path on a critical node → 🔴 stuck unless provider acts.
+- No refund path (100%→Order allocator on a user-operable forward) → 🔴 no recovery.
+- No arbitration path → 🔴 no recourse. **No refund AND no arbitration → strongly advise against purchase.**
+- All exits pay the provider regardless → ⚠️; a forward needs a Guard the user cannot satisfy → ⚠️ cooperation needed.
 
-- [ ] E10 info sent and acknowledged
-- [ ] Seller confirmed deliverables and edge cases
-- [ ] WTS evidence generated
+Use `machineNode2file` (export once, parse locally — never node-by-node; see [wowok-machine](../wowok-machine/SKILL.md)) only when full node JSON is needed for explanation.
+
+### E4 — Guards
+1. Collect unique Guard IDs from E3 transition guards + E1 `order_allocators` + `buy_guard` (dedupe); export each with `guard2file`.
+2. Semantics: `schema_query` `get_guard_design_patterns` + `get_guard_templates`; generic instructions: `wowok_buildin_info` `info: "guard instructions"`.
+3. Classify: 🟢 clear purpose → explain · 🟡 multi-layer but clear intent → explain step by step · 🔴 ambiguous logic/dependencies → **warn; user must review the file**. Prioritize Guards on user-operable forwards and refund allocators.
+
+### E5 — Fund allocation
+Read E1 `order_allocators.allocators[]` (topology also carries allocation edges). For each: cross-ref its Guard (E4) → trigger condition; map to the Machine node (E3) → when it fires; state the outcome in money terms.
+- No 100%→Order allocator → 🔴 no refund mechanism · surplus receiver = provider → ⚠️ · triggers only on provider-only paths → ⚠️ unilateral collection · no allocators on user-operable paths → ⚠️ no financial control. Safest: 100%→Order allocator on a user-operable forward.
+
+### E6 — Arbitration
+Batch query E1 `arbitrations[]` via `onchain_objects`; also `onchain_events` `type: "ArbEvent"` (recent, filter those IDs). Process detail: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+- Empty list → 🔴 no recourse · any `bPaused === true` → 🔴 unavailable · high fee / closed `voting_guard` / no history → ⚠️.
+
+### E7 — Compensation fund
+From E1: `compensation_fund`, `compensation_lock_duration`. Balance below planned order amount → ⚠️; lock near expiry (provider can withdraw) → ⚠️.
+
+### E8 — Contact channel
+`onchain_objects` for E1 `um`: `um === null` → 🔴 ABORT; `ims[]` empty → 🔴 no Messenger; active IMs → proceed.
+
+### E9 — Chain reputation
+The aggregate view is already computed inside `trust_score` (reviews dimension) and `query_toolkit relationship_profile` (derived relationships) — present those rather than hand-aggregating.
+Only when raw evidence is needed (all reads batched, ≤50/batch): `onchain_table_item_entity_linker` (provider address → `votes[]` {who, like, dislike, favor}) + `onchain_table_item_object_linker_tx` (Service address → recent binding Orders, FIFO 0xaaf window — lossy) → dispute rate / repeat-buyer ratio; >10% dispute → ⚠️.
+Presenter history (merchant active on Demands): aggregate `onchain_events` `DemandFeedbackEvent` filtered by the merchant's Service, or `onchain_table_item_demand_presenter` per Demand (row carries `acceptance_score`, null = unrated); pass as `presenter_history` to `evaluation_operation` (`service_risk` / `demand_match`). Omit when no presenter activity (neutral without history).
+
+### E10 — Privacy matching (LocalInfo)
+From E1 `customer_required[]` (e.g. name/phone/shipping_address):
+1. `query_toolkit` → `local_info_list`; match each required name (case-insensitive) to a stored entry.
+2. Matched → propose the `default` + offer `contents` alternatives; missing → ask the user.
+3. Persist new values with `local_info_operation` `add` (100% local, never on-chain).
+> ⛔ Never transmit any private item without explicit per-item confirmation. Transmission is Messenger only (Phase 2).
+
+### E11 — Trust-score synthesis
+`trust_score` `{ service, depth: "preorder", order_amount }` → score + per-dimension risks + preorder advice (confidence, game strategies, preference match, industry risks, `blocking_reminders`). Non-empty `blocking_reminders` → ⛔ resolve with the user before Phase 2. Compare candidates with `compare_with` (1–9, same depth): a `comparison` block with per-metric bests, **no overall ranking**.
+
+### Pre-purchase gate
+🔴 Abort: E1 unpublished/paused · E8 `um=null` · E3 no-refund + E6 no-arb · E4 ambiguous Guards (user review) · E11 unresolved `blocking_reminders`. Every ⚠️ = explain and wait. All clear → Phase 2.
+
+**Dependency**: E1 first; E2/E8/E10/E7/E6 parallel after E1; E3→E4→E5 strict chain; E9 follows E3; E11 last (aggregates everything).
 
 ---
 
-## Phase 3: Order Creation (CUSTOMER lifecycle)
+## Phase 2: Consensus building
 
-Not in schema: excess `buy.total_pay` auto-refunded; agents cannot withdraw. Discounts: query `onchain_received` (type `0x2::service::Discount`), filter by `service`, validate time/benchmark; rate = `total_pay × (off / 10000)`; fixed = `min(off, total_pay)`. Post-creation: notify via Messenger with order ID.
+On-chain rules (Phase 1) are immutable truth; Messenger is the encrypted, self-verifiable supplement — it clarifies, never overrides. Full ops: [wowok-messenger](../wowok-messenger/SKILL.md).
+
+1. **Send privacy** to E8 `ims[]` via `messenger_operation` `send_required_info` (one E2E message) or `send_message`; per-item confirmation; persist new values via `local_info_operation add`.
+2. **Negotiate**: deliverables (E2 WIP), timeline (E3 nodes), refund/cancellation (E3/E5), privacy receipt (E10). Evidence value requires the recipient's explicit confirmation (ARK signature); generate WTS evidence.
+3. **Gate**: info sent & acknowledged · seller confirmed deliverables and edge cases · WTS evidence generated. Notify the order ID by Messenger after purchase.
 
 ---
 
-## Phase 4: Order Operations
+## Phase 3: Order creation
 
-### Progress Advancement
+- Buy (`onchain_operations` service `buy`): `wip_hash` MUST equal the current sale hash (never `""` when set); coin ≥ amount, excess auto-refunds to the sender in the same tx; agents cannot withdraw.
+- Discounts: `query_toolkit` → `onchain_received` with type `0x2::service::Discount`, filter by `service`, validate benchmark/time validity per the tool schema (rate/fixed semantics described on `discount_type`/`off`); pass the chosen Discount in the buy call.
 
-When user reaches a node, cross-reference Phase 1: (1) E3 user-operable forwards; (2) E4 Guard requirements; (3) E5 financial outcome. Present all three — never just the operation name.
+---
 
-- `namedOperator === ""` + no Guard → `order.progress`
-- `namedOperator === ""` + Guard → passport required (no bypass)
-- `namedOperator !== ""` → not user-operable
+## Phase 4: Order operations
 
-### Progress.current="" Diagnostic (stuck at initial state)
+When the user reaches a node, present the forward's three aspects together — never just an operation name:
+1. **Execution route**: the forward's `recommended_call` (from `participation_radar` / `_workflow_guidance`): `data.progress` for OrderHolder forwards, `data.operate` for others.
+2. **Guard requirements** (E4) — bound Guard means validated passport, no bypass.
+3. **Financial outcome** (E5) — which Allocation fires.
 
-Root cause: entry node (`prev_node: ""`) has empty `forwards[]`. Fix: clone Machine + add forward + republish + rebind (nodes immutable after publish). MCP `query_toolkit` attaches `_diagnostic` (cause + 5-step fix) when `current=""` is detected.
+`current === ""` diagnosis: `onchain_objects` attaches `_diagnostic` (cause + republish fix) on the Progress object — relay it verbatim.
 
 ---
 
 ## Phase 5: Arbitration
 
-Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md). Flow: `arbitration.dispute` → WTS evidence → Messenger → `order.arb_confirm` → voting → (`order.arb_objection`) → `order.arb_claim_compensation`.
+Flow: `onchain_operations` arbitration `dispute` → WTS evidence → Messenger → order `arb_confirm` → voting → (`arb_objection`) → `arb_claim_compensation`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
 
-### Evidence checklist BEFORE filing (evaluation_operation)
-
-Before calling `arbitration.dispute`, review the WHOLE evidence collection at once — never file with an unreviewed pile:
-
-```json
-{ "tool": "evaluation_operation", "data": { "action": "evidence_review", "items": [
-  { "id": "chat-2026-09.wts", "kind": "signature_photo", "hash_committed": true, "digital_check_passed": true, "proof_ref": "0x<proof_object>" },
-  { "id": "waybill.jpg", "kind": "delivery_proof", "hash_committed": true, "contradiction": true }
-] } }
-```
-
-- Output partitions items into `usable` / `manual` / `rejected` and returns `proof_candidates` (auto-passed items with their on-chain Proof refs) plus a `dispute_hint`.
-- Present the `proof_candidates` list to the user and let them PICK which to reference — never attach automatically. The on-chain `dispute` op has no proof field; chosen candidates travel as references inside the dispute description / accompanying Messenger material.
-- `dispute_hint` saying "No evidence passed automatic review" → collect/anchor more evidence (Messenger WTS → Proof) BEFORE filing; a dispute without auto-passed evidence is likely dead on arrival.
-
-Not in schema: fee paid separately (not from Order); one compensation claim per Order; source = `compensation_fund` (E7).
+**Before filing**, review the whole evidence pile at once with `evaluation_operation` `action: "evidence_review"` (list mode `items[]`: id/kind/hash_committed/digital_check_passed/contradiction/proof_ref; kinds per the tool schema).
+- Output partitions `usable` / `manual` / `rejected` and returns `proof_candidates` + `dispute_hint`.
+- Let the user PICK which proof candidates to reference (never auto-attach; the on-chain `dispute` has no proof field — references travel in the description / Messenger).
+- "no evidence passed" → anchor more evidence (Messenger WTS → Proof) before filing.
+- Fee is paid separately (not from the Order); one compensation claim per Order; source is `compensation_fund` (E7).
 
 ---
 
-## Fund Management
+## Fund management (builder only)
 
-Builder-only: `order.transfer_to` (ownership), `order.receive` (withdraw). Agents may execute `receive`, but only the builder receives funds.
+`order.transfer_to` (ownership, irreversible) and `order.receive` (withdraw) are on `onchain_operations` operation_type `order`. Agents may execute `receive`, but only the builder gets the funds.
 
-### Withdraw via `order.receive`
-
-After Allocation distributes `CoinWrapper` objects to the Order, the builder MUST call `order.receive` to unwrap + withdraw; otherwise funds stay locked as `CoinWrapper`.
-
-- **Schema**: `receive` accepts `ReceivedObjectsOrRecentlySchema` (consistent with `owner_receive` on ALL objects). Pass directly — do NOT wrap in `{result: ...}` (that is `QueryReceivedResult`).
-- **Simplest form** — `"recently"` auto-receives all recently-received `CoinWrapper`:
+After an Allocation distributes `CoinWrapper` to the Order, the builder MUST `receive` to unwrap + withdraw (funds stay locked otherwise):
 
 ```json
 { "tool": "onchain_operations", "data": { "operation_type": "order", "data": { "object": "<order_id>", "receive": "recently" } }, "env": { "account": "<builder>", "network": "testnet", "confirmed": true } }
 ```
 
-- **Precise form** — pass an explicit `[{id, type}]` array, or pass the `ReceivedBalance` from `query_toolkit` → `query_type: "onchain_received"` (type `CoinWrapper`) directly as `receive`.
-- **Result** — builder receives the underlying token (CoinWrapper auto-unwrapped); digest returned.
-
-**When to call**:
-
-| Trigger | Action |
-|---------|--------|
-| Allocation fires (refund on `return_approved`) | `order.receive` → withdraw to builder |
-| Arbitration awards compensation | `order.receive` → withdraw to builder |
-| Multi-stage allocation (partial refund + deduction) | `order.receive` `"recently"` (all at once) |
-| Order closed with no allocation | Do NOT call (nothing to withdraw) |
-
-**Pitfalls**: don't wrap in `{result:...}`; query first (don't call with no funds); only builder receives; CoinWrapper auto-unwraps to the underlying token.
+- `"recently"` = all recently-received CoinWrapper; precise form = explicit `[{id,type}]` or the `onchain_received` (type `CoinWrapper`) balance passed DIRECTLY (never wrap in `{result:...}`).
+- Call when: refund allocation fires · compensation awarded · multi-stage split (one `"recently"` clears all). Do NOT call when the order closed with no allocation. Query first — don't call with no funds.
 
 ---
 
-## Phase 6: Customer Intelligence (MCP-Handled)
+## Phase 6: Customer intelligence (MCP-handled)
 
-> **MCP auto-populates `semantic.customer_advice`** in order/query responses when `customer_intelligence` is ON (default). Read from MCP output — do NOT recompute.
+When `customer_intelligence` is ON (default), order/query responses carry `semantic.customer_advice` — read it, do not recompute:
+- `reminders[]`: `required` (blocks purchase) / `recommended` (strong caution) / `info` / `reminder` (timed nudge).
+- `risk_score` 0–100 (🟢≥85 · 🟡70–84 · 🟠50–69 · 🔴<50) · `preference_match` 0–100 (`matches`/`mismatches`; ≥75 strong, <50 mismatch).
+- Red lines: no arb + no refund path, OR `compensation_ratio < 0.5`. Post-purchase: monitor refund triggers, WIP hash mismatch, merchant unreachable (>3d warn → >7d arb), evidence ≥3 items.
+- Runtime toggle: `config_operation` `action:"toggle" service:"order_monitor"` (default OFF; enable when active orders exist).
 
-Key fields: `reminders[]` (`required` blocks purchase; `recommended` = strong caution; `info` = advisory; `reminder` = timed nudge); `risk_score` 0-100 (🟢≥85 | 🟡70-84 | 🟠50-69 | 🔴<50 advise against); `preference_match` 0-100 with `matches`/`mismatches` (≥75 strong, <50 mismatch).
-
-**Red lines** (do not purchase): no arb + no refund path, OR `compensation_ratio < 0.5`. **Post-purchase**: monitor refund Allocator triggers, WIP hash mismatch, merchant unreachable (>3d warning, >7d arb), evidence collection (≥3 items). **Runtime toggle**: `config_operation` → `action: "toggle"`, `service: "order_monitor"` (default OFF).
-
-**Plug-in evaluation** (`evaluation_operation` tool — read result, do NOT recompute):
-- `service_risk` — 4-dimension risk (workflow/fund/trust/behavior) via the pluggable engine; inject red lines (`requirements`) or unplug dimensions (`overrides`).
-- `demand_match` / `service_match` — rank candidate services/demands against a capability vector (industry/region/price/trust/capabilities).
-- `capability_gap` — unmet requirements vs a service; `compose_service` — combine services to cover a demand.
-- `node_game` / `arb_game` — best-move + payoff at a Progress node / Arb state (pair with `participation_radar` output).
-The role decides and acts; the tool is read-only.
-
----
-
-### Phase Dependency
-
-E1 (Service) → E2 (Products/WIP), E8 (Contact), E10 (Privacy), E7 (Compensation), E6 (Arbitrations) run in parallel after E1. E3 (Machine) → E4 (Guards) → E5 (Allocators) is a strict chain. E9 (Reputation) follows E3. E11 (Trust Score) runs LAST — aggregates all prior findings.
+Plug-in `evaluation_operation` (read-only; read results, don't recompute): `service_risk` (4-dimension risk, inject `requirements`/`overrides`), `demand_match` / `service_match` (rank vs capability vector), `capability_gap`, `compose_service`, `node_game` / `arb_game` (best-move + payoff; pair with `query_toolkit participation_radar` output). The role decides and acts.

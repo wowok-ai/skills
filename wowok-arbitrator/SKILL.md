@@ -2,237 +2,108 @@
 name: wowok-arbitrator
 description: "WoWok Arbitrator — build and operate on-chain arbitration services. Create Arbitration objects, configure voting rules (open or guard-based weighted), manage dispute cases through their full lifecycle, and earn fees from resolution. Core value: achieve trust consensus between merchants and users through transparent, fair, and efficient dispute resolution. Use when: User wants to create/configure an Arbitration service; User needs to handle dispute cases and voting processes; User wants to design voter eligibility and weight mechanisms; User mentions \"arbitration\", \"dispute\", \"voting\", \"arb\", \"judge\"."
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   role: arbitrator
   related: "wowok-order, wowok-messenger"
 ---
 
 # WoWok Arbitrator Guide
 
-Build trust through fair dispute resolution. Arbitration services enable neutral third parties to resolve conflicts between customers and merchants, earning fees while establishing on-chain reputation.
-
-> **Related Skills**: [wowok-order](../wowok-order/SKILL.md) (customer disputes), [wowok-provider](../wowok-provider/SKILL.md) (service arbitration config), [wowok-machine](../wowok-machine/SKILL.md) (workflow analysis), [wowok-messenger](../wowok-messenger/SKILL.md) (evidence exchange)
-
----
-
-## MCP Knowledge Layer
-
-The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
-
-| Content | Access via (MCP action) | Applied Via |
-|---------|--------------------------|-------------|
-| Guard design rules (structural layers, data source classification, voting_guard table design) | `schema_query` action='get_guard_design_patterns' | `goal_operation` action='aggregate_risks' |
-| Safety rules (confirmation levels, immutability, object reuse) | `schema_query` action='get_safety_rules' | Pre-publish checks + `goal_operation` action='aggregate_risks' |
-| Arbitration-specific risks | auto-applied | `goal_operation` action='aggregate_risks' |
-
-This Skill keeps the arbitration **conversation flow**, **evidence collection** scripts, and **dispute resolution** guidance — the MCP layer handles the rule evaluation.
+> Build trust through fair dispute resolution — neutral third-party resolution of customer/merchant conflicts, paid per case.
+> **Tools**: `onchain_operations` operation_type=`arbitration` (service + most case ops); customer-side case ops live on operation_type=`order`.
+> **Related**: [wowok-order](../wowok-order/SKILL.md) · [wowok-provider](../wowok-provider/SKILL.md) · [wowok-messenger](../wowok-messenger/SKILL.md)
 
 ---
 
-## Core Interaction Principles
+## What the MCP already handles
 
-These four principles govern every arbitration build/handle step. They mirror the wowok-onboard model and are non-negotiable.
+- Guard design rules (voting-table design, `FixedValue`/`GuardIdentifier` weight sources, structural checks): `schema_query` action=`get_guard_design_patterns`; safety/confirmation: `get_safety_rules`; applied through `goal_operation` action=`aggregate_risks` and the publish/pre-call gates.
+- Move guidance and the arbitration schema (`onchain_operations_arbitration`) carry exact field constraints — read the call output, don't memorize this file.
 
-1. **Review-first**: State (a) what the AI understood about the arbitration, (b) the dependency order to build, and (c) the interaction contract — before the first choice.
-2. **User-driven**: Every step is an explicit user decision; the AI provides a `recommend` but never auto-advances.
-3. **Reuse / Customize / Discover (choose one of three)**: For every component (Permission, Voting/Usage Guards, Contact), surface all three avenues — reuse an existing object, customize a new one, or discover from other projects / the system.
-4. **Default-config disclosure**: Disclose a new object's default config + important info + caveats BEFORE the user decides. No silent defaults.
+Keep the conversation flow, the governance questions, and the evidence discipline.
 
 ---
 
-## ⚠️ PRE-FLIGHT: Required Items Checklist
+## Interaction principles
 
-**THIS SECTION IS MANDATORY.** Before ANY arbitration service creation, the AI MUST collect explicit user confirmation for EVERY required item. **Do NOT skip, do NOT fabricate, do NOT proceed with missing items.**
-
-### The Golden Rule
-
-```
-NEVER guess the user's fee model, voting structure, or Guard design.
-These are BUSINESS and GOVERNANCE decisions that ONLY the user can make.
-
-User hasn't provided it → ASK.
-User provides incomplete info → ASK for clarification.
-User says "just make something up" → REFUSE and explain why each item matters.
-```
-
-### Required Items
-
-| # | Item | User Must Provide | Why Not Fabricate |
-|---|------|-------------------|--------------------|
-| **1** | **Account** | Which account to operate from. Default `""` is fine. | Safe default exists |
-| **2** | **Arbitration Name** | Service name. What kind of arbitration? | Your brand and reputation on-chain |
-| **3** | **Fee** | How much per case? (e.g. "10 WOW per dispute") | IS your revenue model — you cannot guess pricing |
-| **4** | **Voting Guard(s)** | Who votes and with what weight? Open voting (centralized) or Guard-based (decentralized)? | ⛔ Guards are **immutable after creation** — wrong design = create replacement Guard |
-| **5** | **Usage Guard** | Who can file disputes? Public or restricted? | Controls your case volume and quality |
-| **6** | **Contact (um)** | Messenger Contact name/ID for evidence exchange | Without this, customers cannot submit evidence — service is broken |
-
-### Information Collection Protocol
-
-Present checklist Steps 1-6 to user. Each item: "Reuse or create new? Provide details." Track status: [pending] / [confirmed: reuse <id>] / [confirmed: create]. ⛔ GATE: ALL Steps 1-6 must be [confirmed] before any on-chain action — NOT confirmed → STOP. Ask. Do NOT suggest creating arbitration.
-
-All subsequent on-chain operations use Step 1 (Account) as `env.account`.
-
-### Anti-Fabrication Rules (HARD Constraints)
-
-| Never... | Because... |
-|----------|------------|
-| Invent a fee amount | You don't know their pricing strategy |
-| Assume usage_guard logic | You don't know their target audience |
-| Skip the checklist | Arbitration design decisions are on-chain and visible |
+1. **Review-first**: restate the arbitration design, the build dependency order, and the interaction contract before the first choice.
+2. **User-driven**: every governance/business parameter is an explicit user decision; recommend, never auto-advance.
+3. **Reuse / customize / discover** for Permission, Guards, Contact.
+4. **Default disclosure**: show defaults and consequences before deciding. Default network **testnet** — mainnet is a different trust posture.
 
 ---
 
-## Core Architecture
+## Pre-flight: business decisions (gate before any write)
 
-### Two-Layer Design
+Never invent a fee, a voting structure, or Guard logic — missing → ASK; "make something up" → REFUSE.
 
-| Layer | Object | Purpose | Lifecycle |
-|-------|--------|---------|-----------|
-| **Service** | Arbitration | Rules, fees, voter configuration | Permanent |
-| **Case** | Arb | Individual dispute with state machine | Per dispute |
+1. **Account** (`env.account`, default `""`).
+2. **Arbitration name + description/location** — the public brand.
+3. **Fee** per case (`fee`, smallest units) — revenue model; customer pays it when filing.
+4. **Voting Guards** — open (empty list, permission vote weight 1) or guard-based weighted list (≤50 Guards). Immutable once each Guard is created.
+5. **Usage Guard** (`usage_guard` or null) — who is allowed to file; null = anyone.
+6. **Contact `um`** — without it evidence exchange breaks.
 
-**Separation of Powers**:
-- **Arbitrator controls**: Who can vote, voting weights, final verdict (`indemnity`)
-- **Customer controls**: Accept result or object, claim compensation timing
-
-Neither party can force outcome unilaterally — the design forces collaboration toward consensus.
-
-### Arb State Machine
-
-Customer dispute creates Arb directly at (1). State (0) entered only via `reset`.
-
-| State | Available Operations | Next State |
-|-------|---------------------|------------|
-| **(0) Revision Pending** | Customer (via Order): `arb_confirm` | → (1) |
-| **(1) Arbitrator_confirming** | Arbitrator: `confirm` → (2), `reset` → (0), feedback | → (2) or (0) |
-| **(2) Voting** | Arbitrator: vote, set deadline, `arbitration` → (3), feedback | → (3) |
-| **(3) Arbitrated** | Customer (via Order): `arb_objection` → (4), `arb_claim_compensation` → (5) | → (4) or (5) |
-| **(4) Objectionable** | Arbitrator: `reset` → (0), feedback | → (0) |
-| **(5) Finished** | Arbitrator: `withdraw` → (6) | → (6) |
-| **(6) Withdrawn** | Terminal | — |
-
-**Key Flows**:
-- **Standard**: (1) → confirm → (2) → arbitration → (3) → arb_claim_compensation → (5) → withdraw → (6)
-- **With Revision**: (1) → reset → (0) → arb_confirm → (1) → confirm → (2) → ...
-- **With Objection**: ... → (3) → arb_objection → (4) → reset → (0) → ...
+⛔ All six confirmed before creating. Track pending/confirmed like the provider checklist.
 
 ---
 
-## Phase 1: Build Your Service
+## Architecture
 
-### Essential Configuration
+Two objects: **Arbitration** (the service: fee, voting/usage Guards, `um`, `bPaused`, `balance`, Permission — permanent) and **Arb** (one per case: state machine, propositions, votes, fee held in escrow, verdict).
 
-| Field | Purpose | Key Decision |
-|-------|---------|--------------|
-| `fee` | Revenue per case | Balance accessibility with sustainability |
-| `voting_guard` | Who votes, with what weight | Open (centralized) vs Guard-based (decentralized) |
-| `usage_guard` | Who can file disputes | Public vs invitation-only |
-| `um` | Contact for evidence exchange | Messenger addresses for WTS verification |
+Separation of powers: the arbitrator sets process and verdict (`indemnity`); the CUSTOMER confirms filings, objects, and claims compensation. Neither side can finish a case unilaterally.
 
-**⚠️ Start paused** (`pause: true`). **Forgetting to unpause = all disputes silently rejected with no error.** Complete all configuration — fee, guards, um — before unpausing.
+### Arb state machine (codes are the on-chain names used by `arb_game` too)
 
-**⚠️ Guard Immutability**: Once a Guard is created, its rules **cannot be modified**. If your `voting_guard` design is wrong, you must create a replacement Guard and reconfigure the Arbitration — wasteful but not fatal. Test with `gen_passport` before finalizing.
+| # | State | Who moves, how |
+|---|---|---|
+| 0 | `Principal_confirming` | Customer via order `arb_confirm` ({arb, confirm, proposition?, description?}) → 1 |
+| 1 | `Arbitrator_confirming` | Arbitrator `confirm` → 2 · `reset` (with feedback) → 0 · `feedback` |
+| 2 | `Voting` | `vote` · `voting_deadline_change` · `arbitration` (verdict) → 3 · `feedback` |
+| 3 | `Arbitrated` | Customer: `arb_objection` → 4 · `arb_claim_compensation` → 5 |
+| 4 | `Objectionable` | Arbitrator `reset` → 0 (only exit) · `feedback` |
+| 5 | `Finished` | Terminal; fee withdrawable immediately |
+| 6 | `Withdrawn` | Terminal |
 
-**⚠️ Permission Isolation from Service** (CRITICAL for mainnet trust): The Arbitration's Permission object MUST be separate from the Service's Permission object. Sharing the same Permission — or having overlapping owner/admin addresses — breaks dispute fairness because the merchant can control arbitration operations (vote, confirm, execute rulings). For mainnet deployment, use a completely independent third-party Permission with a different owner and admin list. The evaluation engine deducts risk scores significantly for Permission overlap (-30 for same Permission, -20 for owner/admin overlap). Testnet may tolerate shared Permission for simplicity, but mainnet users should treat this as a critical trust factor.
-
-### Voting Modes
-
-**Open** (`voting_guard: []`): arbitrator casts votes directly (weight = 1). **Guard-based** (`voting_guard: [{guard, vote_weight}, ...]`): voters authenticate via Passport + Guard; weight from `FixedValue(u32)` or `GuardIdentifier(u8)`; max 50 guards (tiered voting). Voting guard construction rules (table design, computation trees, `GuardIdentifier` requirements) are served by MCP `schema_query` action='get_guard_design_patterns'. Test with `gen_passport` before finalizing.
-
----
-
-## Phase 2: Handle Cases
-
-### Case Lifecycle
-
-| # | Step | State | Action |
-|---|------|-------|--------|
-| 1 | **Arrival** | (1) | Arb created via customer `dispute`. Fee locked, propositions recorded. |
-| 2 | **Review** ⚠️ | (1) | `confirm` (proceed) or `reset` (send back). **Insufficient → MUST reset.** |
-| 3 | **Voting** | (2) | Vote, set `voting_deadline` (≤ 3 days). Max 520 voters. |
-| 4 | **Finalize** ⛔ | (2)→(3) | `arbitration`: sets `feedback` + `indemnity`. **Irreversible** by arbitrator. |
-| 5 | **Resolution** | (3) | Customer: `arb_claim_compensation` → (5), or `arb_objection` → (4). |
-| 6 | **Objection** | (4) | Only `reset` → (0) for revision. |
-| 7 | **Withdraw** | (5)/(3)/(4) | Finished: **immediate**. Others: ⛔ **30-day mandatory wait**. |
-
-**Reset feedback channels**:
-
-| Channel | Use | Visibility |
-|---------|-----|------------|
-| **Messenger** (preferred) | Specific evidence, privacy-sensitive | Encrypted, off-chain |
-| **on-chain feedback** | General clarification, procedural | Public, permanent |
-
-**Best-move advice** (`evaluation_operation` → `arb_game`): pass `status` (7-state) + `perspective` (`customer`/`merchant`/`arbitrator`) to get ranked moves (optimal + payoff + risk). Read the result; the role decides and acts.
+`feedback` may be written in ANY non-terminal state (0–4) and emits a permanent public `FeedbackEvent`. Flows: standard 1→2→3→5→6; revision loops through 0; objection loops 3→4→0.
 
 ---
 
-## Phase 3: Business Model
+## Build phase
 
-### Revenue Flow
+Create the Arbitration **paused** (`pause: true`), configure, then `pause: false` last. While paused, filing ABORTS with arbitration error `E_PAUSED` (4) — it is an on-chain error, not a silent reject, but the practical damage is the same: no cases can arrive. Verify unpaused before going live.
 
-Customer pays fee → locked in `Arb.fee` per case → `arb_withdraw()` transfers to `Arbitration.balance` → distributed via Allocation (revenue sharing) or Treasury (controlled withdrawal).
-
-### Compensation System
-
-Arbitrator sets `indemnity` → Customer claims via `order.arb_claim_compensation` → Funds transfer from `service.compensation_fund` to Order.
-
-> **Note**: The compensation payout comes from the **provider's** compensation_fund, not the arbitrator's funds. Customers should assess the provider's fund balance before purchase — this is covered in [wowok-order](../wowok-order/SKILL.md) E7 (Compensation Fund).
+- `fee`, `description`, `location` are settable by Permission.
+- `voting_guard: {op:'add'|'set'|'remove'|'clear', guards:[…]}`. Each entry is `{guard, vote_weight}`: fixed u32 weight, or a u8 Guard-table identifier whose submitted number becomes the voter's weight at vote time (`FixedValue` / `GuardIdentifier`). Open = empty list → plain Permission vote, weight 1. Test every Guard with standalone `gen_passport` before adding — Guards are immutable from creation; a flawed voting Guard can only be replaced (the list itself stays mutable while configured pre-service / as allowed).
+- `usage_guard`: a Guard address or null; when set, filing MUST pass it via Passport (`dispute_with_passport`), else plain `dispute` aborts `E_NEED_PASSPORT` (6).
+- `um`: a Contact; evidence flows through its Messenger addresses.
+- **Permission isolation (mainnet trust)**: the Arbitration's Permission MUST differ from every Service it's bound to — binding a shared one aborts `E_ARBITRATION_PERMISSION_CONFLICT` (33, enforced at Service bind). Separately, the buyer-side risk model scores same-Permission as **−6 points (critical)** and overlapping owner/admin as **−4 points (warning)** inside its 20-point trust dimension — even distinct objects with the same controllers fail the intent. Use a genuinely independent third-party Permission.
 
 ---
 
-## Integration
+## Handling a case
 
-### Evidence (Messenger)
+1. **Arrival**: customer files via `arbitration` `dispute: {order, description?, proposition[], fee:{balance}, namedArb?}` (≤20 propositions; fee locked in the Arb; excess fee is refunded). Arb appears at state 1.
+2. **Review (1)**: `confirm: {arb, voting_deadline}` — proceed, or `reset` with feedback when the filing is insufficient (don't escalate thin cases).
+   - `voting_deadline` is ms: **0 (default) = already-passed → direct verdict, voting impossible**; **null = open-ended**; a future timestamp = voting window (recommend ≥24h; ~3 days is a convention, NOT a chain limit).
+3. **Voting (2)**: `vote: {arb, votes:[indices…], voting_guard?}` — 0-based proposition indices; re-voting REPLACES the prior vote; ≤520 voters. With a deadline set, `arbitration` cannot run until it has passed (`E_VOTING_DEADLINE_NOT_PASSED`).
+4. **Verdict (2→3)**: `arbitration: {arb, feedback, indemnity}` — irreversible for the arbitrator; only customer objection/claim follows. **Indemnity is capped at 3× the order amount** (`MAX_INDEMNITY_MULTIPLE`, abort 9) and is paid from the SERVICE's `compensation_fund`, never from arbitrator funds.
+5. **Customer branch (3)**: claim → 5, or object with `arb_objection` → 4 → your `reset` sends it to 0 for revision.
+6. **Fee withdrawal**: `arb_withdraw: {arb}` — immediate at Finished; from Arbitrated/Objectionable only after 30 days past indemnity time (`WITHDRAW_DURATION_TIME`, abort 8). Then move the balance onward with `fees_transfer: {to:{allocation|{treasury}}, payment_remark, payment_index}`.
 
-1. Customer queries Arbitration's `um` → gets Messenger addresses
-2. Customer sends WTS evidence files (encrypted, off-chain)
-3. Arbitrator verifies WTS authenticity (`verify_wts`)
-4. Only verified evidence considered valid
-
-Dispute initiators should pre-screen their collection via `evaluation_operation` action `evidence_review` (list mode): it partitions items into usable/manual/rejected and yields `proof_candidates` to reference in the dispute description (the human picks — nothing attaches automatically). When a party's evidence is thin, point them to it before voting.
-
-**⚠️ `um` must be configured before unpausing** — without it customers cannot submit evidence.
-
-### Service Provider
-
-Providers list approved Arbitrations in their Service. Customers choose from this list when disputes arise.
+**Move advice**: `evaluation_operation` action=`arb_game` with `status` (one of the 7 state names) and `perspective: customer|merchant|arbitrator` returns ranked moves/payoffs/risk — read-only; the role decides.
 
 ---
 
-## Design Principles
+## Evidence & reputation
 
-- **Fairness**: Separated powers (neither side can force outcome), revision cycles (`reset`), customer objection rights, transparent on-chain rules, 30-day withdrawal protection.
-- **Efficiency**: Clear state machine, weighted voting to reduce spam, deadline enforcement, fee incentive for timely resolution.
-- **Trust**: ⚠️ Feedback is permanently public — be reasoned and professional. Apply consistent standards. Monitor Messenger, verify WTS promptly.
+- Customer reads the Arbitration's `um`, sends WTS evidence off-chain via encrypted Messenger; arbitrator runs `messenger_operation` `verify_wts` before considering anything — unverified evidence is not evidence.
+- Tell initiators to pre-sort with `evaluation_operation` action=`evidence_review` (list mode): usable/manual/rejected partition + `proof_candidates` for the dispute description; the human selects — nothing auto-attaches.
+- On-chain `feedback` is permanent and public: reasoned, professional, consistent. Use Messenger for anything private.
 
----
+## Hard constraints (quick reference)
 
-## Quick Reference
-
-### Critical Constraints
-
-- Max 20 propositions per case
-- Max 520 voters per case
-- Max 50 voting guards per Arbitration
-- ⛔ 30-day withdrawal wait for non-finished cases (mandatory, cannot bypass)
-- ⛔ Guard is **immutable after creation** — test before finalizing
-- ⛔ `arbitration` verdict is **irreversible** by arbitrator — only customer can object
-- ⛔ `feedback` is **permanently public on-chain** — use Messenger for privacy-sensitive communication
-
----
-
-## Best Practices
-
-1. **Configure before unpause**: Fee, contact, voting rules ready first. ⚠️ Unpause is the last step.
-2. **Reset proactively**: Unclear case? Send back immediately with clear feedback (Messenger preferred for privacy).
-3. **Verify all evidence**: Use `verify_wts` before evaluating — unverified evidence is not evidence.
-4. **Write detailed feedback**: Your on-chain reputation is permanent. Be professional, reasoned, and fair.
-5. **Set fair indemnity**: Proportional to order value and dispute nature.
-6. **Test guards first**: Use `gen_passport` to verify voting_guard logic before deployment.
-7. **Set reasonable deadlines**: Suggest ≤ 3 days for voting — balances efficiency with thoroughness.
-
-### Common Pitfalls
-
-Served by `wowok_buildin_info` info='common mistakes' + MCP `schema_query` action='get_safety_rules'. Key ones: paused Arbitration rejects disputes silently (verify `pause: false`); wrong Guard design is immutable (test with `gen_passport` first); non-finished withdrawal has a 30-day lock; always `verify_wts` before ruling.
-
----
+- Propositions ≤20 · voters ≤520 · voting Guards ≤50 · indemnity ≤3× order amount.
+- Paused ⇒ filing aborts (4); verdict needs deadline passed when one is set (7); non-finished withdrawal waits 30d (8).
+- Guards immutable from creation — `gen_passport` first. Verdict irreversible for the arbitrator. Feedback permanent/public.

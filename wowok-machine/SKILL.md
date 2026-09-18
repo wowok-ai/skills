@@ -2,255 +2,113 @@
 name: wowok-machine
 description: "WoWok Machine Workflow Design — design, build and operate workflow templates (Machines): directed graphs that define how orders progress through stages, who can advance them, and what conditions must be met at each step. Covers Nodes/Pairs/Forwards/Guards/Thresholds, lifecycle (create, configure, publish, pause), node and forward operations, Progress integration, cross-Machine supply chains via Guard verification, and machineNode2file import/export. Use when: User wants to create or modify a Machine workflow; User asks about workflow steps, state transitions, or progress; User needs to design order processing pipelines; User mentions \"machine\", \"workflow\", \"progress\", \"state machine\", \"pipeline\"; User wants to export/import Machine nodes via a file; User needs threshold mechanics, forward permissions, or guard bindings."
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   role: provider
   related: "wowok-provider"
 ---
 
 # WoWok Machine Workflow Design
 
-Design, build, and operate automated workflow templates.
-
 > **Role**: Service Provider or Workflow Designer
-> **Key Tools**: `onchain_operations` with `operation_type: "machine"`
-> **Related Skills**: [wowok-provider](../wowok-provider/SKILL.md) (Service binding), [wowok-order](../wowok-order/SKILL.md) (customer perspective), [wowok-messenger](../wowok-messenger/SKILL.md) (privacy)
+> **Main tool**: `onchain_operations` operation_type=`machine` (schema file `onchain_operations_machine`)
+> **Related**: [wowok-provider](../wowok-provider/SKILL.md) (Service binding) · [wowok-order](../wowok-order/SKILL.md) (execution) · [wowok-messenger](../wowok-messenger/SKILL.md) (privacy)
 
 ---
 
-## Core Concepts
+## What the MCP already handles
 
-**Machine** = workflow blueprint (directed graph of Nodes → Pairs → Forwards). **Progress** = live workflow instance, one per order.
+- Node topology validation (entry forward required, malformed pairs) at schema + publish time; risk aggregation via `goal_operation` action=`aggregate_risks`, incl. the R-M1-11 refund-terminal rule.
+- Guard design patterns / Guard instructions / safety rules: `schema_query` actions `get_guard_design_patterns`, `get_safety_rules` (instructions list also via `wowok_buildin_info`).
+- Industry default shapes: `industry_pack_operation` action=`list_modes` (e.g. the `rental` mode ships an R-M1-11-compliant topology).
+- **Runtime execution routing**: `query_toolkit` query_type=`participation_radar` → `operable[].recommended_call` picks the exact tool/path for the signing account. Designers still need the identity model below; executors do not hand-route.
 
-Machines are **immutable after `publish: true`**; Guards are **CREATE-only**. Design the complete workflow before publishing.
-
-## MCP Knowledge Layer
-
-The following content has been pushed down to the MCP knowledge layer and is applied automatically — this Skill no longer duplicates it:
-
-| Content | Access via (MCP action) | Applied Via |
-|---------|--------------------------|-------------|
-| Node design rules (node type specs, forward guard patterns, topology limits) | auto-applied | Industry mode defaults (`industry_pack_operation` action='list_modes') + `goal_operation` action='aggregate_risks' |
-| Machine scene/template selection | auto-applied | Industry mode defaults (`industry_pack_operation` action='list_modes') |
-| Forward Guard design patterns | `schema_query` action='get_guard_design_patterns' | `goal_operation` action='aggregate_risks' |
-| Safety rules (immutability, confirmation) | `schema_query` action='get_safety_rules' | Pre-publish checks + `goal_operation` action='aggregate_risks' |
-| Publish gate (4-layer fail-closed: checklist → risk → user → environment) | auto-applied | `goal_operation` action='aggregate_risks' + pre-publish gate |
-
-This Skill keeps the **workflow conversation guidance**, **business flow design patterns**, and **machine lifecycle scripts**. The MCP layer handles node-design rule evaluation, scene/template selection, and risk aggregation.
+This skill keeps design conversation, topology patterns, and the lifecycle discipline.
 
 ---
 
-## Machine Architecture
+## Model
 
-**Machine** → **Nodes** → **Pairs** (`prev_node` ["" = the single entry pair — pair keys are unique on chain (`E_DUPLICATE_NODE_PREV`); its `forwards` vector may carry multiple forwards to different first nodes], `threshold` [required total forward weight to advance]) → **Forwards** (`name`, `weight`, `permissionIndex` | `namedOperator` [who can execute], `guard` [optional condition]).
+- **Machine** = blueprint. Node-centric encoding: each Node `{name, pairs: [{prev_node, threshold, forwards[]}]}` declares how work ENTERS it. `prev_node: ""` = entry pair (Progress starts at current node `""`). A `prev_node` must be unique within one node's pairs (`E_DUPLICATE_NODE_PREV` = 7); several different first nodes may each declare an entry pair.
+- **Forward** = `{name, weight, namedOperator | permissionIndex (≥1 required), guard?}`. String shorthand `"g"` or object `{guard:"g", retained_submission:[1,2]}`.
+- **Progress** = one live instance per order (auto-created by `order_new` on a Service with a bound Machine) or standalone via machine data `progress_new: {task?, repository?, progress_namedOperator?, namedNew?}`.
+- **Freeze points**: a published Machine's nodes/pairs/forwards are immutable (`publish:true` also gates Service binding). A Guard is immutable **from creation** — a flawed Guard can never be edited, only replaced.
+- `pause: true` stops NEW Progress being generated from the Machine; it does not freeze existing instances.
 
-> All field types, limits, and valid values are in the MCP schema (`onchain_operations_machine`). This document focuses on design decisions **not captured** by the schema.
+## Forward identity model (design-time)
 
-### Forward Permission Model
+| Binding | Shared across instances | Typical operator |
+|---|---|---|
+| `permissionIndex` (custom index ≥1000 recommended) | Yes — same role for every order | Internal staff, platform ops |
+| `namedOperator: "<role>"` | No — addresses assigned per Progress namespace | Delivery person, reviewer, agent |
+| `namedOperator: ""` | Order-scoped wildcard | The order owner + order agents |
 
-| Field | Scope | When to Use |
-|-------|-------|-------------|
-| `permissionIndex` | Shared across ALL Progress instances | Internal staff (warehouse, admin, platform) — same for every order |
-| `namedOperator` | Per-Progress namespace | Roles that differ per order (delivery person, reviewer, agent) |
+Both may be set (executor needs EITHER). At runtime the radar resolves the path per account: order-holder wildcard → `onchain_operations` operation_type=`order` `data.progress` (calling the Progress entrypoint directly aborts permission#5); permission index / named role → `workflow_operation` action=`operate`. Do not put this routing table in application code — read `recommended_call`.
 
-- `namedOperator: ""` (empty string): grants **order owner and agents** the right to execute. Standard way to let customers operate. **⚠ Must be advanced via `order.progress`** (uses `order.has_op_permission`); direct `progress::next` aborts with Permission denied (code 5).
-- `namedOperator: "<role_name>"`: role-based operators managed per Progress instance. Each Progress independently assigns addresses to role names. **Advanced via `progress.operate`** directly.
-- **Both fields set**: executor needs EITHER permission — internal staff OR external roles. **Advanced via `progress.operate`** (the non-empty namedOperator takes precedence for routing).
-- **Design principle**: Use custom permissions (dedicated Permission object with custom indices), not built-in indices. Define workflow-specific roles, reference those indices in Forwards.
+Every custom `permissionIndex` used MUST be granted in the bound Permission (`permission` op `add perm by index`) before publish. An ungranted index means the forward can never execute — Progress stuck forever; the handler warns, but the design review must catch it.
 
-### Guard on Forwards
+## Guards on forwards
 
-A Guard validates the Forward's execution condition. **Retained submissions**: when `retained_submission` is set on a Guard, submitted values are stored in Progress history, uniquely located by `(current_node, next_node, forward_name)`. Later nodes query these values from history.
+- The Guard validates BEFORE the transition. A Guard reading the SAME Progress sees the source node — never write "current == target_node" (always fails). For post-transition verification, bind the Guard to the **Allocator** (`alloc` runs after the state transition).
+- `retained_submission: [identifier…]` stores the submitted values on the forward's execution record in the Progress session/history (located by node + forward), so later nodes and cross-machine Guards can read them.
+- **No on-chain cron (T1 lossy point)**: "after N days, auto-X" decomposes into a time Guard PLUS an off-chain keeper that submits the forward once it passes. A time Guard without a keeper never fires.
+- Design every Guard via `get_guard_design_patterns`; test it with the standalone `gen_passport` operation BEFORE binding — immutability makes post-hoc fixes impossible.
 
-> **Guard construction**: Forward Guard design patterns (table design, computation trees, query instructions) now live in the MCP knowledge layer — query via `schema_query` action='get_guard_design_patterns', auto-applied via `goal_operation` action='aggregate_risks'. Query available Guard instructions via `wowok_buildin_info`.
+## Sessions & thresholds
 
-### Threshold Mechanics
+- Executing forwards accumulates weight in a session keyed by target node; when total ≥ the pair's `threshold`, the session finalizes, history is appended, and the node transitions.
+- **One forward = one weight contribution.** It locks to its first accomplisher: that account may re-submit to update message/evidence (no extra weight); any OTHER account re-executing it aborts `E_NOT_THE_HOLDER`. Threshold > 1 therefore requires DISTINCT forwards per contributor (e.g. `a` weight 1 + `b` weight 1), never one shared forward.
+- If achievable weight (sum of distinct forwards) < threshold, the pair can NEVER complete — dead branch by construction.
+- Competing pairs from one node: the first pair to reach its threshold wins; the other open sessions are abandoned. Mutual exclusion is intentional.
+- Sessions persist on-chain until they finalize — there is no automatic expiry; only an explicit transition or order terminal resolves them.
 
-Users execute Forwards from the current node, accumulating weight within a **session**. When the sum of completed Forward weights meets or exceeds the Pair's threshold, the session finalizes and the workflow advances.
-
-**Session behavior**: Each Forward is counted once per session. Repeated execution of the same Forward within one session adds no extra weight. A completed Forward cannot be re-executed until session reset (on node transition).
-
-**Competing Transitions**: If a node has multiple Pairs to different targets, the **first Pair to meet its threshold wins** — remaining incomplete Forwards in other Pairs are **abandoned**. Competing paths are mutually exclusive by design. A Pair whose threshold can never be met because users always prefer another path creates a **dead branch**.
-
-**Execution Patterns**:
-
-| Pattern | Mechanism | Use Case |
-|---------|-----------|----------|
-| Sequential | `threshold=1`, single Forward `weight=1` | Single actor each step |
-| Parallel AND | `threshold=N`, N Forwards `weight=1` | All parties must contribute |
-| Parallel OR | Multiple Pairs, each `threshold=1` | Mutually exclusive branches |
-| Weighted Voting | `threshold=100`, varied weights (e.g., 60+40) | Unequal stakeholder power |
-| Hybrid | `threshold=5`, mixed weights (3+1+1) | Key party required, others optional |
-
----
-
-## Machine Lifecycle
-
-### Dependency-First Construction
-
-Build in this exact order: (1) Permission (CREATE/MODIFY) → access control foundation; (2) Machine (CREATE, unpublished) → define all nodes; (3) Guards (CREATE) → build validation conditions; (4) Bind Guards to Forwards (MODIFY Machine) → set `guard` on each Forward; all operations (`add`, `set`, `add forward`) accept full `MachineForward` including `guard` + `retained_submission`; (5) Publish Machine → nodes IMMUTABLE; (6) Bind Machine to Service → workflow goes live.
-
-**Why this order matters**: Publishing locks the Machine. Guards are immutable. Publishing before Guards are ready means Guards can never be added — the Machine is frozen without validation rules. **Create Guards, test them, then publish.**
-
-### Node Operations (Pre-Publish Only)
-
-Nine operations are available via the `node` field. Key design notes not captured by schema:
-
-- `add` / `set` with `bReplace: false` (default) **merges** into existing nodes; `true` replaces all.
-- `clear` is **irreversible** — instant wipe with no undo. Export via `machineNode2file` first.
-- `exchange` swaps two node positions without delete/recreate. `rename` auto-updates all Pair references.
-- `add forward` supports the full `MachineForward` structure including `guard` with `retained_submission`.
-
-### File-Based Workflow
-
-```
-1. machineNode2file → export nodes to JSON/Markdown
-2. Edit locally
-3. node.json_or_markdown_file → COMPLETE REPLACEMENT of all nodes
-```
-
-Always start from an on-chain export when available — exact current state beats rebuilding from scratch.
+| Pattern | Shape | Use |
+|---|---|---|
+| Sequential | threshold 1, one forward weight 1 | Single actor per step |
+| Parallel AND | threshold N, N distinct forwards weight 1 | All parties must contribute |
+| Parallel OR | multiple pairs each threshold 1 | Mutually exclusive branches |
+| Weighted vote | threshold 100, weights 60/40/… | Unequal power |
+| Hybrid | threshold 5, weights 3+1+1 | One required party + optional others |
 
 ---
 
-## Progress: The Live Workflow Instance
+## Lifecycle
 
-### Machine vs Progress
+1. Permission → 2. Machine unpublished (`object:{name, type_parameter, permission}`) → 3. Guards created + tested (`gen_passport`) → 4. bind Guards on forwards → 5. test end-to-end → 6. `publish:true` → 7. Service binds the Machine.
 
-- **Machine**: Workflow blueprint — defines the topology, permissions, thresholds, and Guards. Shared across all orders.
-- **Progress**: Live instance — tracks current node, session state, history. One per order (when Service-bound) or standalone.
+**Node field ops** (`data.node`, pre-publish only — 9): `add` / `set` (with `bReplace`, default false = MERGE into existing nodes; true = full replace), `remove`, `clear` (irreversible wipe — export first), `exchange` (swap two node positions), `rename` (updates pair references), `remove prior node`, `add forward`, `remove forward`. All forward-bearing ops accept the full forward shape including the Guard object with `retained_submission`.
 
-### Progress Creation
-
-Two paths: **Service Order** (automatic when Order created on Service with bound Machine) or **Direct Creation** (via `progress_new`). For direct creation, pre-configure via `progress_new` fields on the Machine operation — this sets initial named operators, task binding, and repository list before the first Progress is spawned.
-
-### Execution Paths
-
-- **Order-associated Progress**: When a Forward uses `namedOperator: ""`, the order owner/agents execute via `order` operations.
-- **Standalone Progress**: All other cases — advance via direct `progress` operations.
-
-Two-phase operations (`hold`/`unhold`) allow locking resources during multi-step operations; `adminUnhold` force-releases stale locks.
-
-> **Querying**: Progress state via `onchain_objects`, history via `onchain_table` / `onchain_table_item_progress_history`.
-
-### Runtime: Advancing the Workflow
-
-The runtime loop: (1) Query active Forwards via `onchain_objects` (reveals current node + available Pairs/Forwards); (2) Execute Forward → weight accumulates in session, Guard validates (pass/fail), `retained_submission` stores values indexed by `(current_node, next_node, forward_name)`; (3) Threshold met → session commits to history, node transitions, session resets, new Forwards unlocked; (4) Threshold NOT met → session stays open, more Forwards can execute, repeated same Forwards ignored; (5) Competing Pair wins first → other incomplete Pairs abandoned.
-
-**What the user sees**: At any node, callers can discover which Forwards are available (by querying the Machine definition and cross-referencing with their permissions). Executing a Forward that requires a Guard triggers Guard verification — the caller must submit required data. Successful Forward execution is recorded on-chain; failed Guard rejections are visible as transaction errors.
-
-**Session lifecycle**: A session begins when the first Forward executes from a new node. It stays open until threshold is met (closing the session and advancing) or the order completes/aborts. No session timeout — sessions persist until resolved. `hold`/`unhold` lock the session during multi-step external operations; `adminUnhold` force-releases stale locks.
-
-> **Order-associated execution**: Forwards with `namedOperator: ""` are executable via `order` operations by the order owner/agents. All other Forwards use `progress` operations. See [wowok-order](../wowok-order/SKILL.md) for the customer execution flow.
+**File workflow**: `machineNode2file` exports the exact on-chain node set; edit; then `data.node: {json_or_markdown_file: "<path>"}` performs a COMPLETE replacement (node array, not an op object; JSON or ```json markdown). Always start from an export.
 
 ---
 
-## Workflow Design Patterns
+## Runtime: operating a Progress
 
-### Multi-Path Workflow Example
-
-**MyShop Advanced** — demonstrates branching, dual-signature, and time guards:
-```
-Shipping → Delivery Complete → Order Complete
-    │  ├──→ Wonderful (rating, reward)
-    │  ├──→ Order Complete (time guard: ≥10 days, anyone push)
-    │  └──→ Lost (threshold: 2, merchant+customer dual-sig)
-    │
-    └── Delivery Complete → Non-receipt Return (threshold: 2)
-                     └──→ Receipt Return (threshold: 2) → Return Fail (time guard)
-                                                   └──→ Return Complete
-```
-
-### Cross-Machine Supply Chain Composition
-
-Decompose complex workflows into multiple Machines connected by Guard-based validation — avoiding monolithic bloat.
-
-**Sub-Progress Dependency**: Machine A's Forward Guards query Machine B's Progress to verify it has reached a target node before advancing.
-
-**Sub-Order Verification**: Machine A's Forward Guard validates an Order exists on another Service with its Progress at the required state. The sub-order is created independently — the Guard only verifies.
-
-**Multi-Party Chain**: Supplier → Manufacturer → Retailer, each Machine's entry condition verifies upstream completion via Guards querying `retained_submission` values.
-
-**When to decompose** into multiple Machines:
-- A sub-process is independently valuable as a standalone Service
-- Different participant sets operate in different phases
-- The sub-process is reusable across multiple parent workflows
-
-**When to keep in one**:
-- Same participants and permission model throughout
-- Dense sequential data flow with no clear boundary
-
-**Questions to ask the user**:
-1. "Are there phases handled by different teams or services?"
-2. "Could any part be offered as a standalone service?"
-3. "Does any step depend on an external process completing first?"
-4. "Which party creates the sub-order, and which party verifies it?"
-
-> **Guard construction**: Cross-Machine Guards use `convert_witness` with Progress query instructions. Design rules now live in the MCP knowledge layer — query via `schema_query` action='get_guard_design_patterns', applied via `goal_operation` action='aggregate_risks'. Query available Guard instructions via `wowok_buildin_info`.
-
-### Dual-Signature Consensus
-
-Require both customer and merchant to confirm: `threshold=2` with two Forwards (`namedOperator: ""` for customer, `permissionIndex` for merchant), each `weight=1`. Both must execute to advance.
-
-### Privacy (Messenger)
-
-Sensitive data flows through Messenger's end-to-end encryption; only Merkle Root proofs go on-chain. The principle: **who performs the action submits the proof**.
-
-> **Full Guide**: See [wowok-messenger](../wowok-messenger/SKILL.md) for WTS evidence generation.
+- Operators see their actionable view in `workflow_operation` action=`list` and in the participation radar (`operable[]` with `recommended_call`, guard requirements, waiting roles). Execute only what the radar returns for the signing account.
+- Canonical forward op (`workflow_operation operate` / order `data.progress`): `next` (accomplish; default), `hold` (reserve this forward slot for yourself while doing external work), `unhold` (release own hold), `adminUnhold` (force-release via permission 224).
+- Guard-gated forwards require a valid Passport carrying the submitted fields (progress#9 "Passport required"); the call's submission prompt lists exactly what to provide.
+- Read state via `onchain_objects`; completed sessions via query type `onchain_table_item_progress_history`; full context via `machine_panorama`.
 
 ---
 
-## Common Pitfalls
+## Composition & design patterns
 
-### Mutability Traps
+**Cross-Machine supply chain**: a forward Guard on Machine A queries Machine B's Progress/Order state (convert_witness with Progress query instructions — patterns in `get_guard_design_patterns`). The Guard only VERIFIES; the sub-order is created independently. Decompose when a sub-process is a standalone sellable Service, has a different participant set, or is reusable; keep one Machine when participants and dense sequential flow are shared. Ask: which phases are run by different teams? What external completion must be awaited? Who creates the sub-order, who verifies it?
 
-All stem from the same root: **every on-chain object has a publish/create freeze point**. See [Guard + Machine Immutability Deadlock](#guard--machine-immutability-deadlock). Key rules:
-- Never publish before all Guards are created, tested, and bound.
-- `clear` is irreversible — export via `machineNode2file` first.
+**Dual-signature**: threshold 2 with two DISTINCT forwards — `namedOperator:""` for the customer, `permissionIndex` for the merchant, each weight 1.
 
-### R-M1-11 Anti-Pattern: Refund Terminal Nodes (CRITICAL)
-
-**Forbidden node names**: `deposit_refunded`, `deposit_deducted`, `refunded`, `disputed` (when used as a refund terminal), or any node implying the Machine itself performs fund movement.
-
-**Why forbidden**: Machines are pure state machines — they have **no fund movement primitive**. A node named `deposit_refunded` suggests the Machine itself refunds the deposit, but in reality it just routes; the actual refund MUST be triggered by an **Allocator** watching `progress.current == <trigger_node>`. Without a bound Allocator, funds lock permanently in the Order escrow.
-
-**Correct pattern**:
-| Wrong | Correct (R-M1-11 compliant) |
-|-------|------------------------------|
-| `deposit_refunded` (terminal) | `return_approved` (routing) → Allocator fires refund |
-| `deposit_deducted` (terminal) | `damage_confirmed` (routing) → Allocator fires deduction |
-| `refunded` (terminal) | `refund_routing` (routing) → Allocator fires |
-| N/A (dispute) | `arbiter_rule` (routing) → Arbitration off-Machine (no Allocator) |
-
-A complete R-M1-11-compliant rental topology ships as the `rental` industry mode's default Machine shape — query `industry_pack_operation` action='list_modes' for the per-industry defaults.
-
-### Pre-Publish Validation Checklist
-
-Before `publish: true`, verify:
-
-- [ ] **Entry point exists**: at least one Pair with `prev_node: ""` — workflow cannot start otherwise
-- [ ] **⚠ Entry node has ≥1 Forward** (CRITICAL): entry node (`prev_node: ""`) MUST have at least one forward — Progress starts at `current=""` and follows the entry node's forwards to advance. Empty entry forwards = Progress permanently stuck at `current=""`. Schema-enforced (P0-2). Example: `{name:"Ordered", pairs:[{prev_node:"", forwards:[{next_node:"Ordered", namedOperator:"", weight:1}]}]}`
-- [ ] **Every node has outgoing Forwards** (except terminals): no dead-end nodes
-- [ ] **Every node has incoming Pair** (except entry): no orphaned nodes
-- [ ] **All thresholds independently achievable**: no dead branches (competing Pair always wins first)
-- [ ] **⚠ R-M1-11 Compliance** (CRITICAL for deposit/refund scenarios): NO terminal nodes named `deposit_refunded`, `deposit_deducted`, `refunded`, or any name implying Machine-internal refund/deduction. Refund/deduction MUST flow through an **Allocator** triggered by a routing node (e.g., `return_approved`, `damage_confirmed`, `arbiter_rule`). Violating this causes funds to lock in the Machine with no Allocator path. Auto-enforced by MCP pre-publish checks and `goal_operation` action='aggregate_risks'.
-- [ ] All Guards exist on-chain and tested (use `gen_passport`)
-- [ ] `namedOperator` vs `permissionIndex` correct per Forward
-- [ ] Every Forward has at least one of `namedOperator` or `permissionIndex`
-- [ ] **⚠ Permission indexes authorized** (P0): every `permissionIndex` used in forwards MUST have at least one entity granted in the Permission object. Call `permission.op="add perm by index"` for each custom index (≥1000) BEFORE publishing. Un-granted indexes = forward can NEVER execute = Progress permanently stuck. The MCP handler auto-checks this and warns on missing grants.
-- [ ] Terminal nodes mapped to Allocator entries for fund distribution
-- [ ] Tested end-to-end on testnet via a test Progress
-- [ ] Current state exported via `machineNode2file` as backup
-
-**Always test on testnet before mainnet** — Machines are immutable after publish.
+**Privacy**: sensitive material goes through Messenger E2E encryption; only WTS/Merkle proofs go on-chain. Whoever performs the action submits the proof (see [wowok-messenger](../wowok-messenger/SKILL.md)).
 
 ---
 
-## Guard + Machine Immutability Deadlock
+## Pre-publish checklist (publishing is irreversible)
 
-Both Guards and published Machines are **immutable**. A Guard created with a bug cannot be fixed (immutable) → must create new Guard → must rebind to Machine → but Machine already published cannot be modified (immutable) → **DEADLOCK**: new Guard exists but cannot be attached.
+- [ ] Entry pair `prev_node:""` exists on ≥1 first node AND carries ≥1 forward (schema/P0-enforced) — empty entry forwards = Progress stuck at `""`.
+- [ ] Every non-terminal node has a reachable outgoing path; every non-entry node has an incoming pair.
+- [ ] Every pair's threshold ≤ the sum of its DISTINCT forward weights (no dead branches); competing transitions are intended.
+- [ ] Every forward binds exactly the intended identity (wildcard / role / permission index), and ALL custom indexes are already granted.
+- [ ] Guards created, `gen_passport`-tested (all submission scenarios), bound; time Guards have a keeper plan; post-transition checks live on Allocators, not forwards.
+- [ ] R-M1-11: NO node named `refunded`/`deposit_refunded`/`deposit_deducted`/`disputed` or implying the Machine moves funds. Machines never move money — refund/deduction terminals route to Allocator slots (`return_approved` → Allocator), disputes route to the bound Arbitration. The pre-publish gate rejects violations.
+- [ ] Terminal nodes are mapped to Allocator entries, or funds lock in escrow.
+- [ ] Export via `machineNode2file`; run a test Progress on testnet first.
 
-**Prevention**: Test every Guard via `gen_passport` before binding. Verify computation tree, submission types, and query instructions against all scenarios.
-
-**If deadlocked**: Only recovery is a completely new Machine with new nodes and Guard bindings, then rebind to Service. Keep Machines unpublished until all Guards are verified.
-
----
+**Deadlock recovery**: published Machine + buggy bound Guard = unrecoverable (both immutable). The only fix is a NEW Machine (new nodes, new Guards), re-bound to a NEW Service version. Prevention is the only cheap path.
