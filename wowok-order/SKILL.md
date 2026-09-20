@@ -84,8 +84,8 @@ From E1: `compensation_fund`, `compensation_lock_duration`. Balance below planne
 
 ### E9 — Chain reputation
 The aggregate view is already computed inside `trust_score` (reviews dimension) and `query_toolkit relationship_profile` (derived relationships) — present those rather than hand-aggregating.
-Only when raw evidence is needed (all reads batched, ≤50/batch): `onchain_table_item_entity_linker` (provider address → `votes[]` {who, like, dislike, favor}) + `onchain_table_item_object_linker_tx` (Service address → recent binding Orders, FIFO 0xaaf window — lossy) → dispute rate / repeat-buyer ratio; >10% dispute → ⚠️.
-Presenter history (merchant active on Demands): aggregate `onchain_events` `DemandFeedbackEvent` filtered by the merchant's Service, or `onchain_table_item_demand_presenter` per Demand (row carries `acceptance_score`, null = unrated); pass as `presenter_history` to `evaluation_operation` (`service_risk` / `demand_match`). Omit when no presenter activity (neutral without history).
+Only when raw evidence is needed (all reads batched, ≤50/batch): `onchain_table_data` `onchain_table_item_entity_linker` (provider address → `votes[]` {who, like, dislike, favor}) + `onchain_table_data` `onchain_table_item_object_linker_tx` (Service address → recent binding Orders, FIFO 0xaaf window — lossy) → dispute rate / repeat-buyer ratio; >10% dispute → ⚠️.
+Presenter history (merchant active on Demands): aggregate `onchain_events` `DemandFeedbackEvent` filtered by the merchant's Service, or `onchain_table_data` `onchain_table_item_demand_presenter` per Demand (row carries `acceptance_score`, null = unrated); pass as `presenter_history` to `evaluation_operation` (`service_risk` / `demand_match`). Omit when no presenter activity (neutral without history).
 
 ### E10 — Privacy matching (LocalInfo)
 From E1 `customer_required[]` (e.g. name/phone/shipping_address):

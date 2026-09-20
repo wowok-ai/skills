@@ -52,7 +52,7 @@ Monetary query results carry `_money_display`: a map of field paths → `{raw, d
 - `precision_known: true` → show `text` as-is, e.g. `2.2 WOW (decimals: 9; raw: 2200000000)`.
 - `precision_known: false` → `display === raw`, no conversion happened; show the raw value (optionally retry token resolution via `token_list`).
 
-Annotated query types: `account_balance`; `onchain_objects` (Treasury/Service/Order/Allocation/Payment/Reward/Arb/Discount monetary fields); `onchain_table_item_treasury_history`, `onchain_table_item_reward_record`; `onchain_received` (CoinWrapper); `onchain_transaction` (balance_changes, each with its own `coin_type`, signed); `onchain_events` (`NewOrderEvent.amount`, resolved via the order's Service token type).
+Annotated query types: `query_toolkit` `account_balance`; `query_toolkit` `onchain_objects` (Treasury/Service/Order/Allocation/Payment/Reward/Arb/Discount monetary fields); `onchain_table_data` `onchain_table_item_treasury_history` / `onchain_table_item_reward_record`; `query_toolkit` `onchain_received` (CoinWrapper); `query_toolkit` `onchain_transaction` (balance_changes, each with its own `coin_type`, signed); `onchain_events` (`NewOrderEvent.amount`, resolved via the order's Service token type).
 
 ## Fallback (no annotation)
 

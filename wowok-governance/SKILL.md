@@ -19,7 +19,7 @@ Inventory → decide → execute → **audit (re-query the post-state every time
 
 ## Domain 1 — Permission governance
 
-- **Inventory before mutating**: read the Permission via `query_toolkit` `onchain_objects`; audit one address with `onchain_table_item_permission_perm`; see every membership an address holds across objects with `address_profile` (batch form `address_profiles`, up to 50).
+- **Inventory before mutating**: read the Permission via `query_toolkit` `onchain_objects`; audit one address with `onchain_table_data` query_type=`onchain_table_item_permission_perm`; see every membership an address holds across objects with `query_toolkit` `address_profile` (batch form `address_profiles`, up to 50).
 - **Index naming is not an "index creation"**: custom permission indexes are the numeric IDs 1000–65535 (built-ins reserved below); a readable name is just a `remark` write (`set` / `remove` / `clear`).
 - **Choose the op family by shape** (`permission_operation`, exact params in schema):
   - one index → many entities: `add|set|remove perm by index`;
@@ -31,7 +31,7 @@ Inventory → decide → execute → **audit (re-query the post-state every time
 
 ## Domain 2 — Financial governance
 
-- **Treasury**: deposit joins coins in (Payment receipt minted); withdraw splits balance out — irreversible, and an `external_guard` on the Treasury must authorize it. Audit every flow with `query_toolkit` `onchain_table_item_treasury_history` (op `0` Withdraw / `1` Deposit / `2` Receive; amount + guard + timestamp).
+- **Treasury**: deposit joins coins in (Payment receipt minted); withdraw splits balance out — irreversible, and an `external_guard` on the Treasury must authorize it. Audit every flow with `onchain_table_data` query_type=`onchain_table_item_treasury_history` (op `0` Withdraw / `1` Deposit / `2` Receive; amount + guard + timestamp).
 - **Allocation**: modes Amount (fixed) / Rate (basis points, 10000 = 100%; pure-Rate must sum to 10000) / Surplus (remainder drain, ≤1 per Allocator). Review allocator guards periodically — a stale guard blocks legitimate distributions.
 - **Unclaimed payments**: recipients own frozen CoinWrappers until unwrapped. The keeper owns this reminder surface: `keeper_operation` `scan` then `tasks` with `detector: "payment_unclaimed"`; nudge recipients via Messenger. `NewPaymentEvent` is deliberately NOT push-suggestion-bridged, to avoid duplicate reminders.
 - **Reward pools**: funds in (RewardFundEvent) / claims out (RewardClaimEvent); a dry pool blocks claims — watch balances before announcing campaigns.

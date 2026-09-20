@@ -76,7 +76,7 @@ Match honestly: presenting to every Demand dilutes reputation — present only w
 The Demand owner's feedback scores your presentation. Feed it into future evaluations as `presenter_history` (entries `{demand_id?, acceptance_score, feedback_time?}`, collected per party):
 
 - Standalone `onchain_events` tool, type=`DemandFeedbackEvent` (carries `demand`, optional `service`, `feedback`, `acceptance_score`) — filter client-side by your presented Service. `DemandPresentEvent` is the presentation event; `DemandChangedEvent` signals reward changes.
-- Or `query_toolkit` query_type=`onchain_table_item_demand_presenter` per Demand — the presenter row carries `acceptance_score` (null = not yet rated).
+- Or `onchain_table_data` query_type=`onchain_table_item_demand_presenter` per Demand — the presenter row carries `acceptance_score` (null = not yet rated).
 
 ## Phase 2 — Fulfill the sub-order
 

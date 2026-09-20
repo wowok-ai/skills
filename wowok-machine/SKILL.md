@@ -86,7 +86,7 @@ Every custom `permissionIndex` used MUST be granted in the bound Permission (`pe
 - Operators see their actionable view in `workflow_operation` action=`list` and in the participation radar (`operable[]` with `recommended_call`, guard requirements, waiting roles). Execute only what the radar returns for the signing account.
 - Canonical forward op (`workflow_operation operate` / order `data.progress`): `next` (accomplish; default), `hold` (reserve this forward slot for yourself while doing external work), `unhold` (release own hold), `adminUnhold` (force-release via permission 224).
 - Guard-gated forwards require a valid Passport carrying the submitted fields (progress#9 "Passport required"); the call's submission prompt lists exactly what to provide.
-- Read state via `onchain_objects`; completed sessions via query type `onchain_table_item_progress_history`; full context via `machine_panorama`.
+- Read state via `onchain_objects` (in `query_toolkit`); completed sessions via `onchain_table_data` query_type=`onchain_table_item_progress_history`; full context via `query_toolkit` `machine_panorama`.
 
 ---
 
@@ -107,7 +107,7 @@ Every custom `permissionIndex` used MUST be granted in the bound Permission (`pe
 - [ ] Every pair's threshold ≤ the sum of its DISTINCT forward weights (no dead branches); competing transitions are intended.
 - [ ] Every forward binds exactly the intended identity (wildcard / role / permission index), and ALL custom indexes are already granted.
 - [ ] Guards created, `gen_passport`-tested (all submission scenarios), bound; time Guards have a keeper plan; post-transition checks live on Allocators, not forwards.
-- [ ] R-M1-11: NO node named `refunded`/`deposit_refunded`/`deposit_deducted`/`disputed` or implying the Machine moves funds. Machines never move money — refund/deduction terminals route to Allocator slots (`return_approved` → Allocator), disputes route to the bound Arbitration. The pre-publish gate rejects violations.
+- [ ] NO node named `refund`/`refunded`/`deposit_refunded`/`deposit_deducted`/`disputed`/`cancelled`  or implying the Machine moves funds. Machines never move money — refund/deduction terminals route to Allocator slots (`return_approved` → Allocator), disputes route to the bound Arbitration. The pre-publish gate rejects violations.
 - [ ] Terminal nodes are mapped to Allocator entries, or funds lock in escrow.
 - [ ] Export via `machineNode2file`; run a test Progress on testnet first.
 

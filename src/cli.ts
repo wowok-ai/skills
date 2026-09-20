@@ -185,7 +185,10 @@ function cmdInit(parsed: ParsedArgs): void {
         ? ['user']
         : ['user', 'project'];
     console.log('[wowok-skills] Registering MCP server...');
-    for (const r of registerMcpForTargets(targets, mcpScopes, cwd)) {
+    // Explicitly selected targets always get their registration; a default
+    // (all-targets) run skips clients with no trace on this machine (skills#3).
+    const explicitTargets = (parsed.targets?.length ?? 0) > 0;
+    for (const r of registerMcpForTargets(targets, mcpScopes, cwd, { explicitTargets })) {
       console.log(`  ${r.status.padEnd(9)} ${r.path}${r.detail ? `  (${r.detail})` : ''}`);
     }
     if (changed) restartMcpServer();
@@ -255,7 +258,9 @@ function cmdDoctor(): void {
     }
     for (const mcp of status.mcp) {
       if (!mcp.present) {
-        console.log(`  mcp     ○ no config file  ${mcp.path}`);
+        console.log(
+          `  mcp     ○ no config file  ${mcp.path}${status.clientDetected ? '' : '  · client not detected'}`,
+        );
         continue;
       }
       console.log(`  mcp     ${mcp.registered ? '✔' : '✗'} ${mcp.path}${mcp.detail ? `\n            ↳ ${mcp.detail}` : ''}`);

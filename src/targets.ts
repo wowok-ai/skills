@@ -126,6 +126,8 @@ export interface McpSpec {
   format: 'json' | 'toml' | 'mcp-array-json';
   /** JSON only: extra fields merged into the server entry (e.g. type/tools). */
   extraEntry?: Record<string, unknown>;
+  /** Target that contributed this spec (set by resolveMcpSpecs; first owner on dedupe). */
+  targetId?: ClientTargetId;
   /** Free-form note printed when the file cannot be managed automatically. */
   note?: string;
 }
@@ -168,6 +170,15 @@ export interface ClientTarget {
    * The `wowok` entry is removed from them (never the rest of the file).
    */
   legacyMcpFiles?: string[];
+  /**
+   * Paths whose EXISTENCE on the machine marks the client as installed
+   * (client-created config dirs / extension storage — never roots this
+   * installer itself writes, or the check would always pass after skill
+   * install). Used to skip MCP registration for absent clients on default
+   * (non-explicit) runs — skills#3: `init` must not create config files for
+   * clients the user does not have.
+   */
+  installMarkers?: string[];
   /** Manual steps that cannot be automated (printed by init/doctor). */
   notes?: string[];
 }
@@ -293,6 +304,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     projectMcp: [{ scope: 'project', path: '.mcp.json', format: 'json' }],
     // settings.json never carried MCP servers — only approval flags.
     legacyMcpFiles: [path.join(home(), '.claude', 'settings.json')],
+    installMarkers: [path.join(home(), '.claude'), path.join(home(), '.claude.json')],
   },
   {
     id: 'codex',
@@ -305,6 +317,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     projectSkillDirs: [AGENTS_SKILL_ROOT],
     userMcp: [{ scope: 'user', path: path.join(home(), '.codex', 'config.toml'), format: 'toml' }],
     projectMcp: [{ scope: 'project', path: '.codex/config.toml', format: 'toml' }],
+    installMarkers: [path.join(home(), '.codex')],
   },
   {
     id: 'cursor',
@@ -316,6 +329,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     // Pre-3.1 installers wrote agent-requested `.mdc` rules instead of skills.
     legacyUserDirs: [path.join(home(), '.cursor', 'rules')],
     legacyProjectDirs: ['.cursor/rules'],
+    installMarkers: [path.join(home(), '.cursor')],
   },
   {
     id: 'windsurf',
@@ -333,6 +347,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     projectMcp: [],
     // ~/.windsurf/skills was never read by Windsurf (rules/workflows live there).
     legacyUserDirs: [path.join(home(), '.windsurf', 'skills')],
+    installMarkers: [path.join(home(), '.codeium')],
   },
   {
     id: 'codebuddy',
@@ -347,6 +362,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     projectMcp: [{ scope: 'project', path: '.mcp.json', format: 'json' }],
     // Pre-3.3 installers wrote the deprecated dotless `~/.codebuddy/mcp.json`.
     legacyMcpFiles: [path.join(home(), '.codebuddy', 'mcp.json')],
+    installMarkers: [path.join(home(), '.codebuddy')],
   },
   {
     id: 'workbuddy',
@@ -364,6 +380,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     notes: [
       'WorkBuddy: restart the app after install so new skills and the MCP server are loaded.',
     ],
+    installMarkers: [path.join(home(), '.workbuddy')],
   },
   {
     id: 'trae',
@@ -376,6 +393,12 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
       'Trae project-level MCP only loads after enabling Settings → MCP → "Enable project-level MCP". ' +
         'Verify the user-level config path via Settings → MCP → Open config file.',
     ],
+    installMarkers: [
+      path.join(home(), '.trae'),
+      path.join(home(), '.trae-cn'),
+      // Electron edition app dirs (…/Trae CN, …/Trae, …/TRAE SOLO CN).
+      ...traeMcpPaths().map((p) => path.dirname(path.dirname(p))),
+    ],
   },
   {
     id: 'qoder',
@@ -385,6 +408,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     userMcp: [{ scope: 'user', path: path.join(home(), '.qoder', 'settings.json'), format: 'json' }],
     projectMcp: [{ scope: 'project', path: '.mcp.json', format: 'json' }],
     legacyMcpFiles: [qoderLegacyMcpFile()],
+    installMarkers: [path.join(home(), '.qoder')],
   },
   {
     id: 'cline',
@@ -398,6 +422,12 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
       ),
     ],
     projectMcp: [],
+    installMarkers: [
+      path.join(home(), '.cline'),
+      ...vscodeGlobalStorageFiles('saoudrizwan.claude-dev', 'cline_mcp_settings.json').map((p) =>
+        path.dirname(path.dirname(p)),
+      ),
+    ],
   },
   {
     id: 'kilo',
@@ -434,6 +464,14 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
             'Add the server there manually under the "mcp" key.',
         ]
       : [],
+    installMarkers: [
+      path.join(home(), '.kilo'),
+      path.join(home(), '.kilocode'),
+      kiloConfigDir(),
+      ...vscodeGlobalStorageFiles('kilocode.kilo-code', 'mcp_settings.json').map((p) =>
+        path.dirname(path.dirname(p)),
+      ),
+    ],
   },
   {
     id: 'copilot',
@@ -464,6 +502,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
       'Copilot CLI also reads .mcp.json at the project root (the same file the ' +
         'claude target writes). .github/mcp.json targets the Copilot coding agent.',
     ],
+    installMarkers: [path.join(home(), '.copilot'), path.join(home(), '.github')],
   },
   {
     id: 'gemini',
@@ -478,6 +517,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     notes: [
       'Gemini CLI also reads the cross-client ~/.agents/skills and .agents/skills roots (covered by the "agents" target).',
     ],
+    installMarkers: [path.join(home(), '.gemini')],
   },
   {
     id: 'qwen',
@@ -486,6 +526,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     projectSkillDirs: [QWEN_SKILL_ROOT],
     userMcp: [{ scope: 'user', path: path.join(home(), '.qwen', 'settings.json'), format: 'json' }],
     projectMcp: [{ scope: 'project', path: '.qwen/settings.json', format: 'json' }],
+    installMarkers: [path.join(home(), '.qwen')],
   },
   {
     id: 'antigravity',
@@ -507,6 +548,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     notes: [
       'Google Antigravity project skills come from the cross-client .agents/skills root (covered by the "agents" target).',
     ],
+    installMarkers: [path.join(home(), '.gemini', 'config')],
   },
   {
     id: 'grok',
@@ -518,6 +560,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
     notes: [
       'Grok Build also auto-reads Claude Code skills and MCP config (~/.claude/skills, project .mcp.json), so the claude target covers it too — the entries above are Grok-native.',
     ],
+    installMarkers: [path.join(home(), '.grok')],
   },
   {
     id: 'opencode',
@@ -530,6 +573,7 @@ export const CLIENT_TARGETS: readonly ClientTarget[] = [
       { scope: 'user', path: path.join(opencodeConfigDir(), 'opencode.json'), format: 'mcp-array-json' },
     ],
     projectMcp: [{ scope: 'project', path: 'opencode.json', format: 'mcp-array-json' }],
+    installMarkers: [opencodeConfigDir()],
   },
 ];
 
@@ -584,8 +628,17 @@ export function resolveMcpSpecs(
       const abs = scope === 'user' ? expandHome(spec.path) : path.resolve(cwd, spec.path);
       if (seen.has(abs)) continue;
       seen.add(abs);
-      specs.push({ ...spec, path: abs });
+      specs.push({ ...spec, path: abs, targetId: target.id });
     }
   }
   return specs;
+}
+
+/**
+ * Whether the client shows any trace of being installed on this machine:
+ * any of its client-created config dirs / extension storage exists. Our own
+ * skill roots are deliberately NOT markers (we create those ourselves).
+ */
+export function clientPresent(target: ClientTarget): boolean {
+  return (target.installMarkers ?? []).some((marker) => expandHome(marker) !== '' && fsExists(expandHome(marker)));
 }

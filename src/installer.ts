@@ -27,6 +27,7 @@ import {
   SKILL_NAMES,
   expandHome,
   getClientTarget,
+  clientPresent,
   resolveMcpSpecs,
   resolveSkillRoots,
   type ClientTargetId,
@@ -448,10 +449,28 @@ function writeMcpSpec(spec: McpSpec, launch: McpLaunch): McpWriteResult {
       }
       const before = JSON.stringify(config);
       config.mcp = config.mcp || {};
+      const prevArrayEntry = config.mcp.wowok;
+      const prevArray =
+        prevArrayEntry && typeof prevArrayEntry === 'object' && !Array.isArray(prevArrayEntry)
+          ? (prevArrayEntry as Record<string, unknown>)
+          : undefined;
+      // Remote-transport guard (skills#3): a {type, url} entry with no command
+      // is the user's own remote registration — merging a local launcher into
+      // it would orphan it. Leave remote entries untouched.
+      if (prevArray && typeof prevArray.url === 'string' && prevArray.url && !('command' in prevArray)) {
+        return {
+          path: file,
+          status: 'skipped',
+          detail: 'existing wowok entry is a remote-transport (url) config — left untouched; remove it first to register the local launcher',
+        };
+      }
+      // Preserve-unknown-keys merge; never silently re-enable a user-disabled
+      // server (`enabled: false` wins over the installer default).
       config.mcp.wowok = {
+        ...(prevArray ?? {}),
         type: 'local',
         command: [launch.command, ...launch.args],
-        enabled: true,
+        enabled: prevArray?.enabled === false ? false : true,
       };
       if (JSON.stringify(config) === before) return { path: file, status: 'unchanged' };
       fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -476,15 +495,32 @@ function writeMcpSpec(spec: McpSpec, launch: McpLaunch): McpWriteResult {
     const before = JSON.stringify(config);
     config.mcpServers = config.mcpServers || {};
     const previousEntry = config.mcpServers.wowok;
+    const prev =
+      previousEntry && typeof previousEntry === 'object' && !Array.isArray(previousEntry)
+        ? (previousEntry as Record<string, unknown>)
+        : undefined;
+    // Remote-transport guard (skills#3): a {type, url} entry with no command
+    // is the user's own remote registration — merging a local launcher into it
+    // would produce a hybrid shape and orphan the entry. Leave it untouched.
+    if (prev && typeof prev.url === 'string' && prev.url && !('command' in prev)) {
+      return {
+        path: file,
+        status: 'skipped',
+        detail: 'existing wowok entry is a remote-transport (url) config — left untouched; remove it first to register the local launcher',
+      };
+    }
+    // Preserve-unknown-keys merge (skills#3): user-set keys (type, env, cwd, …)
+    // survive a re-registration instead of being silently replaced;
+    // installer-known fields (command/args + the client's extraEntry) win.
+    const { disabled: prevDisabled, ...prevRest } = prev ?? {};
     const entry: Record<string, unknown> = {
+      ...prevRest,
       ...(spec.extraEntry || {}),
       command: launch.command,
       args: launch.args,
     };
     // Never silently re-enable a server the user disabled on purpose.
-    if (previousEntry && typeof previousEntry === 'object' && 'disabled' in previousEntry) {
-      if (previousEntry.disabled) entry.disabled = true;
-    }
+    if (prevDisabled === true) entry.disabled = true;
     config.mcpServers.wowok = entry;
 
     if (JSON.stringify(config) === before) return { path: file, status: 'unchanged' };
@@ -545,6 +581,7 @@ export function registerMcpForTargets(
   targetIds: readonly string[],
   scopes: Array<'user' | 'project'>,
   cwd: string,
+  opts?: { explicitTargets?: boolean },
 ): McpWriteResult[] {
   const launch = resolveMcpLaunch();
   const results: McpWriteResult[] = [];
@@ -553,6 +590,20 @@ export function registerMcpForTargets(
   for (const scope of scopes) {
     for (const spec of resolveMcpSpecs(targetIds, scope, cwd)) {
       if (spec.note) notes.add(spec.note);
+      // skills#3: on a default (all-targets) run, skip registration for
+      // clients with no trace on this machine — never create config files
+      // for clients the user does not have. An explicit `init <target>`
+      // always writes what was asked for; an existing config file counts
+      // as presence for that file.
+      const target = spec.targetId ? getClientTarget(spec.targetId) : undefined;
+      if (!opts?.explicitTargets && target && !clientPresent(target) && !fs.existsSync(spec.path)) {
+        results.push({
+          path: spec.path,
+          status: 'skipped',
+          detail: `client not detected — skipped (run \`wowok-skills init ${target.id}\` to register anyway)`,
+        });
+        continue;
+      }
       results.push(writeMcpSpec(spec, launch));
     }
   }
@@ -775,6 +826,8 @@ export interface McpStatus {
 export interface TargetStatus {
   id: string;
   label: string;
+  /** Whether the client shows any install trace on this machine. */
+  clientDetected: boolean;
   userRoots: RootStatus[];
   projectRoots: RootStatus[];
   mcp: McpStatus[];
@@ -836,6 +889,7 @@ export function statusForTargets(
     return {
       id,
       label: target.label,
+      clientDetected: clientPresent(target),
       userRoots: resolveSkillRoots([id], 'user', cwd).map(rootStatus),
       projectRoots: resolveSkillRoots([id], 'project', cwd).map(rootStatus),
       mcp,

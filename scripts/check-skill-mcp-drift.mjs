@@ -18,6 +18,11 @@
  *        (the optional params are `source_network`/`target_network`)
  *      - `recommend_industry` requires `intent`
  *      - `search_messages` is SDK-only (not an MCP op) — use watch_messages filters
+ *      - every `onchain_table_item_*` query_type belongs to the
+ *        `onchain_table_data` tool, NEVER `query_toolkit` (skills#4)
+ *      - the R-M1-11 reserved-node-name list (skills#4): the 6 names pinned
+ *        below must match agent/mcp/src/schema/query/index.ts MachineNodeSchema
+ *        name warning; update BOTH sides together
  *   3. Banned/dead URLs and stale strings.
  *
  * The skill repos do NOT depend on @wowok/agent-mcp, so this is a static
@@ -68,6 +73,7 @@ const TOOL_INVENTORY = [
   'persona_operation',
   'query_toolkit',
   'schema_query',
+  'strategy_review_operation',
   'trust_score',
   'watch_operation',
   'wip_file',
@@ -113,7 +119,20 @@ const BANNED_STRINGS = [
 ];
 
 /**
- * Segment-scoped rule: only inspect the text from the tool name up to the
+ * Reserved Machine node names (R-M1-11 semantic warning). Source of truth:
+ * agent/mcp/src/schema/query/index.ts MachineNodeSchema name warning.
+ * Keep BOTH lists in sync — CI flags the doc side here when they diverge.
+ */
+const R_M1_11_RESERVED_NODE_NAMES = [
+  'refund',
+  'refunded',
+  'deposit_refunded',
+  'deposit_deducted',
+  'disputed',
+  'cancelled',
+];
+
+/** Segment-scoped rule: only inspect the text from the tool name up to the
  * next different tool name, so a line that legitimately mentions two tools
  * ("`wowok_buildin_info` info=… + `schema_query` action=…") is handled.
  */
@@ -162,15 +181,49 @@ const LINE_RULES = [
       return null;
     },
   },
+  {
+    id: 'table-item-belongs-to-onchain-table-data',
+    check(line) {
+      if (line.includes('onchain_table_item_') && !line.includes('onchain_table_data')) {
+        return "'onchain_table_item_*' query types belong to the 'onchain_table_data' tool, not query_toolkit (and never as a bare 'entity_linker'/'object_linker_tx'/'demand_presenter' name — always the prefixed form). Reference them as: onchain_table_data query_type=onchain_table_item_<name>.";
+      }
+      return null;
+    },
+  },
 ];
 
 /** Explicit call-site tool names: tool: "x", tool: 'x', tool="x", tool='x'. */
 const CALL_SITE_RE = /\btool\s*[:=]\s*['"]([a-z0-9_]+)['"]/g;
 
-function auditFile(file) {
+/**
+ * File-level rule (canonical doc only): wowok-machine owns the Machine
+ * design reference and MUST pin the full R-M1-11 reserved-node-name list so
+ * it stays aligned with the MCP MachineNodeSchema warning. Other skills
+ * deliberately mention R-M1-11 without duplicating the list (they defer to
+ * MCP-served authority) and are exempt.
+ */
+const R_M111_CANONICAL_SKILL = 'wowok-machine';
+
+function rM111ListErrors(skill, lines) {
+  if (skill !== R_M111_CANONICAL_SKILL) return [];
+  const complete = lines.some((line) =>
+    R_M1_11_RESERVED_NODE_NAMES.every((name) => new RegExp(`\\b${name}\\b`).test(line)),
+  );
+  if (complete) return [];
+  return [{
+    line: 1,
+    rule: 'r-m1-11-reserved-node-list',
+    message: `The canonical Machine design doc must pin the R-M1-11 reserved node name list (${R_M1_11_RESERVED_NODE_NAMES.map((n) => `\`${n}\``).join('/')}) to match agent/mcp/src/schema/query/index.ts MachineNodeSchema name warning.`,
+    text: 'R-M1-11 reserved node list',
+  }];
+}
+
+function auditFile(skill, file) {
   const raw = readFileSync(file, 'utf-8');
   const errors = [];
   const lines = raw.split(/\r?\n/);
+
+  errors.push(...rM111ListErrors(skill, lines));
 
   lines.forEach((line, i) => {
     const lineNo = i + 1;
@@ -212,7 +265,7 @@ function main() {
 
   for (const skill of listSkillDirs()) {
     const file = join(ROOT, skill, 'SKILL.md');
-    const errors = auditFile(file);
+    const errors = auditFile(skill, file);
     report.push({ skill, errors });
     totalErrors += errors.length;
   }
