@@ -74,7 +74,6 @@ const TOOL_INVENTORY = [
   'query_toolkit',
   'schema_query',
   'strategy_review_operation',
-  'trust_score',
   'watch_operation',
   'wip_file',
   'workflow_operation',

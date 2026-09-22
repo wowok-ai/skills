@@ -1,6 +1,6 @@
 ---
 name: wowok-order
-description: "WoWok Buyer Guide — TWO lifecycles in one skill: 1. PROSPECT (prospect due diligence, pre-purchase): E1-E11 due diligence + consensus building + trust-score synthesis, ending in a buy/no-buy decision. 2. CUSTOMER (in-order fulfillment, post-order): order creation, progress advancement, fund management, and arbitration. For suppliers presenting to Demands, see wowok-supplier. For process operators executing workflow forwards, see wowok-collaborator. Use when: User is a potential buyer evaluating a service BEFORE purchasing (prospect); User is a customer/buyer placing or managing orders (customer); User wants to evaluate services, WIP, guards, allocations, arbitration; User needs to communicate with sellers via Messenger; User asks about order progress, payments, or refunds; User wants to file disputes or arbitration claims; User mentions \"buy\", \"order\", \"purchase\", \"refund\", \"dispute\", \"arbitration\", \"due diligence\"."
+description: "WoWok Buyer Guide — TWO lifecycles in one skill: 1. PROSPECT (prospect due diligence, pre-purchase): E1-E11 due diligence + consensus building + graph-evaluation synthesis, ending in a buy/no-buy decision. 2. CUSTOMER (in-order fulfillment, post-order): order creation, progress advancement, fund management, and arbitration. For suppliers presenting to Demands, see wowok-supplier. For process operators executing workflow forwards, see wowok-collaborator. Use when: User is a potential buyer evaluating a service BEFORE purchasing (prospect); User is a customer/buyer placing or managing orders (customer); User wants to evaluate services, WIP, guards, allocations, arbitration; User needs to communicate with sellers via Messenger; User asks about order progress, payments, or refunds; User wants to file disputes or arbitration claims; User mentions \"buy\", \"order\", \"purchase\", \"refund\", \"dispute\", \"arbitration\", \"due diligence\"."
 metadata:
   version: "2.1.0"
   role: customer
@@ -22,7 +22,7 @@ metadata:
 | **Prospect** | You have NOT ordered yet | Phase 1 (E1–E11) + Phase 2 | buy / no-buy decision |
 | **Customer** | You are the Order `builder` | Phase 3–6 + Fund Management | funds withdrawn / dispute resolved |
 
-Prospect analysis is computed by MCP `trust_score` (`depth: "preorder"`) + `evaluation_operation`; this skill only keeps the dialogue flow and the user-facing gates. The customer lifecycle is on-chain (Order/Progress/Allocation/Arb).
+Prospect analysis is computed by MCP `query_toolkit` (`query_type: "onchain_topology"`, the graph evaluation) + `evaluation_operation`; this skill only keeps the dialogue flow and the user-facing gates. The customer lifecycle is on-chain (Order/Progress/Allocation/Arb).
 
 ## Ground Rules (apply to every phase)
 
@@ -43,7 +43,7 @@ Prospect analysis is computed by MCP `trust_score` (`depth: "preorder"`) + `eval
 `query_toolkit` → `onchain_objects` for the service; save `bPublished`, `bPaused`, `sales`, `machine`, `buy_guard`, `customer_required`, `arbitrations`, `compensation_fund`, `compensation_lock_duration`, `order_allocators`, `um`.
 - `bPublished === false` or `bPaused === true` → 🔴 ABORT.
 
-Fast pre-screen: `trust_score` with default `depth: "evaluate"`; 🔴 `risk_score < 50` → offer early abort, skip E2–E10.
+Fast pre-screen: `query_toolkit` `{ query_type: "onchain_topology", focus: "<service_id>" }`; 🔴 `evaluation.risk.total < 50` → offer early abort, skip E2–E10.
 
 ### E2 — Product / WIP
 From E1 `sales[]`, skip `suspension === true`. When `wip_hash` is non-empty it is a buy-side MUST: verify with `wip_file` `{type:"verify", wipFilePath, hash_equal}` before purchase.
@@ -83,9 +83,9 @@ From E1: `compensation_fund`, `compensation_lock_duration`. Balance below planne
 `onchain_objects` for E1 `um`: `um === null` → 🔴 ABORT; `ims[]` empty → 🔴 no Messenger; active IMs → proceed.
 
 ### E9 — Chain reputation
-The aggregate view is already computed inside `trust_score` (reviews dimension) and `query_toolkit relationship_profile` (derived relationships) — present those rather than hand-aggregating.
+The aggregate view is already computed inside the `onchain_topology` graph evaluation (trust dimension) and `query_toolkit relationship_profile` (derived relationships) — present those rather than hand-aggregating.
 Only when raw evidence is needed (all reads batched, ≤50/batch): `onchain_table_data` `onchain_table_item_entity_linker` (provider address → `votes[]` {who, like, dislike, favor}) + `onchain_table_data` `onchain_table_item_object_linker_tx` (Service address → recent binding Orders, FIFO 0xaaf window — lossy) → dispute rate / repeat-buyer ratio; >10% dispute → ⚠️.
-Presenter history (merchant active on Demands): aggregate `onchain_events` `DemandFeedbackEvent` filtered by the merchant's Service, or `onchain_table_data` `onchain_table_item_demand_presenter` per Demand (row carries `acceptance_score`, null = unrated); pass as `presenter_history` to `evaluation_operation` (`service_risk` / `demand_match`). Omit when no presenter activity (neutral without history).
+Presenter history (merchant active on Demands): aggregate `onchain_events` `DemandFeedbackEvent` filtered by the merchant's Service, or `onchain_table_data` `onchain_table_item_demand_presenter` per Demand (row carries `acceptance_score`, null = unrated); pass as `presenter_history` to `evaluation_operation` (`demand_match`). Omit when no presenter activity (neutral without history).
 
 ### E10 — Privacy matching (LocalInfo)
 From E1 `customer_required[]` (e.g. name/phone/shipping_address):
@@ -94,11 +94,11 @@ From E1 `customer_required[]` (e.g. name/phone/shipping_address):
 3. Persist new values with `local_info_operation` `add` (100% local, never on-chain).
 > ⛔ Never transmit any private item without explicit per-item confirmation. Transmission is Messenger only (Phase 2).
 
-### E11 — Trust-score synthesis
-`trust_score` `{ service, depth: "preorder", order_amount }` → score + per-dimension risks + preorder advice (confidence, game strategies, preference match, industry risks, `blocking_reminders`). Non-empty `blocking_reminders` → ⛔ resolve with the user before Phase 2. Compare candidates with `compare_with` (1–9, same depth): a `comparison` block with per-metric bests, **no overall ranking**.
+### E11 — Graph evaluation synthesis
+`query_toolkit` `{ query_type: "onchain_topology", focus: "<service_id>" }` → `evaluation` = `trust` + `risk` (each a 0-100 `total` with `level`/`breakdown`/`red_flags`/`blocked`), `completeness`, `coverage` slots, and `unverified` rules (data gaps are never scored as low). ⛔ `evaluation.risk.blocked` (critical red flags) → resolve with the user before Phase 2. Compare candidates by running the same query per service: present per-metric bests, **no overall ranking**.
 
 ### Pre-purchase gate
-🔴 Abort: E1 unpublished/paused · E8 `um=null` · E3 no-refund + E6 no-arb · E4 ambiguous Guards (user review) · E11 unresolved `blocking_reminders`. Every ⚠️ = explain and wait. All clear → Phase 2.
+🔴 Abort: E1 unpublished/paused · E8 `um=null` · E3 no-refund + E6 no-arb · E4 ambiguous Guards (user review) · E11 `evaluation.risk.blocked` unresolved. Every ⚠️ = explain and wait. All clear → Phase 2.
 
 **Dependency**: E1 first; E2/E8/E10/E7/E6 parallel after E1; E3→E4→E5 strict chain; E9 follows E3; E11 last (aggregates everything).
 
@@ -167,4 +167,4 @@ When `customer_intelligence` is ON (default), order/query responses carry `seman
 - Red lines: no arb + no refund path, OR `compensation_ratio < 0.5`. Post-purchase: monitor refund triggers, WIP hash mismatch, merchant unreachable (>3d warn → >7d arb), evidence ≥3 items.
 - Runtime toggle: `config_operation` `action:"toggle" service:"order_monitor"` (default OFF; enable when active orders exist).
 
-Plug-in `evaluation_operation` (read-only; read results, don't recompute): `service_risk` (4-dimension risk, inject `requirements`/`overrides`), `demand_match` / `service_match` (rank vs capability vector), `capability_gap`, `compose_service`, `node_game` / `arb_game` (best-move + payoff; pair with `query_toolkit participation_radar` output). The role decides and acts.
+Plug-in `evaluation_operation` (read-only; read results, don't recompute): `demand_match` / `service_match` (rank vs capability vector), `capability_gap`, `compose_service`, `node_game` / `arb_game` (best-move + payoff; pair with `query_toolkit participation_radar` output). The role decides and acts.

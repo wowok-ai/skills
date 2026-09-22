@@ -19,7 +19,7 @@ metadata:
 Do not re-derive any of this — consume the tool output:
 
 - **Discovery → present-path bridge**: `evaluation_operation` action=`demand_present` enumerates Demands, matches THIS service, and returns each match with a `next` block — `operation` (`demand.present_service` vs `demand.present_service_with_passport`), `preconditions` checklist, and rationale. Read-only; the write still needs user consent.
-- **Ad-hoc ranking**: `demand_match` (one Demand vs candidate Services), `service_match` (one Service vs candidate Demands), `service_risk`. All accept an optional `presenter_history` (see reputation below).
+- **Ad-hoc ranking**: `demand_match` (one Demand vs candidate Services) and `service_match` (one Service vs candidate Demands). Both accept an optional `presenter_history` (see reputation below).
 - **Execution routing**: `query_toolkit` query_type=`participation_radar` returns `operable[].recommended_call` (tool/path/reason) for every forward the account can execute. Never hand-pick `order.progress` vs `progress.operate` yourself — no `recommended_call` means the forward is not yours to execute.
 - **Own-interest analysis**: the radar derives role `supplier` and attaches `supplier-interest` (fund_flow / responsibility / leverage / stakes). Present it neutrally; the supplier decides.
 
