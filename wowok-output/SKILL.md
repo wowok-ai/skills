@@ -22,6 +22,7 @@ Post-process every WoWok tool response before showing it: resolve addresses, for
 
 Both environments:
 - **NEVER hand-truncate with `…`** (`0x00f6…a5839` is forbidden — not resolvable, not copyable). SHORTID is the only compact form.
+- **Copy addresses VERBATIM from the tool result — never retype from memory.** A silently dropped/duplicated hex char (observed failure: 64→62 hex, the address still LOOKS complete) makes the value unresolvable and pointing at nothing. Self-check before emitting: every address you write is `0x` + exactly 64 hex chars.
 - The full address is always present in the tool result in context, so a name/SHORTID display loses nothing.
 - Named → name ONLY, never `name 10EF-A11` and never append an id.
 - **Hash ≠ address** (first-byte discipline): only 32-byte hex whose first byte is `0x00` (user), `0x10`–`0x24` (typed objects) or `0xf1` (regular objects) can exist on-chain. Merkle roots, plaintext/file hashes and other digests have a random first byte — they are NOT addresses: never name-resolve or SHORTID them as if they were. ALWAYS emit hashes as `` `hash:0x…` `` (inline code, literal `hash:` prefix, no space) — NEVER bare hex: the client renders the marked form as raw text (no chip, no icon) and copy strips the marker back to the bare hex.
