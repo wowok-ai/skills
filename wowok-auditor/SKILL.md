@@ -2,7 +2,7 @@
 name: wowok-auditor
 description: "WoWok pre-publish auditor — the static-analysis Skill that verifies Guard completeness, Machine soundness, fund-flow safety, permission consistency, and publish readiness BEFORE any irreversible publish operation (Service publish, Machine publish, Allocator binding freeze). This Skill is the orchestration guide for the L4 Harness Verify Loop. It does not mutate objects. It triggers the MCP risk engine, gathers evidence, and presents a pass/warn/fail report plus a publish decision. Use when: User is about to publish a Service, Machine, or lock an Allocator set; User asks to \"audit\", \"verify\", \"review\", \"check before publish\"; L4 Harness Verify Loop is invoked before an irreversible operation; User mentions \"fund flow\", \"refund path\", \"allocation sum\", \"guard completeness\"; User mentions \"machine cycle\", \"unreachable state\", \"permission index conflict\"; User wants a pre-publish go/no-go decision; A publish operation failed and root-cause analysis is needed."
 metadata:
-  version: "2.1.1"
+  version: "2.2.0"
   role: shared
   related: "wowok-planner, wowok-provider, wowok-machine"
 ---
@@ -37,10 +37,11 @@ This Skill keeps only **when to run the audit, how to call it, and how to read t
 
 Run an audit immediately before any irreversible operation:
 
-1. **Service publish** — machine bound + published, allocators locked, arbitration/compensation invariants, buy_guard, contact, permission indices.
-2. **Machine publish** — nodes/pairs/forwards become immutable afterward.
-3. **Service fund-template lock** — `order_allocators` (the order distribution template and its trigger guards) is a Service create/update FIELD that becomes permanently immutable at `publish=true`; there is no separate bind op.
-4. **Post-failure root-cause analysis** — a publish/assert failed (e.g. `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`, `E_ARBITRATION_PERMISSION_CONFLICT`); re-run to identify every remaining blocker, not just the one that aborted.
+1. **Template adoption (earliest gate)** — before a build plan is even generated from an industry archetype template: `benchmark_migration_operation` action=`template_scan` runs the pre-deploy risk scan (same rule surface as the on-chain analyze, plus the template scanner's static trust-mechanism checks). `passed: false` (any CRITICAL finding) blocks `template_generate` / `migration_apply` at the MCP level — report the red flags and stop; do not proceed to object planning.
+2. **Service publish** — machine bound + published, allocators locked, arbitration/compensation invariants, buy_guard, contact, permission indices.
+3. **Machine publish** — nodes/pairs/forwards become immutable afterward.
+4. **Service fund-template lock** — `order_allocators` (the order distribution template and its trigger guards) is a Service create/update FIELD that becomes permanently immutable at `publish=true`; there is no separate bind op.
+5. **Post-failure root-cause analysis** — a publish/assert failed (e.g. `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`, `E_ARBITRATION_PERMISSION_CONFLICT`); re-run to identify every remaining blocker, not just the one that aborted.
 
 Scope adapts to blast radius: a single Service with no Machine skips machine checks automatically; a stack with cross-Machine supply chains runs the full chain. The engine derives applicable checks from the objects — do not hand-pick rules.
 

@@ -1,8 +1,8 @@
 ---
 name: wowok-onboard
-description: "WoWok First-Touch Onboarding — guides a NEW user from a vague first prompt to their first published Service: a Review opening, then AT MOST 8 mandatory business questions (never technical field prompts), then a dependency-aware auto-build (reuse / customize / discover). Every decision (industry, network, location, token, pricing, workflow, fund distribution, arbitration) is framed as who-wins-what and why. Produces Permission + Service + Machine + Progress + Guards + Allocation + Contact + Arbitration, verified by a test order. Not for existing merchants tuning operations — use wowok-provider. Use when: User is new to WoWok and wants to set up a service; User says \"open a shop\", \"create a service\", \"start selling\", \"onboard\"; User has no published Service yet; User asks \"what's next\" after account creation; User resumes an interrupted onboarding."
+description: "WoWok First-Touch Onboarding — guides a NEW user from a vague first prompt to their first published Service: a Review opening, then AT MOST 8 mandatory business questions (never technical field prompts), then a dependency-aware auto-build (reuse / customize / discover). Every decision (industry, network, location, token, pricing, workflow, fund distribution, arbitration) is framed as who-wins-what and why. Produces Permission + Service + Machine + Progress + Guards + Allocation + Contact + Arbitration, verified by a test order. Not for existing merchants tuning operations — use wowok-provider. Use when: User is new to WoWok and wants to set up a service; User says \"open a shop\", \"create a service\", \"start selling\", \"onboard\"; User wants to build from an industry template or migrate an existing store (\"migrate my shop\"); User has no published Service yet; User asks \"what's next\" after account creation; User resumes an interrupted onboarding."
 metadata:
-  version: "2.1.0"
+  version: "2.2.1"
   role: shared
   related: "wowok-provider, wowok-machine"
 ---
@@ -27,8 +27,18 @@ Take a new merchant from zero to first published Service via a **Review opening 
 | Safety + Guard/Machine/Arbitration design rules | `schema_query` `get_safety_rules` / `get_guard_design_patterns` |
 | Publish readiness (CRITICAL/WARN findings) | `goal_operation` action=`aggregate_risks` |
 | Multi-round memory (decisions/feedback) | `goal_operation` (Goal + TaskProcess streams) |
+| Industry archetype templates + pre-deploy risk scan + competitor migration | `benchmark_migration_operation` (`template_list` / `template_get` / `template_scan` / `template_generate` / `migration_import` / `migration_review` / `migration_apply`) |
 
 ---
+
+## Template & migration fast paths
+
+Two entry points skip the 8-question discovery (the MCP owns the shape; this skill keeps the confirmation rhythm):
+
+1. **Template build** — the user wants to build "like the `<industry>` leader/challenger model": `template_list` (optional industry filter) → `template_get` → `template_scan` (pre-deploy risk scan; CRITICAL blocks) → `template_generate` (creation plan via the merchant-guide pipeline; never executes on-chain). Templates are editable MD files (`.wowok/industry/<industry>/templates/<variant>.md` — the client industry drawer tree); the template's `user_inputs` are the ONLY questions left to ask — business-framed — then continue with the normal auto-build.
+2. **Competitor migration** — the user hands over an existing store URL/description: `migration_import` (`description` required; `url` is provenance only) → `migration_review` (surface mapped / unmapped / manual_review + WoWok advantages + role assessment for user confirmation) → `migration_apply` (scan-first; creation plan only; testnet unless the user explicitly confirms mainnet). Every `manual_review` entry is an explicit user decision — never resolve it silently.
+
+Both paths merge back into the dependency chain below at "auto-build & finish".
 
 ## Non-negotiable interaction rules
 

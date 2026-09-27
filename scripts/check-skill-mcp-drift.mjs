@@ -51,6 +51,7 @@ const jsonOutput = process.argv.includes('--json');
 const TOOL_INVENTORY = [
   'account_operation',
   'ask_user',
+  'benchmark_migration_operation',
   'bridge_operation',
   'config_operation',
   'employee_operation',

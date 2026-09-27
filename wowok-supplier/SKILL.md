@@ -2,7 +2,7 @@
 name: wowok-supplier
 description: "WoWok Supplier — the canonical skill for suppliers (sub-order providers) who present their service to a Demand and fulfill the resulting sub-order. Covers demand discovery, service presentation (open or passport-gated), sub-order fulfillment via Progress, and settlement collection. The supplier is a PEER role with a two-sided position: deliver (to get paid) + collect (from the upstream merchant). For the merchant who owns the main Service, see wowok-provider. For the process operators executing the workflow, see wowok-collaborator. Use when: User wants to present their service to a Demand (open RFP or gated call); User is a sub-order provider / supplier fulfilling part of a transaction; User wants to collect settlement from an upstream merchant; User mentions \"supplier\", \"sub-order\", \"demand\", \"present service\", \"RFP\", \"fulfill sub-order\"."
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
   role: supplier
   related: "wowok-provider, wowok-machine, wowok-messenger"
 ---
@@ -47,6 +47,8 @@ Payment is a two-hop waterfall: main order escrow → allocation → your sub-or
 ---
 
 ## Pre-flight: before presenting
+
+**Role check first**: a user arriving with "migrate my existing store / build like the `<industry>` challenger model" may be a supplier, not a merchant. `benchmark_migration_operation` `migration_import` returns a `role_assessment` (recommended role + rationale + alternatives) — when it recommends `supplier`, hand the build over to this skill's flow instead of the merchant lifecycle, and say so explicitly.
 
 Confirm with the user; never fabricate or auto-present:
 

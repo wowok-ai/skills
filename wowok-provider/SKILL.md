@@ -2,7 +2,7 @@
 name: wowok-provider
 description: "WoWok Service Provider — the canonical skill for service providers (merchants, sellers) to build, operate, and manage commercial services on WoWok. Covers service design (WIP products, Machine workflows, Allocator strategies), trust mechanisms (compensation funds, arbitration), customer attraction (discounts, rewards, supply chain promises), and order fulfillment. For customers placing orders, see wowok-order. For arbitrators, see wowok-arbitrator. Use when: User is a service provider/merchant/seller on WoWok; User wants to create a commercial service/marketplace; User wants to design workflow (Machine) for order processing; User wants to set up fund distribution strategies (Allocators); User wants to configure trust mechanisms (compensation, arbitration); User wants to handle order fulfillment and customer service; User mentions \"create service\", \"merchant\", \"seller\", \"provider\", \"workflow design\", \"compensation\", \"arbitration\"."
 metadata:
-  version: "2.1.0"
+  version: "2.2.1"
   role: provider
   related: "wowok-machine, wowok-messenger"
 ---
@@ -20,6 +20,7 @@ Do not re-derive these — the server applies them and returns findings/prompts:
 
 - **Pre-publish risk audit**: `goal_operation` action=`aggregate_risks` over your planned objects (safety rules, guard design, machine topology). Knowledge access: `schema_query` actions `get_safety_rules`, `get_guard_design_patterns`, `get_tool_reference`.
 - **Guided build pipeline** (optional, recommended for non-trivial services): `industry_pack_operation` (recommend_industry / list_modes / derive_user_mode) and `goal_operation` action=`merchant_guide` (stateless 10-step wizard; the final step emits a topologically ordered `creation_plan`). This skill's lifecycle below is the manual path to the same result.
+- **Industry archetype templates + one-click competitor migration**: `benchmark_migration_operation` — `template_list` / `template_get` / `template_scan` (pre-deploy risk scan; CRITICAL blocks) / `template_generate`, and `migration_import` → `migration_review` → `migration_apply` for migrating an existing store (URL/description → MigrationLog → scan-first creation plan; testnet unless the user explicitly confirms mainnet). Templates are editable MD files (`.wowok/industry/<industry>/templates/<variant>.md` — the client industry drawer tree) whose `user_inputs` are the business questions to confirm — the fast path that feeds the same lifecycle below.
 - **WIP network-deployment gate**, publish-time L1/L2 lock checks, and the compensation-fund-requires-arbitration pre-check are hard-enforced inside `onchain_operations`.
 - **Execution routing for live orders** comes from `query_toolkit` query_type=`participation_radar` → `operable[].recommended_call`. Never hand-pick `order.progress` vs `progress.operate`.
 

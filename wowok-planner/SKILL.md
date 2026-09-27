@@ -2,7 +2,7 @@
 name: wowok-planner
 description: "WoWok Planning Skill — the planning component of the L4 Harness Plan Loop. Converts natural-language intent into an executable Object Dependency Graph (ODG) plus a phased plan. Deterministic-first: rule tables and scenario templates drive planning; the LLM only clarifies intent. Produces an ODG consumed by the Harness execution loop, with checkpoints between phases. Not for direct execution — hand off to wowok-onboard or wowok-provider once the ODG is confirmed. Use when: User describes a new service intent and needs a build plan; the Harness opens a Plan Loop cycle; User asks \"what do I need to create to support X\"; User wants to reuse existing objects for a new service; User asks for a dependency graph or execution phases; User resumes an interrupted planning session."
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
   role: shared
   related: "wowok-onboard, wowok-auditor, wowok-provider"
 ---
@@ -20,9 +20,10 @@ Converts natural-language intent into an executable, dependency-ordered build pl
 Do not invent a plan format or gate names — the MCP owns the artifacts:
 
 1. **Industry** (optional first): `industry_pack_operation` `recommend_industry` with the intent text; confirm one of the returned modes (`list_modes` to see all; `derive_user_mode` to fork a custom one).
-2. **Guided wizard (default for merchants)**: `merchant_guide` — a stateless 10-step wizard (intent → industry → roles → deliverables → payment → trust → blueprint → score preview → harness checks → **creation_plan**). Pass the opaque `guide_state` back UNCHANGED each turn with the user's `guide_confirm`. Step 10 returns a topological `creation_plan` (order / object_type / depends_on / operation_hint) computed from the semantic graph — that order IS the plan.
-3. **Object-level pipeline (advanced / harness)**: `analyze_intent` (C1: parsed intent, per-object puzzle snapshots, missing dimensions, `recommended_creation_order`) → `aggregate_risks` (C2: blocking RISK status — pass the puzzles through UNCHANGED) → `trace_substeps` (C3: substep DAG + coherence verdict). Omit `puzzles` and pass `intent` to run C1→C2 in one call.
-4. **Materialize after GO**: create objects in `creation_plan` order via `onchain_operations` (that belongs to wowok-onboard / wowok-provider), then pass the pre-publish gate (wowok-auditor).
+2. **Template / migration fast path** (when the intent matches a known archetype or an existing store): `benchmark_migration_operation` — `template_list` / `template_get` / `template_scan` (pre-deploy risk scan; CRITICAL blocks) / `template_generate`, or `migration_import` → `migration_review` → `migration_apply` for a competitor store. Both return a merchant-guide `creation_plan` (scan-first; never executes on-chain; testnet unless the user explicitly confirms mainnet) — that plan IS the ODG, so skip steps 3-4 below unless the user wants a custom shape.
+3. **Guided wizard (default for merchants)**: `merchant_guide` — a stateless 10-step wizard (intent → industry → roles → deliverables → payment → trust → blueprint → score preview → harness checks → **creation_plan**). Pass the opaque `guide_state` back UNCHANGED each turn with the user's `guide_confirm`. Step 10 returns a topological `creation_plan` (order / object_type / depends_on / operation_hint) computed from the semantic graph — that order IS the plan.
+4. **Object-level pipeline (advanced / harness)**: `analyze_intent` (C1: parsed intent, per-object puzzle snapshots, missing dimensions, `recommended_creation_order`) → `aggregate_risks` (C2: blocking RISK status — pass the puzzles through UNCHANGED) → `trace_substeps` (C3: substep DAG + coherence verdict). Omit `puzzles` and pass `intent` to run C1→C2 in one call.
+5. **Materialize after GO**: create objects in `creation_plan` order via `onchain_operations` (that belongs to wowok-onboard / wowok-provider), then pass the pre-publish gate (wowok-auditor).
 
 ## Checkpoints & resumability
 
