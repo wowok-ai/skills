@@ -58,6 +58,11 @@ export const SKILL_NAMES: readonly string[] = [
   'wowok-auditor',
   'wowok-market',
   'wowok-governance',
+  // Generic (non-WoWok) assistant skills — complement, never replace, the
+  // WoWok flows; they reuse the client workspace tools and respect confirm gates.
+  'file-analysis',
+  'data-analysis',
+  'web-research',
 ];
 
 /** Deprecated skill dirs — never installed, always cleaned up when found. */

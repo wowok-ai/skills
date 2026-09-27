@@ -157,7 +157,8 @@ for (const name of dirs) {
   const bodyLines = parsed.body.split('\n').length;
   if (bodyLines > 500) fail(`body is ${bodyLines} lines (spec recommends ≤ 500)`);
 
-  const declaredMetadataSidecar = name.startsWith('wowok-');
+  const declaredMetadataSidecar = name.startsWith('wowok-')
+    || ['file-analysis', 'data-analysis', 'web-research'].includes(name);
   if (!declaredMetadataSidecar) warn('unexpected directory name prefix');
 
   report.skills.push(skill);
