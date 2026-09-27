@@ -499,8 +499,13 @@ export function recommendSkills(intent: string): Skill[] {
     return [];
   }
 
-  // Default: return all on-demand skills
-  return getSkillsByLoading('on-demand');
+  // No keyword matched — return empty. Role guidance must only ride on real
+  // keyword evidence: the former "default: all on-demand skills" dump made
+  // every unrelated message (plain chat like "what's the weather?") carry
+  // WoWok skill recommendations in the client's L1 prompt, polluting the
+  // general-assistant reply path. Callers that want the full menu can use
+  // getSkills()/skills_list instead.
+  return [];
 }
 
 // ============================================================
