@@ -27,7 +27,7 @@ The machine-executable rules are NOT duplicated in this Skill — they evolve in
 | Content | Source (MCP) |
 |---------|--------------|
 | Safety rules (confirmation levels, immutability, object reuse) | `schema_query` action='get_safety_rules' |
-| Guard completeness, Machine soundness, fund-flow safety, permission consistency, publish readiness | `goal_operation` action='aggregate_risks' (auto-applied) |
+| Guard completeness, Machine soundness, fund-flow safety, permission consistency, publish readiness | `goal_operation` action='aggregate_risks' (applied from the declared intent/puzzles + planned objects/operations) |
 
 This Skill keeps only **when to run the audit, how to call it, and how to read the verdict**.
 
@@ -43,7 +43,7 @@ Run an audit immediately before any irreversible operation:
 4. **Service fund-template lock** — `order_allocators` (the order distribution template and its trigger guards) is a Service create/update FIELD that becomes permanently immutable at `publish=true`; there is no separate bind op. The ALC1 allocator audit auto-reports an allocator whose sharing rows are ALL `Entity`/`Signer` (finding RC-FIND-09: its Guard binds to no particular order — a zero-share `GuardIdentifier` anchor row fixes that); when it fires, ask the merchant whether the omission is intended before publishing.
 5. **Post-failure root-cause analysis** — a publish/assert failed (e.g. `E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND`, `E_ARBITRATION_PERMISSION_CONFLICT`); re-run to identify every remaining blocker, not just the one that aborted.
 
-Scope adapts to blast radius: a single Service with no Machine skips machine checks automatically; a stack with cross-Machine supply chains runs the full chain. The engine derives applicable checks from the objects — do not hand-pick rules.
+Scope adapts to blast radius: a single Service with no Machine skips machine checks automatically; a stack with cross-Machine supply chains runs the full chain. The engine derives applicable checks from the DECLARED inputs (intent/puzzles + `planned_objects`/`planned_operations`) — it does NOT inspect live on-chain objects (docs#44); complement it with `query_toolkit` (`onchain_topology`) or `watch` for object-grounded checks. Do not hand-pick rules.
 
 ---
 
