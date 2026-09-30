@@ -62,7 +62,7 @@ Separation of powers: the arbitrator sets process and verdict (`indemnity`); the
 | 1 | `Arbitrator_confirming` | Arbitrator `confirm` → 2 · `reset` (with feedback) → 0 · `feedback` |
 | 2 | `Voting` | `vote` · `voting_deadline_change` · `arbitration` (verdict) → 3 · `feedback` |
 | 3 | `Arbitrated` | Customer: `arb_objection` → 4 · `arb_claim_compensation` → 5 |
-| 4 | `Objectionable` | Arbitrator `reset` → 0 (only exit) · `feedback` |
+| 4 | `Objectionable` | Arbitrator `reset` → 0 (only exit) · `feedback`. The filing fee stays escrowed — withdrawal is NEVER possible from this state |
 | 5 | `Finished` | Terminal; fee withdrawable immediately |
 | 6 | `Withdrawn` | Terminal |
 
@@ -90,7 +90,7 @@ Create the Arbitration **paused** (`pause: true`), configure, then `pause: false
 3. **Voting (2)**: `vote: {arb, votes:[indices…], voting_guard?}` — 0-based proposition indices; re-voting REPLACES the prior vote; ≤520 voters. With a deadline set, `arbitration` cannot run until it has passed (`E_VOTING_DEADLINE_NOT_PASSED`).
 4. **Verdict (2→3)**: `arbitration: {arb, feedback, indemnity}` — irreversible for the arbitrator; only customer objection/claim follows. **Indemnity is capped at 3× the order amount** (`MAX_INDEMNITY_MULTIPLE`, abort 9) and is paid from the SERVICE's `compensation_fund`, never from arbitrator funds.
 5. **Customer branch (3)**: claim → 5, or object with `arb_objection` → 4 → your `reset` sends it to 0 for revision. The claim succeeds even when the indemnity is 0 — it closes the case (state 5) and frees your fee. A losing customer has little incentive to send that transaction, so say so in your ruling feedback.
-6. **Fee withdrawal**: `arb_withdraw: {arb}` — immediate at Finished; from Arbitrated/Objectionable only after 30 days past indemnity time (`WITHDRAW_DURATION_TIME`, abort 8). `fees_transfer: {to:{allocation|{treasury}}, payment_remark, payment_index}` then moves the arbitration's ENTIRE balance in one call (there is no amount parameter) and leaves it as a CoinWrapper owned by the target — for a Treasury target the funds count only after `treasury receive: "recently"` (permission 253).
+6. **Fee withdrawal**: `arb_withdraw: {arb}` — immediate at Finished(5); from Arbitrated(3) only after 30 days past indemnity time (silence = acceptance; `WITHDRAW_DURATION_TIME`, abort 8); **NEVER from Objectionable(4)** — a contested case keeps its fee escrowed until the revision cycle closes (reset → customer re-confirm → new ruling → unchallenged), so drive resolved cases to Finished via the customer's claim whenever possible. States 0/1/2 also reject. `fees_transfer: {to:{allocation|{treasury}}, payment_remark, payment_index}` then moves the arbitration's ENTIRE balance in one call (there is no amount parameter) and leaves it as a CoinWrapper owned by the target — for a Treasury target the funds count only after `treasury receive: "recently"` (permission 253).
 
 **Move advice**: `evaluation_operation` action=`arb_game` with `status` (one of the 7 state names) and `perspective: customer|merchant|arbitrator` returns ranked moves/payoffs/risk — read-only; the role decides.
 
