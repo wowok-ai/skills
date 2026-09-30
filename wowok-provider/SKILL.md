@@ -125,6 +125,8 @@ Combinations that need no new Service — staged release/holdbacks, commission h
 
 Before deciding, confirm published state via `service_panorama`.
 
+**Orders are self-contained across versions.** A v2 Service is independent: existing v1 orders are never migrated. Each order carries the product info it was bought with (snapshotted inside the order at purchase time) and settles under the terms it was bought under — unrelated to whatever the currently offered products are. Never promise a customer that an old order will pick up v2 terms or products.
+
 **Lists and scores that change: use a Repository.** Keep a mutable list or number (allowed-operator list, blocklist, score) in a Repository policy and let the Guard read it — editing the list then needs no new Guard. Comparison and count/sum limits are in GUARD_SCHEMA_NOTES (`get_guard_design_patterns`): values compare as U256 numbers only, and a Guard cannot count or sum entries. Payees and split ratios in `order_allocators` still freeze at publish — pre-declare the tiers you may need.
 
 ---
