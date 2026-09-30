@@ -51,6 +51,7 @@ Every custom `permissionIndex` used MUST be granted in the bound Permission (`pe
 - The Guard validates BEFORE the transition. A Guard reading the SAME Progress sees the source node — never write "current == target_node" (always fails). For post-transition verification, bind the Guard to the **Allocator** (`alloc` runs after the state transition).
 - `retained_submission: [identifier…]` stores the submitted values on the forward's execution record in the Progress session/history (located by node + forward), so later nodes and cross-machine Guards can read them.
 - **No on-chain cron (T1 lossy point)**: "after N days, auto-X" decomposes into a time Guard PLUS an off-chain keeper that submits the forward once it passes. A time Guard without a keeper never fires.
+- **Lists/scores that change live in a Repository**: keep a mutable list or number (operator allow-list, blocklist, score) in a Repository policy and let the Guard read it — editing the list needs no new Guard. Comparison/count limits (U256-only values, no per-key counting) are in GUARD_SCHEMA_NOTES via `get_guard_design_patterns`.
 - Design every Guard via `get_guard_design_patterns`; test it with the standalone `gen_passport` operation BEFORE binding — immutability makes post-hoc fixes impossible.
 
 ## Sessions & thresholds
@@ -76,6 +77,7 @@ Every custom `permissionIndex` used MUST be granted in the bound Permission (`pe
 1. Permission → 2. Machine unpublished (`object:{name, type_parameter, permission}`) → 3. Guards created + tested (`gen_passport`) → 4. bind Guards on forwards → 5. test end-to-end → 6. `publish:true` → 7. Service binds the Machine.
 
 **Node field ops** (`data.node`, pre-publish only — 9): `add` / `set` (with `bReplace`, default false = MERGE into existing nodes; true = full replace), `remove`, `clear` (irreversible wipe — export first), `exchange` (swap two node positions), `rename` (updates pair references), `remove prior node`, `add forward`, `remove forward`. All forward-bearing ops accept the full forward shape including the Guard object with `retained_submission`.
+`add forward` shape: `node: {op: "add forward", data: [{prior_node_name, node_name, forward: [...], threshold?}]}` — the source node is `prior_node_name` INSIDE each data row; a flat `{node_name, prev_node, threshold, forward}` at the top level is rejected (`Unrecognized keys`).
 
 **File workflow**: `machineNode2file` exports the exact on-chain node set; edit; then `data.node: {json_or_markdown_file: "<path>"}` performs a COMPLETE replacement (node array, not an op object; JSON or ```json markdown). Always start from an export.
 

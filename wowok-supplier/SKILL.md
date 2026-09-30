@@ -95,6 +95,7 @@ Settlement is released through the allocation waterfall when the sub-order compl
 1. Verify your share reached your address (query the sub-order's Allocation/Treasury; the supplier-interest `fund_flow` block tells you what to check).
 2. If the upstream merchant stalls: Messenger nudge (WTS-recorded) → arbitration if the upstream Service binds one → on-chain reputation (permanent, public).
 3. Know the recourse before you start: the upstream `compensation_fund` is the indemnity source; an empty fund leaves only the refund path + reputation.
+4. If you are an intermediary, your own recourse against your supplier requires that you are the customer in an order on their Service — buying their part as its own order keeps those customer rights; being only an allocation recipient on the merchant's order leaves none.
 
 ---
 

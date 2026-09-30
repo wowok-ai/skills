@@ -65,15 +65,16 @@ All writes go through `onchain_operations` with `operation_type`; account from i
 2. **Guards** (`guard`) — design with `schema_query` action=`get_guard_design_patterns`; pass/fail gates vs runtime-submitted evidence (`b_submission` table entries) have different patterns — do not improvise, read the pattern output.
 3. **Bind + publish Machine, bind Service** — `machine` "add forward" with guards → machine `publish: true` (nodes/forwards become IMMUTABLE; re-export with machineNode2file and verify) → `service` bind `machine` (must already be published) and `buy_guard`.
 4. **Products** — `service` `sales: {op:'add'|'set'|'remove'|'clear', …}`; each sale `{name, price, stock, suspension, wip, wip_hash}` (price/stock are smallest-unit STRINGS). User supplies name/price/stock — never fabricate.
-5. **Revenue** — `service` `order_allocators` (set BEFORE publish). Modes: Amount / Rate (bps, sum exactly 10000) / Surplus (max one per allocator). Recipients: `Entity` (fixed address — an org address is usually a Treasury that must hold permission 253 TREASURY_RECEIVE to intake), `GuardIdentifier` (address submitted at allocation time, e.g. the Order), `Signer` (the allocation caller — do not overuse or splits collapse).
-6. **Customer service** — `contact` `ims: {op:'add'|'set'|'remove'|'clear'}` (IM list; mutations require permission 453 CONTACT_IM, emit no events) + enable messaging via `account_operation {messenger:{enabled:true, name_or_account}}`. Inbound filtering is the Messenger friends/guard/stranger lists (see wowok-messenger). Bind `service.um` when `customer_required`.
+5. **Revenue** — `service` `order_allocators` (set BEFORE publish). Modes: Amount / Rate (bps, sum exactly 10000) / Surplus (max one per allocator). Recipients: `Entity` (fixed address — an org address is usually a Treasury that must hold permission 253 TREASURY_RECEIVE to intake), `Signer` (the allocation caller — do not overuse or splits collapse), `GuardIdentifier` (BOUND to the paying order: in a Service-created Allocation every `GuardIdentifier` submission must equal the paying order or the call aborts with code 15 — it is always "the order", never a third party whose address is supplied at trigger time; use `Entity` for named parties).
+   Anchor tip: `Entity`/`Signer` rows resolve no submission, so an allocator paying only them leaves its Guard bound to no particular order — bind it with a zero-share `{GuardIdentifier: 0}` anchor row (pattern `allocator_order_anchor`; confirm Rate 0 with a dry-run before publishing).
+6. **Customer service** — `contact` `ims: {op:'add'|'set'|'remove'|'clear'}` (IM list; mutations require permission 453 CONTACT_IM, emit no events) + enable messaging via `account_operation {messenger:{enabled:true, name_or_account}}`. Inbound filtering is the Messenger friends/guard/stranger lists (see wowok-messenger). Bind `service.um` when `customer_required`. If your Contact runs a Guarded/Closed Messenger profile, an arbitrator on your Service cannot reach you unless you `friendslist add` their address once a case is filed.
 7. **Trust** — bind a REUSED third-party Arbitration: it MUST use a different Permission than the Service (`E_ARBITRATION_PERMISSION_CONFLICT` = 33). `compensation_fund_add` funds an internal `Balance<T>` (not a Treasury, not a payment to the arb); a non-empty fund at publish requires non-empty `arbitrations` (`E_ARBITRATION_NOT_SET_WITH_COMPENSATION_FUND` = 25).
 8. **Pre-publish verify** — machineNode2file + guard2file exports · `aggregate_risks` CRITICAL cleared · permission indices granted · arb Permission isolation · contact IM + messenger enabled → `service` `publish: true`.
 9. **Test order** — `service` `order_new` (requires bPublished, else E_NOT_PUBLISHED=7) → disclose the next nodes → advance each forward from radar `recommended_call` → trigger allocation (below) → verify every claimant received. Use a user-chosen test account.
 
 ### Lock levels after publish
 
-- **L1 permanent** (no exception, new Service version to change): `machine`, `order_allocators`.
+- **L1 permanent** (no exception — the L2 lock duration does NOT unlock these; machine/order_allocators are permanently frozen once published): `machine`, `order_allocators`.
 - **L2 time-locked** (requires pause + `setting_lock_duration` elapsed; default 30 days = 2,592,000,000 ms): arbitrations/rewards **remove/clear**, `compensation_fund_withdraw`.
 - **L3 stays mutable**: arbitrations/rewards **add**, `buy_guard`, `sales`, `discount`, `description`, `location`, `repositories` add, `compensation_fund_add`, `setting_lock_duration_add`, `customer_required`, `um`.
 
@@ -108,15 +109,23 @@ WOW is the default token; supported bridge tokens/chains: `bridge_operation` ope
 
 ---
 
+## Fund-flow patterns the primitives already support
+
+Combinations that need no new Service — staged release/holdbacks, commission holdback (no clawback exists), reward rule replacement, buyer blocklists via `buy_guard`, referral anti-self-purchase, and multi-party recourse. All are cataloged as Guard design patterns: `schema_query` action=`get_guard_design_patterns`, ids `pattern.allocation_staged_release`, `pattern.commission_holdback`, `pattern.reward_rule_replacement`, `pattern.buy_guard_blocklist`, `pattern.referral_anti_self_purchase`, `pattern.multi_party_recourse` (plus `pattern.allocator_order_anchor` for zero-share binding, below). Read each pattern's notes: VERIFIED parts are tested; INFERENCE parts need a dry-run before publishing (published allocators cannot change).
+
+---
+
 ## Iteration: in-place vs new version
 
 | Situation | Strategy |
 |-----------|----------|
 | Unpublished draft | In-place modify |
-| Published, change to an L1 field (Machine, allocators) | NEW version: create new objects only for changed parts, reuse the rest by address (Permission, Guards, Treasury, Contact…), publish v2 as a separate Service — v1 keeps running. There is no fork/upgrade tool. |
+| Published, change to an L1 field (Machine, allocators) | NEW version: create new objects only for changed parts, reuse the rest by address (Permission, Guards, Treasury, Contact…), publish v2 as a separate Service — v1 keeps running. There is no fork/upgrade tool. ⚠️ Before listing a Guard as reusable, export it with `guard2file` and look for a Service address written as a constant (e.g. an `order.service == <address>` comparison) — such a Guard works for ONE Service only, and every Guard (in allocators and on Machine forwards) carrying the constant must be rebuilt for v2. Avoid this from v1 by not writing the Service address into Guards that do not need it. |
 | Published, L3 change only (products, description, buy_guard…) | In-place mutate |
 
 Before deciding, confirm published state via `service_panorama`.
+
+**Lists and scores that change: use a Repository.** Keep a mutable list or number (allowed-operator list, blocklist, score) in a Repository policy and let the Guard read it — editing the list then needs no new Guard. Comparison and count/sum limits are in GUARD_SCHEMA_NOTES (`get_guard_design_patterns`): values compare as U256 numbers only, and a Guard cannot count or sum entries. Payees and split ratios in `order_allocators` still freeze at publish — pre-declare the tiers you may need.
 
 ---
 

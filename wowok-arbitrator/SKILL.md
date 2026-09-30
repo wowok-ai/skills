@@ -52,13 +52,13 @@ Never invent a fee, a voting structure, or Guard logic — missing → ASK; "mak
 
 Two objects: **Arbitration** (the service: fee, voting/usage Guards, `um`, `bPaused`, `balance`, Permission — permanent) and **Arb** (one per case: state machine, propositions, votes, fee held in escrow, verdict).
 
-Separation of powers: the arbitrator sets process and verdict (`indemnity`); the CUSTOMER confirms filings, objects, and claims compensation. Neither side can finish a case unilaterally.
+Separation of powers: the arbitrator sets process and verdict (`indemnity`); the CUSTOMER files disputes, objects, re-confirms after a reset, and claims compensation. Neither side can finish a case unilaterally.
 
 ### Arb state machine (codes are the on-chain names used by `arb_game` too)
 
 | # | State | Who moves, how |
 |---|---|---|
-| 0 | `Principal_confirming` | Customer via order `arb_confirm` ({arb, confirm, proposition?, description?}) → 1 |
+| 0 | `Principal_confirming` | Reached only after an arbitrator `reset`; Customer via order `arb_confirm` ({arb, confirm, proposition?, description?}) → 1. No timeout — the filing fee stays locked until the customer acts |
 | 1 | `Arbitrator_confirming` | Arbitrator `confirm` → 2 · `reset` (with feedback) → 0 · `feedback` |
 | 2 | `Voting` | `vote` · `voting_deadline_change` · `arbitration` (verdict) → 3 · `feedback` |
 | 3 | `Arbitrated` | Customer: `arb_objection` → 4 · `arb_claim_compensation` → 5 |
@@ -75,7 +75,7 @@ Separation of powers: the arbitrator sets process and verdict (`indemnity`); the
 Create the Arbitration **paused** (`pause: true`), configure, then `pause: false` last. While paused, filing ABORTS with arbitration error `E_PAUSED` (4) — it is an on-chain error, not a silent reject, but the practical damage is the same: no cases can arrive. Verify unpaused before going live.
 
 - `fee`, `description`, `location` are settable by Permission.
-- `voting_guard: {op:'add'|'set'|'remove'|'clear', guards:[…]}`. Each entry is `{guard, vote_weight}`: fixed u32 weight, or a u8 Guard-table identifier whose submitted number becomes the voter's weight at vote time (`FixedValue` / `GuardIdentifier`). Open = empty list → plain Permission vote, weight 1. Test every Guard with standalone `gen_passport` before adding — Guards are immutable from creation; a flawed voting Guard can only be replaced (the list itself stays mutable while configured pre-service / as allowed).
+- `voting_guard: {op:'add'|'set'|'remove'|'clear', guards:[…]}`. Each entry is `{guard, vote_weight}`; `vote_weight` is an OBJECT, not a number: `{"FixedValue": n}` (u32, 0–4294967295) or `{"GuardIdentifier": i}` (u8 slot index, 0–255 — the Guard-table slot whose submitted number becomes the voter's weight at vote time; the slot must hold a number). Open = empty list → plain Permission vote, weight 1. Test every Guard with standalone `gen_passport` before adding — Guards are immutable from creation; a flawed voting Guard can only be replaced (the list itself stays mutable while configured pre-service / as allowed).
 - `usage_guard`: a Guard address or null; when set, filing MUST pass it via Passport (`dispute_with_passport`), else plain `dispute` aborts `E_NEED_PASSPORT` (6).
 - `um`: a Contact; evidence flows through its Messenger addresses.
 - **Permission isolation (mainnet trust)**: the Arbitration's Permission MUST differ from every Service it's bound to — binding a shared one aborts `E_ARBITRATION_PERMISSION_CONFLICT` (33, enforced at Service bind). Separately, the buyer-side risk model scores same-Permission as **−6 points (critical)** and overlapping owner/admin as **−4 points (warning)** inside its 20-point trust dimension — even distinct objects with the same controllers fail the intent. Use a genuinely independent third-party Permission.
@@ -84,13 +84,13 @@ Create the Arbitration **paused** (`pause: true`), configure, then `pause: false
 
 ## Handling a case
 
-1. **Arrival**: customer files via `arbitration` `dispute: {order, description?, proposition[], fee:{balance}, namedArb?}` (≤20 propositions; fee locked in the Arb; excess fee is refunded). Arb appears at state 1.
+1. **Arrival**: customer files via `arbitration` `dispute: {order, description?, proposition[], fee:{balance}, namedArb?}` (≤20 propositions; fee locked in the Arb; excess fee is refunded). The case lands directly in state 1 — the customer does not confirm at filing time.
 2. **Review (1)**: `confirm: {arb, voting_deadline}` — proceed, or `reset` with feedback when the filing is insufficient (don't escalate thin cases).
    - `voting_deadline` is ms: **0 (default) = already-passed → direct verdict, voting impossible**; **null = open-ended**; a future timestamp = voting window (recommend ≥24h; ~3 days is a convention, NOT a chain limit).
 3. **Voting (2)**: `vote: {arb, votes:[indices…], voting_guard?}` — 0-based proposition indices; re-voting REPLACES the prior vote; ≤520 voters. With a deadline set, `arbitration` cannot run until it has passed (`E_VOTING_DEADLINE_NOT_PASSED`).
 4. **Verdict (2→3)**: `arbitration: {arb, feedback, indemnity}` — irreversible for the arbitrator; only customer objection/claim follows. **Indemnity is capped at 3× the order amount** (`MAX_INDEMNITY_MULTIPLE`, abort 9) and is paid from the SERVICE's `compensation_fund`, never from arbitrator funds.
-5. **Customer branch (3)**: claim → 5, or object with `arb_objection` → 4 → your `reset` sends it to 0 for revision.
-6. **Fee withdrawal**: `arb_withdraw: {arb}` — immediate at Finished; from Arbitrated/Objectionable only after 30 days past indemnity time (`WITHDRAW_DURATION_TIME`, abort 8). Then move the balance onward with `fees_transfer: {to:{allocation|{treasury}}, payment_remark, payment_index}`.
+5. **Customer branch (3)**: claim → 5, or object with `arb_objection` → 4 → your `reset` sends it to 0 for revision. The claim succeeds even when the indemnity is 0 — it closes the case (state 5) and frees your fee. A losing customer has little incentive to send that transaction, so say so in your ruling feedback.
+6. **Fee withdrawal**: `arb_withdraw: {arb}` — immediate at Finished; from Arbitrated/Objectionable only after 30 days past indemnity time (`WITHDRAW_DURATION_TIME`, abort 8). `fees_transfer: {to:{allocation|{treasury}}, payment_remark, payment_index}` then moves the arbitration's ENTIRE balance in one call (there is no amount parameter) and leaves it as a CoinWrapper owned by the target — for a Treasury target the funds count only after `treasury receive: "recently"` (permission 253).
 
 **Move advice**: `evaluation_operation` action=`arb_game` with `status` (one of the 7 state names) and `perspective: customer|merchant|arbitrator` returns ranked moves/payoffs/risk — read-only; the role decides.
 
@@ -98,6 +98,7 @@ Create the Arbitration **paused** (`pause: true`), configure, then `pause: false
 
 ## Evidence & reputation
 
+- Parties are strangers to you and often to Messenger. On `confirm`, write each party one opening message (the Arb address, what you need, e.g. a signed WTS via `send_file`); your reply lifts their one-message stranger limit toward you. Keep `allowStrangerMessages` on while you accept cases. If a party's send fails with `not registered`, say so in the Arb `feedback` so the record shows they were asked and could not be reached.
 - Customer reads the Arbitration's `um`, sends WTS evidence off-chain via encrypted Messenger; arbitrator runs `messenger_operation` `verify_wts` before considering anything — unverified evidence is not evidence.
 - Tell initiators to pre-sort with `evaluation_operation` action=`evidence_review` (list mode): usable/manual/rejected partition + `proof_candidates` for the dispute description; the human selects — nothing auto-attaches.
 - On-chain `feedback` is permanent and public: reasoned, professional, consistent. Use Messenger for anything private.

@@ -56,8 +56,8 @@ Primary: `query_toolkit` → `query_type: "onchain_topology"`, `focus: "<service
 
 Checks and verdicts (surfaced by findings + your reading of transitions):
 - Entry node (`prev_node: ""`) with no forward → 🔴 orders stuck at `current=""`.
-- No user-operable path on a critical node → 🔴 stuck unless provider acts.
-- No refund path (100%→Order allocator on a user-operable forward) → 🔴 no recovery.
+- No user-operable path on a critical node → check the allocators first (E5) — an allocator exit may cover it; 🔴 stuck unless provider acts only if neither path nor allocator exists.
+- No refund path → 🔴 only if there is **neither** (a) a forward you can operate that leads to a state whose allocator pays the Order, **nor** (b) an allocator whose Guard fires on elapsed time or on a state you can reach without the seller. Either counts.
 - No arbitration path → 🔴 no recourse. **No refund AND no arbitration → strongly advise against purchase.**
 - All exits pay the provider regardless → ⚠️; a forward needs a Guard the user cannot satisfy → ⚠️ cooperation needed.
 
@@ -68,8 +68,8 @@ Use `machineNode2file` (export once, parse locally — never node-by-node; see [
 2. Semantics: `schema_query` `get_guard_design_patterns` + `get_guard_templates`; generic instructions: `wowok_buildin_info` `info: "guard instructions"`.
 3. Classify: 🟢 clear purpose → explain · 🟡 multi-layer but clear intent → explain step by step · 🔴 ambiguous logic/dependencies → **warn; user must review the file**. Prioritize Guards on user-operable forwards and refund allocators.
 
-### E5 — Fund allocation
-Read E1 `order_allocators.allocators[]` (topology also carries allocation edges). For each: cross-ref its Guard (E4) → trigger condition; map to the Machine node (E3) → when it fires; state the outcome in money terms.
+### E5 — Fund allocation (exit map)
+Read E1 `order_allocators.allocators[]` (topology also carries allocation edges). For each: cross-ref its Guard (E4) → trigger condition; map to the Machine node (E3) → when it fires; state the outcome in money terms. Before the user buys, write one row per allocator: **Who can trigger it** (anyone / only the Signer named in the Guard) · **Earliest time** (read `progress.current_time` / Clock comparisons in the Guard) · **Payee** (Order = refund to you) · **What you submit** (usually the Order address) · **State it needs**. Triggering is `allocation alloc_by_guard` and anyone may do it, including you; when the payee is the Order, finish with `order receive: "recently"`. The earliest time a provider-paying allocator can fire is the user's dispute window — state that number in plain time units before they buy. If the Machine gives the user no forward, do not conclude the order can be stuck: check the allocators first.
 - No 100%→Order allocator → 🔴 no refund mechanism · surplus receiver = provider → ⚠️ · triggers only on provider-only paths → ⚠️ unilateral collection · no allocators on user-operable paths → ⚠️ no financial control. Safest: 100%→Order allocator on a user-operable forward.
 
 ### E6 — Arbitration
@@ -80,7 +80,7 @@ Batch query E1 `arbitrations[]` via `onchain_objects`; also `onchain_events` `ty
 From E1: `compensation_fund`, `compensation_lock_duration`. Balance below planned order amount → ⚠️; lock near expiry (provider can withdraw) → ⚠️.
 
 ### E8 — Contact channel
-`onchain_objects` for E1 `um`: `um === null` → 🔴 ABORT; `ims[]` empty → 🔴 no Messenger; active IMs → proceed.
+`onchain_objects` for E1 `um` (use `customer_required` from E1). `customer_required` non-empty AND (`um === null` or the Contact's `ims[]` empty) → 🔴 ABORT — the Service asks for private data but publishes nowhere to send it. `customer_required` empty and `um === null` → ⚠️ no in-band channel — rely on on-chain state and the Machine; explain and wait. Active `ims[]` → proceed.
 
 ### E9 — Chain reputation
 The aggregate view is already computed inside the `onchain_topology` graph evaluation (trust dimension) and `query_toolkit relationship_profile` (derived relationships) — present those rather than hand-aggregating.
@@ -98,7 +98,7 @@ From E1 `customer_required[]` (e.g. name/phone/shipping_address):
 `query_toolkit` `{ query_type: "onchain_topology", focus: "<service_id>" }` → `evaluation` = `trust` + `risk` (each a 0-100 `total` with `level`/`breakdown`/`red_flags`/`blocked`), `completeness`, `coverage` slots, and `unverified` rules (data gaps are never scored as low). ⛔ `evaluation.risk.blocked` (critical red flags) → resolve with the user before Phase 2. Compare candidates by running the same query per service: present per-metric bests, **no overall ranking**.
 
 ### Pre-purchase gate
-🔴 Abort: E1 unpublished/paused · E8 `um=null` · E3 no-refund + E6 no-arb · E4 ambiguous Guards (user review) · E11 `evaluation.risk.blocked` unresolved. Every ⚠️ = explain and wait. All clear → Phase 2.
+🔴 Abort: E1 unpublished/paused · E8 no usable channel for `customer_required` info · E3 no-refund + E6 no-arb · E4 ambiguous Guards (user review) · E11 `evaluation.risk.blocked` unresolved. Every ⚠️ = explain and wait. All clear → Phase 2.
 
 **Dependency**: E1 first; E2/E8/E10/E7/E6 parallel after E1; E3→E4→E5 strict chain; E9 follows E3; E11 last (aggregates everything).
 
@@ -116,6 +116,7 @@ On-chain rules (Phase 1) are immutable truth; Messenger is the encrypted, self-v
 
 ## Phase 3: Order creation
 
+- Enable Messenger on the buying account before you buy — an arbitrator can only ask you for evidence if your account is registered (`messenger_operation` `enable_messenger` covers your own account only).
 - Buy (`onchain_operations` service `buy`): `wip_hash` MUST equal the current sale hash (never `""` when set); coin ≥ amount, excess auto-refunds to the sender in the same tx; agents cannot withdraw.
 - Discounts: `query_toolkit` → `onchain_received` with type `0x2::service::Discount`, filter by `service`, validate benchmark/time validity per the tool schema (rate/fixed semantics described on `discount_type`/`off`); pass the chosen Discount in the buy call.
 
@@ -134,13 +135,15 @@ When the user reaches a node, present the forward's three aspects together — n
 
 ## Phase 5: Arbitration
 
-Flow: `onchain_operations` arbitration `dispute` → WTS evidence → Messenger → order `arb_confirm` → voting → (`arb_objection`) → `arb_claim_compensation`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+Flow: `arbitration dispute` (the case starts in state 1 — no customer confirmation at filing) → send the signed WTS by Messenger → the arbitrator confirms and rules → you may `arb_claim_compensation` (accept) or `arb_objection`. After an objection the arbitrator `reset`s the case to state 0 and **you must call `order.arb_confirm` again** to put it back in state 1; until you do, nothing moves. Do not call the arbitration-side `confirm`: it is the arbitrator's call and fails with `Missing permissions 361`. Process: [wowok-arbitrator](../wowok-arbitrator/SKILL.md).
+
+When you file, send exactly one first message to the arbitrator: the signed WTS with the Arb address in its caption/text (a stranger thread allows one message until they reply).
 
 **Before filing**, review the whole evidence pile at once with `evaluation_operation` `action: "evidence_review"` (list mode `items[]`: id/kind/hash_committed/digital_check_passed/contradiction/proof_ref; kinds per the tool schema).
 - Output partitions `usable` / `manual` / `rejected` and returns `proof_candidates` + `dispute_hint`.
 - Let the user PICK which proof candidates to reference (never auto-attach; the on-chain `dispute` has no proof field — references travel in the description / Messenger).
 - "no evidence passed" → anchor more evidence (Messenger WTS → Proof) before filing.
-- Fee is paid separately (not from the Order); one compensation claim per Order; source is `compensation_fund` (E7).
+- Fee is paid separately (not from the Order); one compensation claim per Order; source is `compensation_fund` (E7). After a ruling of 0 you can still call `arb_claim_compensation`: it costs only gas, closes the case (state 5) and lets the arbitrator take the fee immediately.
 
 ---
 
