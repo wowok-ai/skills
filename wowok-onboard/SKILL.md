@@ -77,7 +77,7 @@ Account + network (testnet first)
 
 ## The 8 questions (ask in order, business-framed)
 
-**Q1 — What do you sell, to whom?** Determines trust mechanism, workflow, split. `recommend_industry {intent}` → top-3 modes; surface each mode's `trust_selling_points`/`build_notes` as "what buyers in this industry worry about". Builtin modes (8): `freelance` `rental` `education` `travel` `subscription` `retail` `retail_d2c` `general`; mid-onboarding tweaks use `derive_user_mode` / `evolve_user_mode`.
+**Q1 — What do you sell, to whom?** Determines trust mechanism, workflow, split. `recommend_industry {intent}` → top-3 modes; surface each mode's `trust_selling_points`/`build_notes` as "what buyers in this industry worry about". Builtin modes (8): `freelance` `rental` `education` `travel` `subscription` `retail` `retail_d2c` `general`; mid-onboarding tweaks use `derive_user_mode` / `evolve_user_mode`. If the user names a concrete incumbent product/shop to emulate ("build like X"), switch to the template fast path — matching by the tagged benchmark product outranks generic industry modes.
 
 **Q2 — Testnet practice or mainnet now?** Recommend testnet. Run `migration_preflight` — if the account already built on testnet, switch to the migration checklist (re-confirm token/location/arbitration/WIP/gas), don't re-ask.
 
@@ -99,7 +99,7 @@ Account + network (testnet first)
 
 With the 8 decisions captured, create in dependency order (each default disclosed, not a new question): Permission (reuse) → Service draft → Progress ledger → Machine + Guards (R-M1-11) → publish Machine → sales/WIP → order_allocators → Contact (support IMs; anti-spam disclosed) → Arbitration binding (+ compensation fund if chosen). Reward / supply-chain promises / Repository are opt-in offers.
 
-Then: `aggregate_risks` → fix ALL CRITICAL findings → publish Service → run a **user-driven test order** (AI recommends the next per-node step, user decides). Remaining hard gates via `query_toolkit` query_type=`onchain_objects`; the authoritative checklist is MCP-served — don't re-derive it.
+Then: `aggregate_risks` → fix ALL CRITICAL findings → publish Service → run a **user-driven test order** (AI recommends the next per-node step, user decides) — the test MUST cover BOTH fund steps: trigger the allocation at the terminal, then have every claimant receive their payment (a buy-only green test hides the settlement path and ships a false "done"). Remaining hard gates via `query_toolkit` query_type=`onchain_objects`; the authoritative checklist is MCP-served — don't re-derive it.
 
 ## Errors
 

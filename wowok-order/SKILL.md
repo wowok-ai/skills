@@ -145,6 +145,8 @@ When you file, send exactly one first message to the arbitrator: the signed WTS 
 - "no evidence passed" → anchor more evidence (Messenger WTS → Proof) before filing.
 - Fee is paid separately (not from the Order); one compensation claim per Order; source is `compensation_fund` (E7). After a ruling of 0 you can still call `arb_claim_compensation`: it costs only gas, closes the case (state 5) and lets the arbitrator take the fee immediately.
 
+**When to file — timing changes the payout source.** While the order's escrow pool is still FUNDED and unsettled, a claim redirects POOL money directly — the strongest collection window (and your only lever that changes where pool funds go). Once the pool has settled or drained, payouts route via the Service `compensation_fund` instead: check its balance first (it is per-Service and an underfunded fund can leave a won claim unpayable). `participation_radar` `fund_advice` states the live fund path per order — read it before advising the user on timing. A ruling never re-splits the pool's ratios: on-chain refunds stay all-or-nothing; a "partial refund" outcome must be negotiated off-chain between the parties.
+
 ---
 
 ## Fund management (builder only)
