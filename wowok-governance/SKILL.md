@@ -32,7 +32,7 @@ Inventory → decide → execute → **audit (re-query the post-state every time
 ## Domain 2 — Financial governance
 
 - **Treasury**: deposit joins coins in (Payment receipt minted); withdraw splits balance out — irreversible, and an `external_guard` on the Treasury must authorize it. Audit every flow with `onchain_table_data` query_type=`onchain_table_item_treasury_history` (op `0` Withdraw / `1` Deposit / `2` Receive; amount + guard + timestamp).
-- **Allocation**: modes Amount (fixed) / Rate (basis points, 10000 = 100%; pure-Rate must sum to 10000) / Surplus (remainder drain, ≤1 per Allocator). Review allocator guards periodically — a stale guard blocks legitimate distributions.
+- **Allocation**: modes Amount=0 (fixed) / Rate=1 (bps; net base = pool − fix, or max − fix when a cap is set; sums to exactly 10000 with no Surplus, ≤10000 with one) / Surplus=2 (remainder drain, ≤1 per Allocator) / RateGross=3 (bps on the FULL pool, or the max cap, so fixed Amount rows and "% of order total" rates coexist). An allocator may not mix net Rate and RateGross unless it carries no fixed total (fix == 0), else it aborts EMIXED_RATE_BASES (17). Review allocator guards periodically — a stale guard blocks legitimate distributions.
 - **Unclaimed payments**: recipients own frozen CoinWrappers until unwrapped. The keeper owns this reminder surface: `keeper_operation` `scan` then `tasks` with `detector: "payment_unclaimed"`; nudge recipients via Messenger. `NewPaymentEvent` is deliberately NOT push-suggestion-bridged, to avoid duplicate reminders.
 - **Reward pools**: funds in (RewardFundEvent) / claims out (RewardClaimEvent); a dry pool blocks claims — watch balances before announcing campaigns.
 
