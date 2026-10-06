@@ -2,7 +2,7 @@
 name: wowok-machine
 description: "WoWok Machine Workflow Design — design, build and operate workflow templates (Machines): directed graphs that define how orders progress through stages, who can advance them, and what conditions must be met at each step. Covers Nodes/Pairs/Forwards/Guards/Thresholds, lifecycle (create, configure, publish, pause), node and forward operations, Progress integration, cross-Machine supply chains via Guard verification, and machineNode2file import/export. Use when: User wants to create or modify a Machine workflow; User asks about workflow steps, state transitions, or progress; User needs to design order processing pipelines; User mentions \"machine\", \"workflow\", \"progress\", \"state machine\", \"pipeline\"; User wants to export/import Machine nodes via a file; User needs threshold mechanics, forward permissions, or guard bindings."
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
   role: provider
   related: "wowok-provider"
 ---
@@ -46,9 +46,15 @@ Both may be set (executor needs EITHER). At runtime the radar resolves the path 
 
 Every custom `permissionIndex` used MUST be granted in the bound Permission (`permission` op `add perm by index`) before publish. An ungranted index means the forward can never execute — Progress stuck forever; the handler warns, but the design review must catch it.
 
-## Guards on forwards
+## Guards on forwards — the pre-condition law
 
-- The Guard validates BEFORE the transition. A Guard reading the SAME Progress sees the source node — never write "current == target_node" (always fails). For post-transition verification, bind the Guard to the **Allocator** (`alloc` runs after the state transition).
+**A Guard is ALWAYS evaluated before the operation's result takes effect, and can only read state already committed strictly before its evaluation point. A Guard that depends on the operation's own result necessarily fails.** Provable for forward guards: at guard evaluation the target node exists in NO queryable location — `progress.current` still holds the source node, and the `History{next_node}` entry is written only AFTER the guard passes. Reading `progress.history` cannot bridge the two ends either.
+
+- **Reuse is the design intent — scope it by view.** Guards are reusable predicates: one guard may gate several forwards sharing a source node, and one guard may authorize several allocators (`alloc` runs EVERY allocator matching the guard). The reuse boundary is transition-dependent state (`progress.current`, `current_time`, `history`): a forward gate sees the SOURCE node, an allocator gate (a LATER transaction) sees the TARGET node — a node-pinned guard hung on BOTH gates of one transition aborts on one side and permanently strands the other (escrow stuck). Node-free guards (identity, submission-only, `order.time`) are fully reusable across gates.
+- **"post-verification" means post-permission, never post-state.** The framework calls the Guard a "post-verification layer" — post modifies the (optional) permission check, not the state transition. Misreading this one word inverts edge reasoning.
+- **Clock windows measure node arrival, not order age.** `current_time` is written when the Progress ENTERS a node, so a time assertion on a forward measures "time since entering the source node". For order-duration semantics assert on `order.time` explicitly — the two differ whenever the source node is not the entry node.
+- **Boundary of this law**: it rules causality (uncommitted state) only. Frozen-reference mistakes stay fatal under perfect timing: never embed a Service address in a Guard, and never assume `GuardIdentifier: 0` — the identifier is a function of that Guard's table layout.
+- **Author-time discipline**: declare each Guard's commit point — `pre_move` (forward gate, source view) or `post_move` (allocator gate, target view). A transition-dependent (node-pinned) Guard must never serve both roles; node-free Guards carry no commit point and may.
 - `retained_submission: [identifier…]` stores the submitted values on the forward's execution record in the Progress session/history (located by node + forward), so later nodes and cross-machine Guards can read them.
 - **No on-chain cron (T1 lossy point)**: "after N days, auto-X" decomposes into a time Guard PLUS an off-chain keeper that submits the forward once it passes. A time Guard without a keeper never fires.
 - **Lists/scores that change live in a Repository**: keep a mutable list or number (operator allow-list, blocklist, score) in a Repository policy and let the Guard read it — editing the list needs no new Guard. Comparison/count limits (U256-only values, no per-key counting) are in GUARD_SCHEMA_NOTES via `get_guard_design_patterns`.
@@ -108,7 +114,7 @@ Every custom `permissionIndex` used MUST be granted in the bound Permission (`pe
 - [ ] Every non-terminal node has a reachable outgoing path; every non-entry node has an incoming pair.
 - [ ] Every pair's threshold ≤ the sum of its DISTINCT forward weights (no dead branches); competing transitions are intended.
 - [ ] Every forward binds exactly the intended identity (wildcard / role / permission index), and ALL custom indexes are already granted.
-- [ ] Guards created, `gen_passport`-tested (all submission scenarios), bound; time Guards have a keeper plan; post-transition checks live on Allocators, not forwards.
+- [ ] Guards created, `gen_passport`-tested (all submission scenarios), bound; time Guards have a keeper plan; post-transition checks live on Allocators, not forwards; a node-pinned (transition-dependent) Guard address never appears on BOTH a forward and an allocator (node-free Guards are reusable).
 - [ ] NO node named `refund`/`refunded`/`deposit_refunded`/`deposit_deducted`/`disputed` or implying the Machine moves funds. Machines never move money — refund/deduction terminals route to Allocator slots (`return_approved` → Allocator), disputes route to the bound Arbitration. The pre-publish gate rejects violations. `cancelled`/`returned` are discouraged; the runtime warns (R-M1-11) but does not reject — use as business states when that matches your flow.
 - [ ] Terminal nodes are mapped to Allocator entries, or funds lock in escrow.
 - [ ] Export via `machineNode2file`; run a test Progress on testnet first.
