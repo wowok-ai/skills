@@ -30,6 +30,8 @@ Pick the action by intent, then read its input schema:
 
 **Deep structural trust** — for multi-hop questions (who really controls Service/Permission/Arbitration, shell/affiliation structure, money-flow exposure, workflow single points), run `query_toolkit` → `query_type: "onchain_topology"` with `focus` = the address/object/LocalMark. It batches every chain read and returns typed edges, reached Machines' workflow graphs and R/A/O/G findings; conclusions crossing a `bounded_window` edge are lower bounds. It supplies structural facts to `anti_cheat` and arbitrator comparison; it never produces a score itself.
 
+**Review reputation face** — a Service running the review component exposes structured review rows (Repository, `review` key: like/dislike + tags, Signer-keyed one row per buyer, written under the review-edge guard so only completed-order buyers can write; review text lives in the machine's permanent forward History). When comparing candidates, read those rows via `onchain_table_data` alongside the dispute rate; unverified-dominant aggregates are flagged by `account_events` (`reputation_integrity`). Never quote a review aggregate without its verified share. Market exposure consumes ONLY this Repository verified face. Account-level registrar votes (like/dislike/favor on the provider's Entity) are auxiliary display at most — when shown, attach the voter-credibility projection (registration age, order history, object footprint; AC5-AC7 flags fresh bursts / mutual rings / flooded targets) and NEVER mix them into the review channel.
+
 ## Conversation flow: discover → compare → trust → act → measure
 
 1. **Review-first**: before the first choice, state (a) what you understood, (b) the decision order, (c) the interaction contract.

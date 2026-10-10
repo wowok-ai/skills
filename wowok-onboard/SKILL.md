@@ -87,7 +87,7 @@ Account + network (testnet first)
 
 **Q5 — Products, prices, descriptions?** Propose expert-optimized storefront copy from `trust_selling_points` + `build_notes` + `key_risk`; confirm prices. WIP: an immutable deliverable spec lives at a public URL — on-chain stores URL + hash only; skippable on testnet, strongly recommended on mainnet.
 
-**Q6 — How does an order progress?** Present the mode's `machine_shape` as a plain-language paid→delivered→confirmed flow (who proves what — e.g. buyer confirms receipt). Explicit confirmation/objection recorded. Nodes stay business states — no refund/dispute terminals (R-M1-11).
+**Q6 — How does an order progress?** Present the mode's `machine_shape` as a plain-language paid→delivered→confirmed flow (who proves what — e.g. buyer confirms receipt). Explicit confirmation/objection recorded. Nodes stay business states — no refund/dispute terminals (R-M1-11). On the SAME question (disclosed recommend, never a new question), offer the buyer-review rail: `review` (free reputation rail — a reviewed step after delivery; buyer review text is permanently on-chain, structured record in a review repository) or `review_reward` (adds an incentive pool: window days, per-order reward, funded pool ≥ expected orders × per-order reward). Default `none` — skipping changes nothing.
 
 **Q7 — How and when is money released?** Present the mode allocator default in business terms (e.g. merchant 97% + processor 3%; full refund on cancellation), including the cancellation path. Explicit confirmation; this is L1-locked at publish.
 

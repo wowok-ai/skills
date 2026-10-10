@@ -106,6 +106,18 @@ If the call returns a submission prompt, re-call with the top-level `submission`
 Add: `compensation_fund_add` (any time) · set waiting period: `setting_lock_duration_add` · withdraw ALL: `compensation_fund_withdraw` ONLY while paused AND the lock has elapsed (funds go to a new Payment owned by `receipt`). Note `compensation_fund_receive` is the CLAIM-side op for arbitration winners, not the merchant's withdrawal.
 Red lines: the fund is **per-Service** — it never covers another Service's orders; size it to at least **3× your highest single-order price**, otherwise the indemnity cap is unreachable and a customer who wins a dispute may still collect nothing.
 
+### Buyer reviews (review component)
+
+Optional reputation rail, three modes via template declaration or `review_mode` input (default `none` — skipping changes nothing):
+- `review` — a buyer-advanced `reviewed` node IS the review: the text rides the forward message (permanent on-chain History, signed by the buyer); structured like/dislike + tags ride a Repository row (Signer-keyed, one per buyer, overwrites observable). The review Repository is merchant-created — one `review` policy with `write_guard` = the reviewed-edge guard (only completed-order buyers hold that credential) and `id_from` = Signer; its address is what buyers pass in `data.review.repository`.
+- `review_reward` — plus a claim reward: the compiler emits the Reward object + claim guard + Service binding and REQUIRES `reward_funding` (pool ≥ expected orders × per-order reward — INV-4; an unfunded incentive promise is a publish blocker).
+- `review_reward` follow-ups (disclosed defaults, not new gate items): window days (default 14) → per-order reward → pool funding.
+- **Bidirectional reviews (opt-in, ask when a review mode is chosen)**: by default the merchant does NOT review back. Setting the build input `buyer_review_enabled=true` makes the compiler emit a second repository key `buyer_review` (Signer-keyed, one row per buyer-reviewer, NO write_guard — merchant authority is verified at read time by graph control of the order's Service). Purpose: cross-fix buyer reviews with merchant rows (mutual corroboration) and give the merchant a buyer-credit signal. Reviews never enter the settlement rail on either side. Ask it as one disclosed follow-up ("also accept reviews OF buyers?"), not a new gate.
+
+Compiler gates you may see: `REVIEW_NODE_MISSING` (declared review mode but no reviewed node), `REVIEW_REWARD_GUARD_MISSING` (no resolved claim guard), `REVIEW_REWARD_UNFUNDED`. Reward remove is L2 time-locked — size the pool before publish; terms are disclosed to buyers at quote/buy time.
+
+Running awareness: gather the review coverage counts via `onchain_table_data` (repository rows under the `review` key — one row per buyer) and pass `radar_review_summary {orders_completed, reviews_written, reward_bound}` to `participation_radar`; a ≥30% missing rate with a reward attached usually means the reward expired or the window is too short.
+
 ### Mainnet-only: stablecoins & bridging
 
 WOW is the default token; supported bridge tokens/chains: `bridge_operation` operation_type `query_supported_tokens` / `query_supported_evm_chains` (addresses also in `wowok_buildin_info` info="mainnet bridge tokens"). Transfers: `cross_chain_wow_to_evm` / `cross_chain_evm_to_wow` (latter auto-claims on WOW); tracking `query_transfer_status` / `query_transfer_list`; RPC 429s via `manage_evm_rpc`. Mainnet env required — no cross-chain path on testnet.
