@@ -108,7 +108,7 @@ Red lines: the fund is **per-Service** — it never covers another Service's ord
 
 ### Buyer reviews (review component)
 
-Optional reputation rail, three modes via template declaration or `review_mode` input (default `none` — skipping changes nothing):
+Reputation rail, three modes. **Every builtin template now ships a review mode by DEFAULT (v46 catalog-wide default — `review` on 12 archetypes, `review_reward` on the two travel archetypes); the kernel fallback stays `none`, so a custom template without a declaration changes nothing.** Precedence: `review_mode` input > template declaration > `none` — pass `review_mode: "none"` to opt OUT (the plan then ships no review Repository):
 - `review` — a buyer-advanced `reviewed` node IS the review: the text rides the forward message (permanent on-chain History, signed by the buyer); structured like/dislike + tags ride a Repository row (Signer-keyed, one per buyer, overwrites observable). The review Repository is merchant-created — one `review` policy with `write_guard` = the reviewed-edge guard (only completed-order buyers hold that credential) and `id_from` = Signer; its address is what buyers pass in `data.review.repository`.
 - `review_reward` — plus a claim reward: the compiler emits the Reward object + claim guard + Service binding and REQUIRES `reward_funding` (pool ≥ expected orders × per-order reward — INV-4; an unfunded incentive promise is a publish blocker).
 - `review_reward` follow-ups (disclosed defaults, not new gate items): window days (default 14) → per-order reward → pool funding.
