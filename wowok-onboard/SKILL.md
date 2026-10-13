@@ -68,7 +68,7 @@ Account + network (testnet first)
 > Network note: "testnet first" is only the FIRST-TOUCH default when the user has no UI network selection yet. After onboarding, the current network is the client's UI selection — omit `env.network` (the runtime stamps the user's current network); set it only when the user explicitly names a different network.
 
 **Irreversibility to translate as "decide now"**:
-- After Service publish, `machine` and `order_allocators` are **L1 permanent locks**.
+- After Service publish, `machine` is a **true permanent lock** (re-binding aborts once published). `order_allocators` is a **frozen-prefix append window**: existing rows can never be changed or removed, but the chain exposes a post-publish APPEND (service.move:809) — new allocator rows may be added when every existing row is preserved verbatim as a prefix and the threshold stays unchanged (each append emits an OrderAllocatorsAppendedEvent). A forgotten allocator guard has a salvage path: APPEND, don't rebuild.
 - `arbitrations` / rewards are **L2 time-locks**: you may still ADD after publish; remove/clear requires pause + the lock duration to elapse.
 - Machine nodes/forwards and each Guard are immutable once the Machine is published.
 - `compensation_fund > 0` requires a bound Arbitration — independent of the Service's controllers (same Permission aborts 33).
